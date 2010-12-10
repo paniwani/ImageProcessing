@@ -6,6 +6,13 @@
 #include "itkMinimumMaximumImageCalculator.h"
 #include <iostream>
 #include "itkBinaryThresholdImageFilter.h";
+#include <itkConnectedComponentImageFilter.h>
+#include <itkRelabelComponentImageFilter.h>
+
+typedef itk::Image< float, 3 > ImageType;
+void WriteITK(ImageType::Pointer image, std::string ss, int count);
+
+int writeCount = 1;
 
 int main( int argc, char *argv[] )
 {
@@ -17,7 +24,7 @@ int main( int argc, char *argv[] )
 	1) Input image
 	2) Output image
 */
-	typedef itk::Image< float, 3 > ImageType;
+	
 
 	// Setup IO
 	typedef itk::ImageFileReader< ImageType > ReaderType;
@@ -71,18 +78,42 @@ int main( int argc, char *argv[] )
 		std::cerr << excep << std::endl;
 	}
 
-	ImageType::Pointer airImage = thresholdFilter->GetOutput();
+	WriteITK( thresholdFilter->GetOutput(), "airThreshold.hdr", writeCount++);
 
-	
-	IteratorType airImageIt( airImage, airImage->GetLargestPossibleRegion() );
+	// Run connected component filter to remove background
+	typedef itk::ConnectedComponentImageFilter< ImageType, ImageType > ConnectedFilterType;
+	ConnectedFilterType::Pointer connectedFilter = ConnectedFilterType::New();
+	connectedFilter->SetInput( thresholdFilter->GetOutput() );
+
+	try
+	{
+		connectedFilter->Update();
+	} catch ( itk::ExceptionObject &excep )
+	{
+		std::cerr << "Exception caught !" << std::endl;
+		std::cerr << excep << std::endl;
+	}
+
+	WriteITK( connectedFilter->GetOutput(), "connectedComponent.hdr", writeCount++);
+
+	// Relabel components
+	typedef itk::RelabelComponentImageFilter< ImageType, ImageType > RelabelFilterType;
+	RelabelFilterType::Pointer relabelFilter = RelabelFilterType::New();
+	relabelFilter->SetInput( connectedFilter->GetOutput() );
+
+	try
+	{
+		relabelFilter->Update();
+	} catch ( itk::ExceptionObject &excep )
+	{
+		std::cerr << "Exception caught !" << std::endl;
+		std::cerr << excep << std::endl;
+	}
+
+	WriteITK( relabelFilter->GetOutput(), "relabelComponent.hdr", writeCount++);
 
 
-
-
-
-
-	writer->SetInput( thresholdFilter->GetOutput() );
-
+	/*
 	// Apply region growing filter
 	typedef itk::ConnectedThresholdImageFilter< ImageType, ImageType > ConnectedFilterType;
 	ConnectedFilterType::Pointer connectedThreshold = ConnectedFilterType::New();
@@ -110,8 +141,6 @@ int main( int argc, char *argv[] )
 		std::cerr << excep << std::endl;
 	}
 
-	/*
-
 	// Multiple Seeds
 	typedef itk::ImageRegionIteratorWithIndex< ImageType > IteratorType;
 	IteratorType inputIt( reader->GetOutput(), reader->GetOutput()->GetLargestPossibleRegion() );
@@ -124,20 +153,31 @@ int main( int argc, char *argv[] )
 		}
 	}
 
-	*/
-
-
 	writer->SetInput( connectedThreshold->GetOutput() );
 
-	try
-	{
-		writer->Update();
-	} catch ( itk::ExceptionObject &excep )
-	{
-		std::cerr << "Exception caught !" << std::endl;
-		std::cerr << excep << std::endl;
-	}
+	*/
 
 	system("PAUSE");
 	return 0;
+}
+
+void WriteITK(ImageType::Pointer image, std::string ss, int count) {
+	std::cout << "Writing " << ss << std::endl;
+	
+	typedef itk::ImageFileWriter< ImageType > WriterType;
+	WriterType::Pointer writer = WriterType::New();
+	
+	std::stringstream ss2;
+	ss2 << count << "_" << ss;
+	writer->SetFileName(ss2.str().c_str());
+	writer->SetInput(image);
+	writer->GlobalWarningDisplayOff();
+
+	try  
+	{
+		writer->Update();
+	} catch( itk::ExceptionObject & excp ) 
+	{
+		std::cerr << excp << std::endl;
+	} 
 }
