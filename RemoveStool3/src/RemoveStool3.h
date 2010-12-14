@@ -28,7 +28,7 @@
 #include <itkContinuousIndex.h>
 
 // Add regular expressions
-#include "pcre.h"
+//#include "pcre.h"
 
 // Outdated includes
 //#include "Typedef.h"

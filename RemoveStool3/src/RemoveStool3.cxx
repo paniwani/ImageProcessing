@@ -1592,7 +1592,7 @@ void OptimizeVoxelEdge(ImageType::Pointer input, IteratorTypeFloat4WithIndex inp
 	}
 }
 
-bool MatchVoxels(std::string inputString, char *regex) {
+/*bool MatchVoxels(std::string inputString, char *regex) {
 	const int ovecount = 6;
 	pcre *re;
 	const char *error;
@@ -1644,7 +1644,7 @@ bool MatchVoxels(std::string inputString, char *regex) {
 	}
 
 	return false;
-}
+}*/
 
 void FindVoxelsByGradient(VoxelTypeImage::Pointer voxelEdge, ImageType::IndexType index, ImageType::IndexType startIndex, ImageType::IndexType endIndex, CovariantVectorType grad, int numOfVoxels, std::vector<ImageType::IndexType> &indexVector) {
 	//Calculates indices of voxels in direction of gradient
