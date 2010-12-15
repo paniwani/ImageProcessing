@@ -9,7 +9,7 @@
 #include <itkRelabelComponentImageFilter.h>
 #include <itkBinaryDilateImageFilter.h>
 #include <itkBinaryBallStructuringElement.h>
-#include <itkRegionalMaximaImageFilter.h>
+//#include <itkRegionalMaximaImageFilter.h>
 
 typedef itk::Image< float, 3 > ImageType;
 void WriteITK(ImageType::Pointer image, std::string ss, int count);
@@ -21,9 +21,6 @@ int main( int argc, char *argv[] )
 /*
 	Performs heterogeneous stool colon segmentation using the 
 	ITK ConnectedTresholdImageFilter
-
-	Parameters:
-	1) Input image
 */
 	
 
@@ -32,7 +29,7 @@ int main( int argc, char *argv[] )
 	typedef itk::ImageFileWriter< ImageType > WriterType;
 	ReaderType::Pointer reader = ReaderType::New();
 
-	reader->SetFileName( argv[1] );
+	reader->SetFileName( "C:/Users/Neil/Documents/My Dropbox/Work Projects/ImageData/mr10_092_13p.i0344_100.hdr" );
 
 	try
 	{
@@ -56,6 +53,7 @@ int main( int argc, char *argv[] )
 	endIndex[1]+=(fullRegion.GetSize()[1]-1);
 	endIndex[2]+=(fullRegion.GetSize()[2]-1);
 
+	/*
 	// Run reigonal maximal filter
 	typedef itk::RegionalMaximaImageFilter< ImageType, ImageType> RegionalMaximaFilterType;
 	RegionalMaximaFilterType::Pointer regionalMaximaFilter = RegionalMaximaFilterType::New();
@@ -71,6 +69,7 @@ int main( int argc, char *argv[] )
 	}
 
 	WriteITK( regionalMaximaFilter->GetOutput(), "regionalMaxima.hdr", writeCount++);
+	*/
 
 	// Threshold to detect air lumen
 	ImageType::Pointer threshold = ImageType::New();
