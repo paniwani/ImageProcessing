@@ -9,10 +9,31 @@
 #include <itkRelabelComponentImageFilter.h>
 #include <itkBinaryDilateImageFilter.h>
 #include <itkBinaryBallStructuringElement.h>
-//#include <itkRegionalMaximaImageFilter.h>
+#include <itkRegionalMaximaImageFilter.h>
+#include <itkImageSliceIteratorWithIndex.h>
+#include <itkImageLinearIteratorWithIndex.h>
 
-typedef itk::Image< float, 3 > ImageType;
-void WriteITK(ImageType::Pointer image, std::string ss, int count);
+typedef float													PixelType;
+typedef unsigned char											BytePixelType;
+
+typedef itk::Image< PixelType, 2 >								ImageType2D;
+typedef itk::Image< PixelType, 3 >								ImageType3D;
+
+typedef itk::Image< BytePixelType, 2 >							ByteImageType2D;
+typedef itk::Image< BytePixelType, 3 >							ByteImageType3D;	
+
+typedef itk::ImageLinearIteratorWithIndex< ImageType2D >		LinearIteratorType;
+typedef itk::ImageRegionIteratorWithIndex< ImageType2D >		IteratorType;
+typedef itk::ImageRegionIteratorWithIndex< ByteImageType2D >	ByteIteratorType;
+
+typedef itk::ImageSliceIteratorWithIndex< ImageType3D >			InputSliceIteratorType;
+typedef itk::ImageSliceIteratorWithIndex< ByteImageType3D >		OutputSliceIteratorType;
+
+
+template< class T >
+void WriteITK ( typename T::Pointer image , std::string ss );
+
+void DoStuff( ImageType2D::Pointer image, LinearIteratorType imageIt);
 
 int writeCount = 1;
 
@@ -20,16 +41,15 @@ int main( int argc, char *argv[] )
 {
 /*
 	Performs heterogeneous stool colon segmentation using the 
-	ITK ConnectedTresholdImageFilter
+	ITK ConnectedThresholdImageFilter
 */
 	
 
 	// Setup IO
-	typedef itk::ImageFileReader< ImageType > ReaderType;
-	typedef itk::ImageFileWriter< ImageType > WriterType;
+	typedef itk::ImageFileReader< ImageType3D > ReaderType;
 	ReaderType::Pointer reader = ReaderType::New();
 
-	reader->SetFileName( "C:/Users/Neil/Documents/My Dropbox/Work Projects/ImageData/mr10_092_13p.i0344_100.hdr" );
+	reader->SetFileName( "C:/ImageData/mr10_092_13p.i0344.hdr" );
 
 	try
 	{
@@ -40,42 +60,113 @@ int main( int argc, char *argv[] )
 		std::cerr << excep << std::endl;
 	}
 
-	typedef itk::ImageRegionIteratorWithIndex< ImageType > IteratorType;
+	ImageType3D::Pointer input = reader->GetOutput();
+	InputSliceIteratorType inputIt( input, input->GetLargestPossibleRegion() );
 
-	ImageType::Pointer input = reader->GetOutput();
-	IteratorType inputIt( input, input->GetLargestPossibleRegion() );
+	// Setup 2D region from 3D input
+	ImageType2D::RegionType region;
+	ImageType2D::RegionType::SizeType size;
+	ImageType2D::RegionType::IndexType index;
 
+	ImageType3D::RegionType requestedRegion = input->GetRequestedRegion();
+
+	index[ 0 ] = requestedRegion.GetIndex( 0 );
+	index[ 1 ] = requestedRegion.GetIndex( 1 );
+	size[ 0 ] = requestedRegion.GetSize()[ 0 ];
+	size[ 1 ] = requestedRegion.GetSize()[ 1 ];
+
+	region.SetSize( size );
+	region.SetIndex( index );
+
+	// Create 2D slice image and iterator
+	ImageType2D::Pointer slice = ImageType2D::New();
+	slice->SetRegions( region );
+	slice->Allocate();
+
+	LinearIteratorType sliceIt( slice, slice->GetLargestPossibleRegion() );
+
+	// Setup 3D output image
+	ImageType3D::Pointer output = ImageType3D::New();
+	output->SetRegions( requestedRegion );
+	output->Allocate();
+	OutputSliceIteratorType outputIt( output, output->GetLargestPossibleRegion() );
+
+	// Setup directions
+	inputIt.SetFirstDirection( 0 );
+	inputIt.SetSecondDirection( 1 );
+
+	outputIt.SetFirstDirection( 0 );
+	outputIt.SetSecondDirection( 1 );
+
+	inputIt.GoToBegin();
+	outputIt.GoToBegin();
+
+	int sliceCounter = 1;
+	
+	while ( !inputIt.IsAtEnd() )	// Iterate by slice
+	{
+		sliceIt.GoToBegin();
+		
+		// Make 2D slice
+		while ( !inputIt.IsAtEndOfSlice() )
+		{
+			while ( !inputIt.IsAtEndOfLine() )
+			{
+				sliceIt.Set( inputIt.Get() );
+
+				++sliceIt;
+				++inputIt;
+			}
+
+			inputIt.NextLine();
+		}
+
+		inputIt.NextSlice();
+
+		// Perform operations on slice
+		DoStuff(slice, sliceIt);
+
+		// Place 2D slice in 3D output
+		sliceIt.GoToBegin();
+
+		while ( !outputIt.IsAtEndOfSlice() )
+		{
+			while ( !outputIt.IsAtEndOfLine() )
+			{
+
+				outputIt.Set( (byte) sliceIt.Get() );
+				
+				++sliceIt;
+				++outputIt;
+			}
+
+			outputIt.NextLine();
+		}
+		
+		outputIt.NextSlice();
+		std::cout << "slice: " << sliceCounter++ << std::endl;
+	}
+
+	WriteITK <ImageType3D> (output, "output.hdr");
+
+	system("PAUSE");
+	return 0;
+}
+
+void FindColon( ImageType2D::Pointer input) {
 	// Set regions
-	ImageType::RegionType fullRegion = input->GetLargestPossibleRegion();
-	ImageType::IndexType endIndex = fullRegion.GetIndex();
-	ImageType::IndexType startIndex = fullRegion.GetIndex();	
+	ImageType2D::RegionType fullRegion = input->GetLargestPossibleRegion();
+	ImageType2D::IndexType endIndex = fullRegion.GetIndex();
+	ImageType2D::IndexType startIndex = fullRegion.GetIndex();	
 	endIndex[0]+=(fullRegion.GetSize()[0]-1);
 	endIndex[1]+=(fullRegion.GetSize()[1]-1);
 	endIndex[2]+=(fullRegion.GetSize()[2]-1);
 
-	/*
-	// Run reigonal maximal filter
-	typedef itk::RegionalMaximaImageFilter< ImageType, ImageType> RegionalMaximaFilterType;
-	RegionalMaximaFilterType::Pointer regionalMaximaFilter = RegionalMaximaFilterType::New();
-	regionalMaximaFilter->SetInput( input );
-
-	try
-	{
-		regionalMaximaFilter->Update();
-	} catch ( itk::ExceptionObject &excep )
-	{
-		std::cerr << "Exception caught !" << std::endl;
-		std::cerr << excep << std::endl;
-	}
-
-	WriteITK( regionalMaximaFilter->GetOutput(), "regionalMaxima.hdr", writeCount++);
-	*/
-
 	// Threshold to detect air lumen
-	ImageType::Pointer threshold = ImageType::New();
+	ByteImageType2D::Pointer threshold = ByteImageType::New();
 	threshold->SetRegions( fullRegion );
 	threshold->Allocate();
-	IteratorType thresholdIt( threshold, fullRegion );
+	ByteIteratorType thresholdIt( threshold, fullRegion );
 
 	for (	inputIt.GoToBegin(), thresholdIt.GoToBegin();
 			!inputIt.IsAtEnd() && !thresholdIt.IsAtEnd();
@@ -85,163 +176,229 @@ int main( int argc, char *argv[] )
 		else							{ thresholdIt.Set( 0 ); }
 	}
 
-	WriteITK( threshold, "thresholdInput.hdr", writeCount++);
+	//WriteITK( threshold, "thresholdInput.hdr");
 
-	// Run connected component filter to remove background
-	typedef itk::ConnectedComponentImageFilter< ImageType, ImageType > ConnectedComponentFilterType;
-	ConnectedComponentFilterType::Pointer connectedComponentFilter = ConnectedComponentFilterType::New();
-	connectedComponentFilter->SetInput( threshold );
+	//// Run reigonal maximal filter
+	//typedef itk::RegionalMaximaImageFilter< ImageType, ByteImageType> RegionalMaximaFilterType;
+	//RegionalMaximaFilterType::Pointer regionalMaximaFilter = RegionalMaximaFilterType::New();
+	//regionalMaximaFilter->SetInput( input );
 
-	try
-	{
-		connectedComponentFilter->Update();
-	} catch ( itk::ExceptionObject &excep )
-	{
-		std::cerr << "Exception caught !" << std::endl;
-		std::cerr << excep << std::endl;
-	}
+	//try
+	//{
+	//	regionalMaximaFilter->Update();
+	//} catch ( itk::ExceptionObject &excep )
+	//{
+	//	std::cerr << "Exception caught !" << std::endl;
+	//	std::cerr << excep << std::endl;
+	//}
 
-	WriteITK( connectedComponentFilter->GetOutput(), "connectedComponent.hdr", writeCount++);
+	//WriteITK( regionalMaximaFilter->GetOutput(), "regionalMaxima.hdr");
 
-	// Relabel components
-	typedef itk::RelabelComponentImageFilter< ImageType, ImageType > RelabelFilterType;
-	RelabelFilterType::Pointer relabelFilter = RelabelFilterType::New();
-	relabelFilter->SetInput( connectedComponentFilter->GetOutput() );
-	relabelFilter->SetMinimumObjectSize( 20 );
+	//// Run connected component filter to remove background
+	//typedef itk::ConnectedComponentImageFilter< ByteImageType, ByteImageType > ConnectedComponentFilterType;
+	//ConnectedComponentFilterType::Pointer connectedComponentFilter = ConnectedComponentFilterType::New();
+	//connectedComponentFilter->SetInput( threshold );
 
-	try
-	{
-		relabelFilter->Update();
-	} catch ( itk::ExceptionObject &excep )
-	{
-		std::cerr << "Exception caught !" << std::endl;
-		std::cerr << excep << std::endl;
-	}
+	//try
+	//{
+	//	connectedComponentFilter->Update();
+	//} catch ( itk::ExceptionObject &excep )
+	//{
+	//	std::cerr << "Exception caught !" << std::endl;
+	//	std::cerr << excep << std::endl;
+	//}
 
-	ImageType::Pointer relabel = relabelFilter->GetOutput();
-	IteratorType relabelIt( relabel, fullRegion );
+	//WriteITK( connectedComponentFilter->GetOutput(), "connectedComponent.hdr");
 
-	WriteITK( relabel, "relabelComponent.hdr", writeCount++);
+	//// Relabel components
+	//typedef itk::RelabelComponentImageFilter< ByteImageType, ByteImageType > RelabelFilterType;
+	//RelabelFilterType::Pointer relabelFilter = RelabelFilterType::New();
+	//relabelFilter->SetInput( connectedComponentFilter->GetOutput() );
+	//relabelFilter->SetMinimumObjectSize( 20 );
 
-	// Remove outer air and colon labels by thresholding >= 2
-	for (	relabelIt.GoToBegin(), thresholdIt.GoToBegin();
-			!relabelIt.IsAtEnd() && !thresholdIt.IsAtEnd();
-			++relabelIt, ++thresholdIt		) 
-	{
-		if ( relabelIt.Get() >= 2 )		{ thresholdIt.Set( 1 ); }
-		else							{ thresholdIt.Set( 0 ); }
-	}
+	//try
+	//{
+	//	relabelFilter->Update();
+	//} catch ( itk::ExceptionObject &excep )
+	//{
+	//	std::cerr << "Exception caught !" << std::endl;
+	//	std::cerr << excep << std::endl;
+	//}
 
-	ImageType::Pointer airMask = threshold;
-	IteratorType airMaskIt( airMask, airMask->GetLargestPossibleRegion() );
+	//ByteImageType::Pointer relabel = relabelFilter->GetOutput();
+	//ByteIteratorType relabelIt( relabel, fullRegion );
 
-	WriteITK( airMask, "relabelComponentTreshold.hdr", writeCount++);
+	//WriteITK( relabel, "relabelComponent.hdr");
 
-	// Apply region growing filter to detect tagged regions >= 200
-	typedef itk::ConnectedThresholdImageFilter< ImageType, ImageType > ConnectedTresholdFilterType;
-	ConnectedTresholdFilterType::Pointer connectedThresholdFilter = ConnectedTresholdFilterType::New();
-	connectedThresholdFilter->SetLower( 200 );
-	//connectedThresholdFilter->SetUpper( max );
-	connectedThresholdFilter->SetReplaceValue( 1 );
+	//// Remove outer air and colon labels by thresholding >= 2
+	//for (	relabelIt.GoToBegin(), thresholdIt.GoToBegin();
+	//		!relabelIt.IsAtEnd() && !thresholdIt.IsAtEnd();
+	//		++relabelIt, ++thresholdIt		) 
+	//{
+	//	if ( relabelIt.Get() >= 2 )		{ thresholdIt.Set( 1 ); }
+	//	else							{ thresholdIt.Set( 0 ); }
+	//}
 
-	// Find edges of air
-	for (	airMaskIt.GoToBegin(), inputIt.GoToBegin();
-			!airMaskIt.IsAtEnd() && !inputIt.IsAtEnd();
-			++airMaskIt, ++inputIt		) 
-	{	
-		if (airMaskIt.Get() == 1) {	// at air
+	//ByteImageType::Pointer airMask = threshold;
+	//ByteIteratorType airMaskIt( airMask, airMask->GetLargestPossibleRegion() );
 
-			ImageType::IndexType index = airMaskIt.GetIndex();
-			for(int i=-1;i<=1;i++) {
-				if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
-					for (int j=-1;j<=1;j++) {
-						if (index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
-							for (int k=-1;k<=1;k++) {
-								if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
-									
-									ImageType::IndexType neighborIndex={index[0]+i,index[1]+j,index[2]+k};
+	//WriteITK( airMask, "relabelComponentTreshold.hdr");
 
-									if ( airMask->GetPixel( neighborIndex ) == 0 )	// if neighbor is non-air
-									{
-										//airMask->SetPixel( index, 2); // mark as edge
-										connectedThresholdFilter->AddSeed( index );
-										inputIt.Set(200);
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
+	//// Apply region growing filter to detect tagged regions >= 200
+	//typedef itk::ConnectedThresholdImageFilter< ImageType, ByteImageType > ConnectedTresholdFilterType;
+	//ConnectedTresholdFilterType::Pointer connectedThresholdFilter = ConnectedTresholdFilterType::New();
+	//connectedThresholdFilter->SetLower( 200 );
+	////connectedThresholdFilter->SetUpper( max );
+	//connectedThresholdFilter->SetReplaceValue( 1 );
 
-	connectedThresholdFilter->SetInput( input );
+	//// Find edges of air
+	//for (	airMaskIt.GoToBegin(), inputIt.GoToBegin();
+	//		!airMaskIt.IsAtEnd() && !inputIt.IsAtEnd();
+	//		++airMaskIt, ++inputIt		) 
+	//{	
+	//	if (airMaskIt.Get() == 1) {	// at air
 
-	try
-	{
-		connectedThresholdFilter->Update();
-	} catch ( itk::ExceptionObject &excep )
-	{
-		std::cerr << "Exception caught !" << std::endl;
-		std::cerr << excep << std::endl;
-	}
+	//		ImageType::IndexType index = airMaskIt.GetIndex();
+	//		for(int i=-1;i<=1;i++) {
+	//			if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
+	//				for (int j=-1;j<=1;j++) {
+	//					if (index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
+	//						for (int k=-1;k<=1;k++) {
+	//							if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
+	//								
+	//								ImageType::IndexType neighborIndex={index[0]+i,index[1]+j,index[2]+k};
 
-	ImageType::Pointer tagged = connectedThresholdFilter->GetOutput();
-	IteratorType taggedIt( tagged, tagged->GetLargestPossibleRegion() );
+	//								if ( airMask->GetPixel( neighborIndex ) == 0 )	// if neighbor is non-air
+	//								{
+	//									//airMask->SetPixel( index, 2); // mark as edge
+	//									connectedThresholdFilter->AddSeed( index );
+	//									inputIt.Set(200);
+	//								}
+	//							}
+	//						}
+	//					}
+	//				}
+	//			}
+	//		}
+	//	}
+	//}
 
-	WriteITK( tagged, "taggedRegionGrowing.hdr", writeCount++);
+	//connectedThresholdFilter->SetInput( input );
 
-	// Combine air and tagged regions into one image
-	for (	airMaskIt.GoToBegin(), taggedIt.GoToBegin();
-			!airMaskIt.IsAtEnd() && !taggedIt.IsAtEnd();
-			++airMaskIt, ++taggedIt		) 
-	{
-		if ( airMaskIt.Get() == 1)
-		{
-			taggedIt.Set( 1 );
-		}
-	}
+	//try
+	//{
+	//	connectedThresholdFilter->Update();
+	//} catch ( itk::ExceptionObject &excep )
+	//{
+	//	std::cerr << "Exception caught !" << std::endl;
+	//	std::cerr << excep << std::endl;
+	//}
 
-	WriteITK( tagged, "segmentedColon.hdr", writeCount++);
+	//ByteImageType::Pointer tagged = connectedThresholdFilter->GetOutput();
+	//ByteIteratorType taggedIt( tagged, tagged->GetLargestPossibleRegion() );
 
-	// Dilate
-	
-	// Create binary ball structuring element
-	typedef itk::BinaryBallStructuringElement< ImageType::PixelType, 3> StructuringElementType;
-	StructuringElementType structuringElement;
-    structuringElement.SetRadius( 4 );
-    structuringElement.CreateStructuringElement();
+	//WriteITK( tagged, "taggedRegionGrowing.hdr");
 
-	typedef itk::BinaryDilateImageFilter< ImageType, ImageType, StructuringElementType > BinaryDilateFilterType;
-	BinaryDilateFilterType::Pointer dilateFilter = BinaryDilateFilterType::New();
-	dilateFilter->SetInput( tagged );
-	dilateFilter->SetKernel( structuringElement );
-	dilateFilter->SetDilateValue( 1 );
+	//// Combine air and tagged regions into one image
+	//for (	airMaskIt.GoToBegin(), taggedIt.GoToBegin();
+	//		!airMaskIt.IsAtEnd() && !taggedIt.IsAtEnd();
+	//		++airMaskIt, ++taggedIt		) 
+	//{
+	//	if ( airMaskIt.Get() == 1)
+	//	{
+	//		taggedIt.Set( 1 );
+	//	}
+	//}
 
-	try
-	{
-		dilateFilter->Update();
-	} catch ( itk::ExceptionObject &excep )
-	{
-		std::cerr << "Exception caught !" << std::endl;
-		std::cerr << excep << std::endl;
-	}
+	//WriteITK( tagged, "segmentedColon.hdr");
 
-	WriteITK( dilateFilter->GetOutput() , "segmentedColonDilated.hdr", writeCount++);
+	//// Dilate
+	//
+	//// Create binary ball structuring element
+	//typedef itk::BinaryBallStructuringElement< ByteImageType::PixelType, 3> StructuringElementType;
+	//StructuringElementType structuringElement;
+ //   structuringElement.SetRadius( 4 );
+ //   structuringElement.CreateStructuringElement();
 
-	system("PAUSE");
-	return 0;
+	//typedef itk::BinaryDilateImageFilter< ByteImageType, ByteImageType, StructuringElementType > BinaryDilateFilterType;
+	//BinaryDilateFilterType::Pointer dilateFilter = BinaryDilateFilterType::New();
+	//dilateFilter->SetInput( tagged );
+	//dilateFilter->SetKernel( structuringElement );
+	//dilateFilter->SetDilateValue( 1 );
+
+	//try
+	//{
+	//	dilateFilter->Update();
+	//} catch ( itk::ExceptionObject &excep )
+	//{
+	//	std::cerr << "Exception caught !" << std::endl;
+	//	std::cerr << excep << std::endl;
+	//}
+
+	//WriteITK( dilateFilter->GetOutput() , "segmentedColonDilated.hdr");
 }
 
-void WriteITK(ImageType::Pointer image, std::string ss, int count) {
+
+
+template< class T >
+void WriteITK (typename T::Pointer image , std::string ss )
+{
+	typedef itk::ImageFileWriter< T >	WriterType;
+	WriterType::Pointer writer = WriterType::New();
+
+	std::stringstream ss2;
+	ss2 << writeCount++ << "_" << ss;
+	writer->SetFileName(ss2.str().c_str());
+
+	writer->SetInput(image);
+	writer->GlobalWarningDisplayOff();
+	writer->ReleaseDataFlagOn();
+	std::cerr<<"Writing: "<< ss <<std::endl;
+	try
+	{
+		writer->Update();
+	}
+	catch( itk::ExceptionObject & err )
+	{
+		std::cerr << "Exception caught: " << err << std::endl;
+		return;
+	}
+
+
+}
+
+
+/*
+
+void WriteITK(ImageType2D::Pointer image, std::string ss) {
 	std::cout << "Writing " << ss << std::endl;
 	
-	typedef itk::ImageFileWriter< ImageType > WriterType;
+	typedef itk::ImageFileWriter< ImageType2D > WriterType;
 	WriterType::Pointer writer = WriterType::New();
 	
 	std::stringstream ss2;
-	ss2 << count << "_" << ss;
+	ss2 << writeCount++ << "_" << ss;
+	writer->SetFileName(ss2.str().c_str());
+	writer->SetInput(image);
+	writer->GlobalWarningDisplayOff();
+
+	try  
+	{
+		writer->Update();
+	} catch( itk::ExceptionObject & excp ) 
+	{
+		std::cerr << excp << std::endl;
+	}
+}
+
+void WriteITK(ByteImageType::Pointer image, std::string ss) {
+	std::cout << "Writing " << ss << std::endl;
+	
+	typedef itk::ImageFileWriter< ByteImageType > WriterType;
+	WriterType::Pointer writer = WriterType::New();
+	
+	std::stringstream ss2;
+	ss2 << writeCount++ << "_" << ss;
 	writer->SetFileName(ss2.str().c_str());
 	writer->SetInput(image);
 	writer->GlobalWarningDisplayOff();
@@ -253,4 +410,25 @@ void WriteITK(ImageType::Pointer image, std::string ss, int count) {
 	{
 		std::cerr << excp << std::endl;
 	} 
+}
+
+*/
+
+void DoStuff( ImageType2D::Pointer image, LinearIteratorType imageIt) {
+
+	//WriteITK < ImageType2D > (image, "pre_slice.hdr");
+
+	for (imageIt.GoToBegin(); !imageIt.IsAtEnd(); imageIt.NextLine() )
+	{
+		imageIt.GoToBeginOfLine();
+
+		while( ! imageIt.IsAtEndOfLine() )
+		{
+			imageIt.Set( 100 );
+			++imageIt;
+		}
+	}
+
+	//WriteITK < ImageType2D > (image, "post_slice.hdr");
+	
 }
