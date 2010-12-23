@@ -46,12 +46,11 @@ int main( int argc, char *argv[] )
 	ITK ConnectedThresholdImageFilter
 */
 	
-
 	// Setup IO
-	typedef itk::ImageFileReader< ImageType3D > ReaderType;
+	typedef itk::ImageFileReader< ImageType2D > ReaderType;
 	ReaderType::Pointer reader = ReaderType::New();
 
-	reader->SetFileName( "C:/ImageData/mr10_092_13p.i0344.hdr" );
+	reader->SetFileName( "C:/ImageData/mr10_092_13p.i0344_53.hdr" );
 
 	try
 	{
@@ -62,144 +61,15 @@ int main( int argc, char *argv[] )
 		std::cerr << excep << std::endl;
 	}
 
-	ImageType3D::Pointer input = reader->GetOutput();
-	InputSliceIteratorType inputIt( input, input->GetLargestPossibleRegion() );
-
-	// Setup 2D region from 3D input
-	ImageType2D::RegionType region;
-	ImageType2D::RegionType::SizeType size;
-	ImageType2D::RegionType::IndexType index;
-
-	ImageType3D::RegionType requestedRegion = input->GetRequestedRegion();
-
-	index[ 0 ] = requestedRegion.GetIndex( 0 );
-	index[ 1 ] = requestedRegion.GetIndex( 1 );
-	size[ 0 ] = requestedRegion.GetSize()[ 0 ];
-	size[ 1 ] = requestedRegion.GetSize()[ 1 ];
-
-	region.SetSize( size );
-	region.SetIndex( index );
-
-	// Create input 2D slice image and iterator
-	ImageType2D::Pointer inputSlice = ImageType2D::New();
-	inputSlice->SetRegions( region );
-	inputSlice->Allocate();
-
-	LinearIteratorType inputSliceIt( inputSlice, inputSlice->GetLargestPossibleRegion() );
-
-	// Create output 2D slice image and iterator
-	ScalarImageType2D::Pointer outputSlice = ScalarImageType2D::New();
-	outputSlice->SetRegions( region );
-	outputSlice->Allocate();
-
-	LinearByteIteratorType outputSliceIt( outputSlice, outputSlice->GetLargestPossibleRegion() );
-
-	// Setup 3D output image
-	ScalarImageType3D::Pointer output = ScalarImageType3D::New();
-	output->SetRegions( requestedRegion );
-	output->Allocate();
-	OutputSliceIteratorType outputIt( output, output->GetLargestPossibleRegion() );
-
-	// Setup directions
-	inputIt.SetFirstDirection( 0 );
-	inputIt.SetSecondDirection( 1 );
-
-	outputIt.SetFirstDirection( 0 );
-	outputIt.SetSecondDirection( 1 );
-
-	inputIt.GoToBegin();
-	outputIt.GoToBegin();
-
-	int sliceCounter = 1;
+	ImageType2D::Pointer input = reader->GetOutput();
 	
-	while ( !inputIt.IsAtEnd() )	// Iterate by slice
-	{
-		inputSliceIt.GoToBegin();
-		
-		// Make 2D slice
-		while ( !inputIt.IsAtEndOfSlice() )
-		{
-			while ( !inputIt.IsAtEndOfLine() )
-			{
-				inputSliceIt.Set( inputIt.Get() );
+	ScalarImageType2D::Pointer output = ScalarImageType2D::New();
+	output->SetRegions( input->GetLargestPossibleRegion() );
+	output->Allocate();
 
-				++inputSliceIt;
-				++inputIt;
-			}
+	FindColon( input, output);
 
-			inputIt.NextLine();
-		}
-
-		inputIt.NextSlice();
-
-		//WriteITK <ImageType2D> ( inputSlice, "inputSlice.hdr" );
-
-		// Perform operations on slice
-		FindColon( inputSlice, outputSlice);
-
-		//WriteITK <ScalarImageType2D> (outputSlice, "outputSlice.hdr");
-
-		// Place 2D slice in 3D output
-		outputSliceIt.GoToBegin();
-
-		while ( !outputIt.IsAtEndOfSlice() )
-		{
-			while ( !outputIt.IsAtEndOfLine() )
-			{
-
-				outputIt.Set( outputSliceIt.Get() );
-				
-				++outputSliceIt;
-				++outputIt;
-			}
-
-			outputIt.NextLine();
-		}
-		
-		outputIt.NextSlice();
-		std::cout << "slice: " << sliceCounter++ << std::endl;
-	}
-
-	WriteITK <ScalarImageType3D> (output, "segmentedColonFinal3D_Closing1.hdr");
-
-	std::cout << "Starting connected component" << std::endl;
-
-	// Run connected component filter in 3D to remove erroneous regions
-	typedef itk::ConnectedComponentImageFilter< ScalarImageType3D, ScalarImageType3D > ConnectedComponentFilterType;
-	ConnectedComponentFilterType::Pointer connectedComponentFilter = ConnectedComponentFilterType::New();
-	connectedComponentFilter->SetInput( output );
-
-	try
-	{
-		connectedComponentFilter->Update();
-	} catch ( itk::ExceptionObject &excep )
-	{
-		std::cerr << "Exception caught !" << std::endl;
-		std::cerr << excep << std::endl;
-	}
-
-	WriteITK <ScalarImageType3D> ( connectedComponentFilter->GetOutput(), "connectedComponent.hdr");
-
-	std::cout << "Starting relabel connecting component" << std::endl;
-
-	// Relabel components
-	typedef itk::RelabelComponentImageFilter< ScalarImageType3D, ScalarImageType3D > RelabelFilterType;
-	RelabelFilterType::Pointer relabelFilter = RelabelFilterType::New();
-	relabelFilter->SetInput( connectedComponentFilter->GetOutput() );
-	//relabelFilter->SetMinimumObjectSize( 20 );
-
-	try
-	{
-		relabelFilter->Update();
-	} catch ( itk::ExceptionObject &excep )
-	{
-		std::cerr << "Exception caught !" << std::endl;
-		std::cerr << excep << std::endl;
-	}
-
-	ScalarImageType3D::Pointer relabel = relabelFilter->GetOutput();
-
-	WriteITK <ScalarImageType3D> ( relabel, "relabel.hdr");
+	WriteITK <ScalarImageType2D> (output, "output.hdr");
 
 	system("PAUSE");
 	return 0;
@@ -232,7 +102,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 		else							{ thresholdIt.Set( 0 ); }
 	}
 
-	//WriteITK( threshold, "thresholdInput.hdr");
+	WriteITK <ScalarImageType2D> ( threshold, "thresholdInput.hdr");
 
 	// Run connected component filter to remove background
 	typedef itk::ConnectedComponentImageFilter< ScalarImageType2D, ScalarImageType2D > ConnectedComponentFilterType;
@@ -248,7 +118,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 		std::cerr << excep << std::endl;
 	}
 
-	//WriteITK( connectedComponentFilter->GetOutput(), "connectedComponent.hdr");
+	WriteITK <ScalarImageType2D> ( connectedComponentFilter->GetOutput(), "connectedComponent.hdr");
 
 	// Relabel components
 	typedef itk::RelabelComponentImageFilter< ScalarImageType2D, ScalarImageType2D > RelabelFilterType;
@@ -268,7 +138,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	ScalarImageType2D::Pointer relabel = relabelFilter->GetOutput();
 	ByteIteratorType relabelIt( relabel, fullRegion );
 
-	//WriteITK( relabel, "relabelComponent.hdr");
+	WriteITK <ScalarImageType2D> ( relabel, "relabelComponent.hdr");
 
 	// Remove outer air and colon tissue labels by thresholding >= 2
 	for (	relabelIt.GoToBegin(), thresholdIt.GoToBegin();
@@ -282,7 +152,35 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	ScalarImageType2D::Pointer airMask = threshold;
 	ByteIteratorType airMaskIt( airMask, airMask->GetLargestPossibleRegion() );
 
-	//WriteITK( airMask, "relabelComponentTreshold.hdr");
+	WriteITK <ScalarImageType2D> ( airMask, "relabelComponentTreshold.hdr");
+
+	// Dilate air mask
+
+	// Create binary ball structuring element
+	typedef itk::BinaryBallStructuringElement< ScalarImageType2D::PixelType, 2> StructuringElementType;
+	StructuringElementType structuringElement;
+    structuringElement.SetRadius( 4 );
+    structuringElement.CreateStructuringElement();
+
+	typedef itk::BinaryDilateImageFilter< ScalarImageType2D, ScalarImageType2D, StructuringElementType > BinaryDilateFilterType;
+	BinaryDilateFilterType::Pointer dilateFilter = BinaryDilateFilterType::New();
+	dilateFilter->SetInput( airMask );
+	dilateFilter->SetKernel( structuringElement );
+	dilateFilter->SetDilateValue( 1 );
+
+	try
+	{
+		dilateFilter->Update();
+	} catch ( itk::ExceptionObject &excep )
+	{
+		std::cerr << "Exception caught !" << std::endl;
+		std::cerr << excep << std::endl;
+	}
+
+	ScalarImageType2D::Pointer dilateAir = dilateFilter->GetOutput();
+	ByteIteratorType dilateAirIt( dilateAir, dilateAir->GetLargestPossibleRegion() );
+
+	WriteITK <ScalarImageType2D> ( dilateAir , "airMaskDilated.hdr");
 
 	// Apply region growing filter to detect tagged regions >= 200
 	typedef itk::ConnectedThresholdImageFilter< ImageType2D, ScalarImageType2D > ConnectedThresholdFilterType;
@@ -291,7 +189,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	//connectedThresholdFilter->SetUpper( max );
 	connectedThresholdFilter->SetReplaceValue( 1 );
 
-	// Find edges of air
+	// Set edges of air as seeds
 	for (	airMaskIt.GoToBegin(), inputIt.GoToBegin();
 			!airMaskIt.IsAtEnd() && !inputIt.IsAtEnd();
 			++airMaskIt, ++inputIt		) 
@@ -311,9 +209,9 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 
 									if ( airMask->GetPixel( neighborIndex ) == 0 )	// if neighbor is non-air
 									{
-										//airMask->SetPixel( index, 2); // mark as edge
+										airMask->SetPixel( index, 2); // mark as edge
 										connectedThresholdFilter->AddSeed( index );
-										inputIt.Set(200);
+										//inputIt.Set(200);
 									}
 								//}
 							//}
@@ -323,6 +221,24 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 			}
 		}
 	}
+
+	// Set dilated air region as seed in connected threshold
+
+	for (	airMaskIt.GoToBegin(), dilateAirIt.GoToBegin();
+			!airMaskIt.IsAtEnd() && !dilateAirIt.IsAtEnd();
+			++airMaskIt, ++dilateAirIt		) 
+	{	
+		if ( airMaskIt.Get() == 0 && dilateAirIt.Get() == 1 ) 
+		{
+			ImageType2D::IndexType index = airMaskIt.GetIndex();
+			airMask->SetPixel( index , 2);
+			connectedThresholdFilter->AddSeed( index );
+		}
+	}
+
+	// Write updated air mask to show region growing seeds
+	WriteITK <ScalarImageType2D> ( airMask, "airMaskWithSeeds.hdr");
+
 
 	connectedThresholdFilter->SetInput( input );
 
@@ -338,7 +254,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	ScalarImageType2D::Pointer tagged = connectedThresholdFilter->GetOutput();
 	ByteIteratorType taggedIt( tagged, tagged->GetLargestPossibleRegion() );
 
-	//WriteITK( tagged, "taggedRegionGrowing.hdr");
+	WriteITK <ScalarImageType2D> ( tagged, "taggedRegionGrowing.hdr");
 
 	// Combine air and tagged regions into one image
 	for (	airMaskIt.GoToBegin(), taggedIt.GoToBegin();
@@ -351,16 +267,10 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 		}
 	}
 
-	//WriteITK <ScalarImageType2D> ( tagged, "segmentedColon.hdr");
+	WriteITK <ScalarImageType2D> ( tagged, "segmentedColon.hdr");
 
 	// Dilate
 	
-	// Create binary ball structuring element
-	typedef itk::BinaryBallStructuringElement< ScalarImageType2D::PixelType, 2> StructuringElementType;
-	StructuringElementType structuringElement;
-    structuringElement.SetRadius( 1 );
-    structuringElement.CreateStructuringElement();
-
 	/*
 	typedef itk::BinaryDilateImageFilter< ScalarImageType2D, ScalarImageType2D, StructuringElementType > BinaryDilateFilterType;
 	BinaryDilateFilterType::Pointer dilateFilter = BinaryDilateFilterType::New();
@@ -391,10 +301,16 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	}
 	*/
 
+	// Create binary ball structuring element
+	//typedef itk::BinaryBallStructuringElement< ScalarImageType2D::PixelType, 2> StructuringElementType;
+	StructuringElementType structuringElement2;
+    structuringElement2.SetRadius( 1 );
+    structuringElement2.CreateStructuringElement();
+
 	typedef itk::BinaryMorphologicalClosingImageFilter< ScalarImageType2D, ScalarImageType2D, StructuringElementType > BinaryClosingFilterType;
 	BinaryClosingFilterType::Pointer closingFilter = BinaryClosingFilterType::New();
 	closingFilter->SetInput( tagged );
-	closingFilter->SetKernel( structuringElement );
+	closingFilter->SetKernel( structuringElement2 );
 	closingFilter->SetForegroundValue( 1 );
 
 	try {
@@ -408,7 +324,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	ScalarImageType2D::Pointer closed = closingFilter->GetOutput();
 	ByteIteratorType closedIt( closed, closed->GetLargestPossibleRegion() );
 
-	//WriteITK <ScalarImageType2D> ( closed, "segmentedColonClosed.hdr");
+	WriteITK <ScalarImageType2D> ( closed, "segmentedColonClosedBallRadius1.hdr");
 
 	// Copy contents to output slice
 	for (	outputIt.GoToBegin(), closedIt.GoToBegin();
@@ -446,70 +362,4 @@ void WriteITK (typename T::Pointer image , std::string ss )
 	}
 
 
-}
-
-
-/*
-
-void WriteITK(ImageType2D::Pointer image, std::string ss) {
-	std::cout << "Writing " << ss << std::endl;
-	
-	typedef itk::ImageFileWriter< ImageType2D > WriterType;
-	WriterType::Pointer writer = WriterType::New();
-	
-	std::stringstream ss2;
-	ss2 << writeCount++ << "_" << ss;
-	writer->SetFileName(ss2.str().c_str());
-	writer->SetInput(image);
-	writer->GlobalWarningDisplayOff();
-
-	try  
-	{
-		writer->Update();
-	} catch( itk::ExceptionObject & excp ) 
-	{
-		std::cerr << excp << std::endl;
-	}
-}
-
-void WriteITK(ScalarImageType2D::Pointer image, std::string ss) {
-	std::cout << "Writing " << ss << std::endl;
-	
-	typedef itk::ImageFileWriter< ScalarImageType2D > WriterType;
-	WriterType::Pointer writer = WriterType::New();
-	
-	std::stringstream ss2;
-	ss2 << writeCount++ << "_" << ss;
-	writer->SetFileName(ss2.str().c_str());
-	writer->SetInput(image);
-	writer->GlobalWarningDisplayOff();
-
-	try  
-	{
-		writer->Update();
-	} catch( itk::ExceptionObject & excp ) 
-	{
-		std::cerr << excp << std::endl;
-	} 
-}
-
-*/
-
-void DoStuff( ImageType2D::Pointer image, LinearIteratorType imageIt) {
-
-	//WriteITK < ImageType2D > (image, "pre_slice.hdr");
-
-	for (imageIt.GoToBegin(); !imageIt.IsAtEnd(); imageIt.NextLine() )
-	{
-		imageIt.GoToBeginOfLine();
-
-		while( ! imageIt.IsAtEndOfLine() )
-		{
-			imageIt.Set( 100 );
-			++imageIt;
-		}
-	}
-
-	//WriteITK < ImageType2D > (image, "post_slice.hdr");
-	
 }
