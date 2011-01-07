@@ -2,26 +2,18 @@
 #include "itkImageFileReader.h"
 #include "itkImageFileWriter.h"
 #include "itkImageRegionIteratorWithIndex.h"
-#include "itkConnectedThresholdImageFilter.h"
-#include "itkMinimumMaximumImageCalculator.h"
-#include <iostream>
 #include <itkConnectedComponentImageFilter.h>
 #include <itkRelabelComponentImageFilter.h>
-#include <itkBinaryDilateImageFilter.h>
-#include <itkBinaryBallStructuringElement.h>
-#include <itkRegionalMaximaImageFilter.h>
-#include <itkImageSliceIteratorWithIndex.h>
-#include <itkImageLinearIteratorWithIndex.h>
-#include <itkBinaryMorphologicalClosingImageFilter.h>
+#include <iostream>
+ 
+typedef short													PixelType;
+typedef int														ScalarPixelType;
 
-typedef float													PixelType;
-typedef int											ScalarPixelType;
-
-typedef itk::Image< PixelType, 2 >								ImageType2D;
+typedef itk::Image< PixelType, 2 >								ImageType2D; 
 typedef itk::Image< PixelType, 3 >								ImageType3D;
 
-typedef itk::Image< ScalarPixelType, 2 >							ScalarImageType2D;
-typedef itk::Image< ScalarPixelType, 3 >							ScalarImageType3D;	
+typedef itk::Image< ScalarPixelType, 2 >						ScalarImageType2D;
+typedef itk::Image< ScalarPixelType, 3 >						ScalarImageType3D;	
 
 typedef itk::ImageRegionIteratorWithIndex< ImageType3D >		IteratorType;
 typedef itk::ImageRegionIteratorWithIndex< ScalarImageType3D >	ScalarIteratorType;
@@ -29,16 +21,15 @@ typedef itk::ImageRegionIteratorWithIndex< ScalarImageType3D >	ScalarIteratorTyp
 
 template< class T >
 void WriteITK ( typename T::Pointer image , std::string ss );
-
 int writeCount = 1;
 
-int main() 
-{ 
+int main()
+{
 	// Setup IO
-	typedef itk::ImageFileReader< ScalarImageType3D > ReaderType;
+	typedef itk::ImageFileReader< ImageType3D > ReaderType;
 	ReaderType::Pointer reader = ReaderType::New();
 
-	reader->SetFileName( "C:/ImageData/closedThreshold.hdr" );
+	reader->SetFileName( "C:/ImageData/mr10_092_13p.i0344.hdr" );
 
 	try
 	{
@@ -49,13 +40,12 @@ int main()
 		std::cerr << excep << std::endl;
 	}
 
-	ScalarImageType3D::Pointer input = reader->GetOutput();
-	ScalarIteratorType inputIt( input, input->GetLargestPossibleRegion() );
+	ImageType3D::Pointer input = reader->GetOutput();
+	IteratorType inputIt( input, input->GetLargestPossibleRegion() );
 
-	WriteITK <ScalarImageType3D> (input, "input.hdr");
+	WriteITK <ImageType3D> (input, "input.hdr");
 
-	/*
-	// Threshold to detect air lumen
+	// Threshold to detect bone
 	ScalarImageType3D::Pointer threshold = ScalarImageType3D::New();
 	threshold->SetRegions( input->GetLargestPossibleRegion() );
 	threshold->Allocate();
@@ -65,43 +55,16 @@ int main()
 			!inputIt.IsAtEnd() && !thresholdIt.IsAtEnd();
 			++inputIt, ++thresholdIt		) 
 	{
-		if ( inputIt.Get() <= -600 || inputIt.Get() >= 200 )	{ thresholdIt.Set( 1 ); }
+		if ( inputIt.Get() >= 200 )		{ thresholdIt.Set( 1 ); }
 		else							{ thresholdIt.Set( 0 ); }
 	}
 
-	WriteITK <ScalarImageType3D> ( threshold, "thresholdInput.hdr");
+	WriteITK <ScalarImageType3D> (threshold, "boneThreshold.hdr");
 
-	// Create binary ball structuring element
-	typedef itk::BinaryBallStructuringElement< ScalarImageType3D::PixelType, 3> StructuringElementType;
-	StructuringElementType structuringElement;
-    structuringElement.SetRadius( 4 );
-    structuringElement.CreateStructuringElement();
-
-	typedef itk::BinaryMorphologicalClosingImageFilter< ScalarImageType3D, ScalarImageType3D, StructuringElementType > BinaryClosingFilterType;
-	BinaryClosingFilterType::Pointer closingFilter = BinaryClosingFilterType::New();
-	closingFilter->SetInput( threshold );
-	closingFilter->SetKernel( structuringElement );
-	closingFilter->SetForegroundValue( 1 );
-
-	try {
-		closingFilter->Update();
-	} catch ( itk::ExceptionObject &excep )
-	{
-		std::cerr << "Exception caught !" << std::endl;
-		std::cerr << excep << std::endl;
-	}
-
-	ScalarImageType3D::Pointer closed = closingFilter->GetOutput();
-	WriteITK <ScalarImageType3D> ( closed, "closedThreshold.hdr");
-
-	*/
-
-	std::cout << "Starting connected component" << std::endl;
-
-	// Run connected component filter to remove background
+	// Run connected component filter to remove bone
 	typedef itk::ConnectedComponentImageFilter< ScalarImageType3D, ScalarImageType3D > ConnectedComponentFilterType;
 	ConnectedComponentFilterType::Pointer connectedComponentFilter = ConnectedComponentFilterType::New();
-	connectedComponentFilter->SetInput( input );
+	connectedComponentFilter->SetInput( threshold );
 
 	try
 	{
@@ -121,6 +84,9 @@ int main()
 	RelabelFilterType::Pointer relabelFilter = RelabelFilterType::New();
 	relabelFilter->SetInput( connectedComponentFilter->GetOutput() );
 	relabelFilter->SetMinimumObjectSize( 3 );
+	std::cout << "Can run in place: " << relabelFilter->CanRunInPlace() << std::endl;
+	relabelFilter->InPlaceOn();
+
 
 	try
 	{
@@ -133,11 +99,13 @@ int main()
 
 	ScalarImageType3D::Pointer relabel = relabelFilter->GetOutput();
 
-	WriteITK <ScalarImageType3D> ( relabel, "relabel_min3.hdr");
+	WriteITK <ScalarImageType3D> ( relabel, "relabel.hdr");
+	WriteITK <ScalarImageType3D> ( connectedComponentFilter->GetOutput(), "connectedComponentAgain.hdr");
 
-	system("pause"); 
-	return 0; 
-} 
+
+	system("pause");
+	return 0;
+}
 
 template< class T >
 void WriteITK (typename T::Pointer image , std::string ss )
@@ -157,7 +125,7 @@ void WriteITK (typename T::Pointer image , std::string ss )
 	{
 		writer->Update();
 	}
-	catch( itk::ExceptionObject & err) 
+	catch( itk::ExceptionObject & err )
 	{
 		std::cerr << "Exception caught: " << err << std::endl;
 		return;

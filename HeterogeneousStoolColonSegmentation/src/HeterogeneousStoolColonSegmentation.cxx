@@ -160,7 +160,7 @@ int main( int argc, char *argv[] )
 		std::cout << "slice: " << sliceCounter++ << std::endl;
 	}
 
-	WriteITK <ScalarImageType3D> (output, "segmentedColonFinal3D_Closing1.hdr");
+	WriteITK <ScalarImageType3D> (output, "segmentedColonFinal3D_Closing4.hdr");
 
 	std::cout << "Starting connected component" << std::endl;
 
@@ -178,7 +178,7 @@ int main( int argc, char *argv[] )
 		std::cerr << excep << std::endl;
 	}
 
-	WriteITK <ScalarImageType3D> ( connectedComponentFilter->GetOutput(), "connectedComponent.hdr");
+	WriteITK <ScalarImageType3D> ( connectedComponentFilter->GetOutput(), "connectedComponent_Closing4.hdr");
 
 	std::cout << "Starting relabel connecting component" << std::endl;
 
@@ -199,7 +199,7 @@ int main( int argc, char *argv[] )
 
 	ScalarImageType3D::Pointer relabel = relabelFilter->GetOutput();
 
-	WriteITK <ScalarImageType3D> ( relabel, "relabel.hdr");
+	WriteITK <ScalarImageType3D> ( relabel, "relabel_Closing4.hdr");
 
 	system("PAUSE");
 	return 0;
@@ -233,6 +233,8 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	}
 
 	//WriteITK <ScalarImageType2D> ( threshold, "thresholdInput.hdr");
+
+	/*
 
 	// Run connected component filter to remove background
 	typedef itk::ConnectedComponentImageFilter< ScalarImageType2D, ScalarImageType2D > ConnectedComponentFilterType;
@@ -278,6 +280,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 		if ( relabelIt.Get() >= 2 )		{ thresholdIt.Set( 1 ); }
 		else							{ thresholdIt.Set( 0 ); }
 	}
+	*/
 
 	ScalarImageType2D::Pointer airMask = threshold;
 	ByteIteratorType airMaskIt( airMask, airMask->GetLargestPossibleRegion() );
@@ -434,7 +437,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	// Create binary ball structuring element
 	//typedef itk::BinaryBallStructuringElement< ScalarImageType2D::PixelType, 2> StructuringElementType;
 	StructuringElementType structuringElement2;
-    structuringElement2.SetRadius( 1 );
+    structuringElement2.SetRadius( 4 );
     structuringElement2.CreateStructuringElement();
 
 	typedef itk::BinaryMorphologicalClosingImageFilter< ScalarImageType2D, ScalarImageType2D, StructuringElementType > BinaryClosingFilterType;
@@ -455,6 +458,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	ByteIteratorType closedIt( closed, closed->GetLargestPossibleRegion() );
 
 	//WriteITK <ScalarImageType2D> ( closed, "segmentedColonClosedBallRadius1.hdr");
+	
 
 	// Copy contents to output slice
 	for (	outputIt.GoToBegin(), closedIt.GoToBegin();
@@ -463,6 +467,17 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	{
 		outputIt.Set( closedIt.Get() );
 	}
+
+	/*
+
+	// Copy contents to output slice
+	for (	outputIt.GoToBegin(), taggedIt.GoToBegin();
+			!outputIt.IsAtEnd() && !taggedIt.IsAtEnd();
+			++outputIt, ++taggedIt		) 
+	{
+		outputIt.Set( taggedIt.Get() );
+	}
+	*/
 }
 
 
