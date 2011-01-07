@@ -232,7 +232,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 		else							{ thresholdIt.Set( 0 ); }
 	}
 
-	//WriteITK( threshold, "thresholdInput.hdr");
+	//WriteITK <ScalarImageType2D> ( threshold, "thresholdInput.hdr");
 
 	// Run connected component filter to remove background
 	typedef itk::ConnectedComponentImageFilter< ScalarImageType2D, ScalarImageType2D > ConnectedComponentFilterType;
@@ -248,7 +248,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 		std::cerr << excep << std::endl;
 	}
 
-	//WriteITK( connectedComponentFilter->GetOutput(), "connectedComponent.hdr");
+	//WriteITK <ScalarImageType2D> ( connectedComponentFilter->GetOutput(), "connectedComponent.hdr");
 
 	// Relabel components
 	typedef itk::RelabelComponentImageFilter< ScalarImageType2D, ScalarImageType2D > RelabelFilterType;
@@ -268,7 +268,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	ScalarImageType2D::Pointer relabel = relabelFilter->GetOutput();
 	ByteIteratorType relabelIt( relabel, fullRegion );
 
-	//WriteITK( relabel, "relabelComponent.hdr");
+	//WriteITK <ScalarImageType2D> ( relabel, "relabelComponent.hdr");
 
 	// Remove outer air and colon tissue labels by thresholding >= 2
 	for (	relabelIt.GoToBegin(), thresholdIt.GoToBegin();
@@ -282,7 +282,35 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	ScalarImageType2D::Pointer airMask = threshold;
 	ByteIteratorType airMaskIt( airMask, airMask->GetLargestPossibleRegion() );
 
-	//WriteITK( airMask, "relabelComponentTreshold.hdr");
+	//WriteITK <ScalarImageType2D> ( airMask, "relabelComponentTreshold.hdr");
+
+	// Dilate air mask
+
+	// Create binary ball structuring element
+	typedef itk::BinaryBallStructuringElement< ScalarImageType2D::PixelType, 2> StructuringElementType;
+	StructuringElementType structuringElement;
+    structuringElement.SetRadius( 4 );
+    structuringElement.CreateStructuringElement();
+
+	typedef itk::BinaryDilateImageFilter< ScalarImageType2D, ScalarImageType2D, StructuringElementType > BinaryDilateFilterType;
+	BinaryDilateFilterType::Pointer dilateFilter = BinaryDilateFilterType::New();
+	dilateFilter->SetInput( airMask );
+	dilateFilter->SetKernel( structuringElement );
+	dilateFilter->SetDilateValue( 1 );
+
+	try
+	{
+		dilateFilter->Update();
+	} catch ( itk::ExceptionObject &excep )
+	{
+		std::cerr << "Exception caught !" << std::endl;
+		std::cerr << excep << std::endl;
+	}
+
+	ScalarImageType2D::Pointer dilateAir = dilateFilter->GetOutput();
+	ByteIteratorType dilateAirIt( dilateAir, dilateAir->GetLargestPossibleRegion() );
+
+	//WriteITK <ScalarImageType2D> ( dilateAir , "airMaskDilated.hdr");
 
 	// Apply region growing filter to detect tagged regions >= 200
 	typedef itk::ConnectedThresholdImageFilter< ImageType2D, ScalarImageType2D > ConnectedThresholdFilterType;
@@ -291,7 +319,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	//connectedThresholdFilter->SetUpper( max );
 	connectedThresholdFilter->SetReplaceValue( 1 );
 
-	// Find edges of air
+	// Set edges of air as seeds
 	for (	airMaskIt.GoToBegin(), inputIt.GoToBegin();
 			!airMaskIt.IsAtEnd() && !inputIt.IsAtEnd();
 			++airMaskIt, ++inputIt		) 
@@ -311,9 +339,9 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 
 									if ( airMask->GetPixel( neighborIndex ) == 0 )	// if neighbor is non-air
 									{
-										//airMask->SetPixel( index, 2); // mark as edge
+										airMask->SetPixel( index, 2); // mark as edge
 										connectedThresholdFilter->AddSeed( index );
-										inputIt.Set(200);
+										//inputIt.Set(200);
 									}
 								//}
 							//}
@@ -323,6 +351,24 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 			}
 		}
 	}
+
+	// Set dilated air region as seed in connected threshold
+
+	for (	airMaskIt.GoToBegin(), dilateAirIt.GoToBegin();
+			!airMaskIt.IsAtEnd() && !dilateAirIt.IsAtEnd();
+			++airMaskIt, ++dilateAirIt		) 
+	{	
+		if ( airMaskIt.Get() == 0 && dilateAirIt.Get() == 1 ) 
+		{
+			ImageType2D::IndexType index = airMaskIt.GetIndex();
+			airMask->SetPixel( index , 2);
+			connectedThresholdFilter->AddSeed( index );
+		}
+	}
+
+	// Write updated air mask to show region growing seeds
+	//WriteITK <ScalarImageType2D> ( airMask, "airMaskWithSeeds.hdr");
+
 
 	connectedThresholdFilter->SetInput( input );
 
@@ -338,7 +384,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	ScalarImageType2D::Pointer tagged = connectedThresholdFilter->GetOutput();
 	ByteIteratorType taggedIt( tagged, tagged->GetLargestPossibleRegion() );
 
-	//WriteITK( tagged, "taggedRegionGrowing.hdr");
+	//WriteITK <ScalarImageType2D> ( tagged, "taggedRegionGrowing.hdr");
 
 	// Combine air and tagged regions into one image
 	for (	airMaskIt.GoToBegin(), taggedIt.GoToBegin();
@@ -355,12 +401,6 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 
 	// Dilate
 	
-	// Create binary ball structuring element
-	typedef itk::BinaryBallStructuringElement< ScalarImageType2D::PixelType, 2> StructuringElementType;
-	StructuringElementType structuringElement;
-    structuringElement.SetRadius( 1 );
-    structuringElement.CreateStructuringElement();
-
 	/*
 	typedef itk::BinaryDilateImageFilter< ScalarImageType2D, ScalarImageType2D, StructuringElementType > BinaryDilateFilterType;
 	BinaryDilateFilterType::Pointer dilateFilter = BinaryDilateFilterType::New();
@@ -391,10 +431,16 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	}
 	*/
 
+	// Create binary ball structuring element
+	//typedef itk::BinaryBallStructuringElement< ScalarImageType2D::PixelType, 2> StructuringElementType;
+	StructuringElementType structuringElement2;
+    structuringElement2.SetRadius( 1 );
+    structuringElement2.CreateStructuringElement();
+
 	typedef itk::BinaryMorphologicalClosingImageFilter< ScalarImageType2D, ScalarImageType2D, StructuringElementType > BinaryClosingFilterType;
 	BinaryClosingFilterType::Pointer closingFilter = BinaryClosingFilterType::New();
 	closingFilter->SetInput( tagged );
-	closingFilter->SetKernel( structuringElement );
+	closingFilter->SetKernel( structuringElement2 );
 	closingFilter->SetForegroundValue( 1 );
 
 	try {
@@ -408,7 +454,7 @@ void FindColon( ImageType2D::Pointer input, ScalarImageType2D::Pointer &output )
 	ScalarImageType2D::Pointer closed = closingFilter->GetOutput();
 	ByteIteratorType closedIt( closed, closed->GetLargestPossibleRegion() );
 
-	//WriteITK <ScalarImageType2D> ( closed, "segmentedColonClosed.hdr");
+	//WriteITK <ScalarImageType2D> ( closed, "segmentedColonClosedBallRadius1.hdr");
 
 	// Copy contents to output slice
 	for (	outputIt.GoToBegin(), closedIt.GoToBegin();

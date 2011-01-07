@@ -12,23 +12,19 @@
 #include <itkRegionalMaximaImageFilter.h>
 #include <itkImageSliceIteratorWithIndex.h>
 #include <itkImageLinearIteratorWithIndex.h>
+#include <itkBinaryMorphologicalClosingImageFilter.h>
 
 typedef float													PixelType;
-typedef unsigned char											BytePixelType;
+typedef int											ScalarPixelType;
 
 typedef itk::Image< PixelType, 2 >								ImageType2D;
 typedef itk::Image< PixelType, 3 >								ImageType3D;
 
-typedef itk::Image< BytePixelType, 2 >							ByteImageType2D;
-typedef itk::Image< BytePixelType, 3 >							ByteImageType3D;	
+typedef itk::Image< ScalarPixelType, 2 >							ScalarImageType2D;
+typedef itk::Image< ScalarPixelType, 3 >							ScalarImageType3D;	
 
-typedef itk::ImageLinearIteratorWithIndex< ImageType2D >		LinearIteratorType;
-typedef itk::ImageLinearIteratorWithIndex< ByteImageType2D >	LinearByteIteratorType;
-typedef itk::ImageRegionIteratorWithIndex< ImageType2D >		IteratorType;
-typedef itk::ImageRegionIteratorWithIndex< ByteImageType2D >	ByteIteratorType;
-
-typedef itk::ImageSliceIteratorWithIndex< ImageType3D >			InputSliceIteratorType;
-typedef itk::ImageSliceIteratorWithIndex< ByteImageType3D >		OutputSliceIteratorType;
+typedef itk::ImageRegionIteratorWithIndex< ImageType3D >		IteratorType;
+typedef itk::ImageRegionIteratorWithIndex< ScalarImageType3D >	ScalarIteratorType;
 
 
 template< class T >
@@ -39,10 +35,10 @@ int writeCount = 1;
 int main() 
 { 
 	// Setup IO
-	typedef itk::ImageFileReader< ByteImageType3D > ReaderType;
+	typedef itk::ImageFileReader< ImageType3D > ReaderType;
 	ReaderType::Pointer reader = ReaderType::New();
 
-	reader->SetFileName( "1_segmentedColonFinal3D_Closing1.hdr" );
+	reader->SetFileName( "C:/ImageData/mr10_092_13p.i0344.hdr" );
 
 	try
 	{
@@ -53,16 +49,57 @@ int main()
 		std::cerr << excep << std::endl;
 	}
 
-	//ByteImageType3D::Pointer segmentedColon = reader->GetOutput();
+	ImageType3D::Pointer input = reader->GetOutput();
+	IteratorType inputIt( input, input->GetLargestPossibleRegion() );
 
-	//WriteITK <ByteImageType3D> (segmentedColon, "input.hdr");
+	WriteITK <ImageType3D> (input, "input.hdr");
 
+	// Threshold to detect air lumen
+	ScalarImageType3D::Pointer threshold = ScalarImageType3D::New();
+	threshold->SetRegions( input->GetLargestPossibleRegion() );
+	threshold->Allocate();
+	ScalarIteratorType thresholdIt( threshold, input->GetLargestPossibleRegion() );
+
+	for (	inputIt.GoToBegin(), thresholdIt.GoToBegin();
+			!inputIt.IsAtEnd() && !thresholdIt.IsAtEnd();
+			++inputIt, ++thresholdIt		) 
+	{
+		if ( inputIt.Get() <= -600 || inputIt.Get() >= 200 )	{ thresholdIt.Set( 1 ); }
+		else							{ thresholdIt.Set( 0 ); }
+	}
+
+	WriteITK <ScalarImageType3D> ( threshold, "thresholdInput.hdr");
+
+	// Create binary ball structuring element
+	typedef itk::BinaryBallStructuringElement< ScalarImageType3D::PixelType, 3> StructuringElementType;
+	StructuringElementType structuringElement;
+    structuringElement.SetRadius( 4 );
+    structuringElement.CreateStructuringElement();
+
+	typedef itk::BinaryMorphologicalClosingImageFilter< ScalarImageType3D, ScalarImageType3D, StructuringElementType > BinaryClosingFilterType;
+	BinaryClosingFilterType::Pointer closingFilter = BinaryClosingFilterType::New();
+	closingFilter->SetInput( threshold );
+	closingFilter->SetKernel( structuringElement );
+	closingFilter->SetForegroundValue( 1 );
+
+	try {
+		closingFilter->Update();
+	} catch ( itk::ExceptionObject &excep )
+	{
+		std::cerr << "Exception caught !" << std::endl;
+		std::cerr << excep << std::endl;
+	}
+
+	ScalarImageType3D::Pointer closed = closingFilter->GetOutput();
+	WriteITK <ScalarImageType3D> ( closed, "closedThreshold.hdr");
+
+	/*
 	std::cout << "Starting connected component" << std::endl;
 
 	// Run connected component filter to remove background
-	typedef itk::ConnectedComponentImageFilter< ByteImageType3D, ByteImageType3D > ConnectedComponentFilterType;
+	typedef itk::ConnectedComponentImageFilter< ScalarImageType3D, ScalarImageType3D > ConnectedComponentFilterType;
 	ConnectedComponentFilterType::Pointer connectedComponentFilter = ConnectedComponentFilterType::New();
-	connectedComponentFilter->SetInput( reader->GetOutput() );
+	connectedComponentFilter->SetInput( threshold );
 
 	try
 	{
@@ -73,12 +110,12 @@ int main()
 		std::cerr << excep << std::endl;
 	}
 
-	WriteITK <ByteImageType3D> ( connectedComponentFilter->GetOutput(), "connectedComponent.hdr");
+	WriteITK <ScalarImageType3D> ( connectedComponentFilter->GetOutput(), "connectedComponent.hdr");
 
 	std::cout << "Starting relabel connecting component" << std::endl;
 
 	// Relabel components
-	typedef itk::RelabelComponentImageFilter< ByteImageType3D, ByteImageType3D > RelabelFilterType;
+	typedef itk::RelabelComponentImageFilter< ScalarImageType3D, ScalarImageType3D > RelabelFilterType;
 	RelabelFilterType::Pointer relabelFilter = RelabelFilterType::New();
 	relabelFilter->SetInput( connectedComponentFilter->GetOutput() );
 	//relabelFilter->SetMinimumObjectSize( 20 );
@@ -92,9 +129,10 @@ int main()
 		std::cerr << excep << std::endl;
 	}
 
-	ByteImageType3D::Pointer relabel = relabelFilter->GetOutput();
+	ScalarImageType3D::Pointer relabel = relabelFilter->GetOutput();
 
-	WriteITK <ByteImageType3D> ( relabel, "relabel.hdr");
+	WriteITK <ScalarImageType3D> ( relabel, "relabel.hdr");
+	*/
 
 	system("pause"); 
 	return 0; 
