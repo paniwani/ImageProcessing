@@ -1300,7 +1300,7 @@ ImageType::Pointer AllocateNewImage(ImageType::RegionType fullRegion) {
     newImage->SetLargestPossibleRegion( fullRegion );
     newImage->SetBufferedRegion( fullRegion );
     newImage->SetRequestedRegion( fullRegion );
-	newImage->Allocate();
+	newImage->Allocate();T:
     return newImage;
 }
 /*

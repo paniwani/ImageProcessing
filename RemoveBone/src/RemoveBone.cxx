@@ -83,10 +83,7 @@ int main()
 	typedef itk::RelabelComponentImageFilter< ScalarImageType3D, ScalarImageType3D > RelabelFilterType;
 	RelabelFilterType::Pointer relabelFilter = RelabelFilterType::New();
 	relabelFilter->SetInput( connectedComponentFilter->GetOutput() );
-	relabelFilter->SetMinimumObjectSize( 3 );
-	std::cout << "Can run in place: " << relabelFilter->CanRunInPlace() << std::endl;
-	relabelFilter->InPlaceOn();
-
+	relabelFilter->SetMinimumObjectSize( 300000 );
 
 	try
 	{
@@ -99,9 +96,18 @@ int main()
 
 	ScalarImageType3D::Pointer relabel = relabelFilter->GetOutput();
 
-	WriteITK <ScalarImageType3D> ( relabel, "relabel.hdr");
-	WriteITK <ScalarImageType3D> ( connectedComponentFilter->GetOutput(), "connectedComponentAgain.hdr");
+	std::cout << "Number of objects: " << relabelFilter->GetNumberOfObjects() << std::endl;
 
+	WriteITK <ScalarImageType3D> ( relabel, "relabel.hdr");
+
+	//// Threshold the relabel to only show top 10 components
+	//ScalarIteratorType relabelIt( relabel, input->GetLargestPossibleRegion() );
+	//for (	relabelIt.GoToBegin(); !relabelIt.IsAtEnd(); ++relabelIt ) 
+	//{
+	//	if ( relabelIt.Get() > 10 )		{ relabelIt.Set( 0 ); }
+	//}
+
+	//WriteITK <ScalarImageType3D> ( relabel, "relabelThreshold.hdr");
 
 	system("pause");
 	return 0;
