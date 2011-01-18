@@ -15,6 +15,8 @@
 #include <itkBinaryDilateImageFilter.h>
 #include <itkBinaryBallStructuringElement.h>
 #include <itkBinaryMedianImageFilter.h>
+#include <itkNeighborhoodIterator.h>
+#include <time.h>
  
 typedef short													PixelType;
 typedef int														ScalarPixelType;
@@ -27,6 +29,8 @@ typedef itk::Image< ScalarPixelType, 3 >						ScalarImageType3D;
 
 typedef itk::ImageRegionIteratorWithIndex< ImageType3D >		IteratorType;
 typedef itk::ImageRegionIteratorWithIndex< ScalarImageType3D >	ScalarIteratorType;
+
+typedef itk::NeighborhoodIterator< ScalarImageType3D > NeighborhoodIteratorType;
 
 
 template< class T >
@@ -52,22 +56,107 @@ int main()
 
 	ImageType3D::Pointer input = reader->GetOutput();
 	ImageType3D::RegionType region = input->GetLargestPossibleRegion();
+
+	ImageType3D::IndexType endIndex = region.GetIndex();
+	ImageType3D::IndexType startIndex = region.GetIndex();	
+	endIndex[0]+=(region.GetSize()[0]-1);
+	endIndex[1]+=(region.GetSize()[1]-1);
+	endIndex[2]+=(region.GetSize()[2]-1);
+
 	ScalarImageType3D::SizeType size = region.GetSize();
 	ImageType3D::SpacingType spacing = input->GetSpacing();
 	IteratorType inputIt( input, input->GetLargestPossibleRegion() );
+
 	WriteITK <ImageType3D> (input, "input.hdr");
 
 
-
-	/*// Test images
+	// Test images
 	typedef itk::ImageFileReader< ScalarImageType3D > ReaderType2;
 	ReaderType2::Pointer reader2 = ReaderType2::New();
-	reader2->SetFileName( "trial1data/4_airThresholdWithoutLungs.hdr" );
+	//reader2->SetFileName( "trial1data/4_airThresholdWithoutLungs.hdr" );
+	reader2->SetFileName( "C:/GitProjects/HeterogeneousStoolColonSegmentation2/build64-3.16.0/9_taggedAll.hdr" );
 	reader2->Update();
-	ScalarImageType3D::Pointer airThreshold = reader2->GetOutput();
-	airThreshold->SetSpacing( spacing );
+	ScalarImageType3D::Pointer test = reader2->GetOutput();
+	ScalarIteratorType testIt( test, region );
 
-	ReaderType2::Pointer reader3 = ReaderType2::New();
+	// Fast Dilate Test
+
+	/*NeighborhoodIteratorType::RadiusType radius;
+	radius.Fill(1);
+	NeighborhoodIteratorType nit( radius, test, test->GetLargestPossibleRegion() );*/
+
+	clock_t start = clock();
+
+	ScalarImageType3D::Pointer dilateTest = ScalarImageType3D::New();
+	dilateTest->SetRegions( region );
+	dilateTest->SetSpacing( spacing );
+	dilateTest->Allocate();
+	ScalarIteratorType dilateTestIt( dilateTest, region );
+
+	/*for (nit.GoToBegin(), dilateTestIt.GoToBegin();
+		!nit.IsAtEnd() && !dilateTestIt.IsAtEnd();
+		++nit, ++dilateTestIt ) {
+
+		dilateTestIt.Set( nit.GetCenterPixel() );
+
+		if ( nit.GetCenterPixel() == 1 ) { // white
+			for (int i = 0; i < nit.Size(); i++) {
+				if (nit.GetPixel(i) == 0) {	// black neighbor
+					ScalarImageType3D::IndexType neighbor = nit.GetIndex(i);
+
+					if ( neighbor[0]>=startIndex[0] && neighbor[0]<=endIndex[0] &&
+						 neighbor[1]>=startIndex[1] && neighbor[1]<=endIndex[1] &&
+						 neighbor[2]>=startIndex[2] && neighbor[2]<=endIndex[2] ) {	// within bounds
+					
+						//std::cout << nit.GetIndex() << std::endl;
+						//std::cout << nit.GetIndex(i) << std::endl;
+						dilateTest->SetPixel( neighbor , 1 );	// expand white pixels
+						break;
+					}
+				}
+			}
+		}
+	}*/
+
+	
+
+	
+	for (testIt.GoToBegin(), dilateTestIt.GoToBegin();
+		!testIt.IsAtEnd() && !dilateTestIt.IsAtEnd();
+		++testIt, ++dilateTestIt ) {
+			dilateTestIt.Set( testIt.Get() );
+
+			ScalarImageType3D::IndexType index = testIt.GetIndex();
+	
+			if ( testIt.Get() == 1 ) {
+				for(int i=-1;i<=1;i++) {
+					if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
+						for (int j=-1;j<=1;j++) {
+							if (index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
+								for (int k=-1;k<=1;k++) {
+									if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
+										
+										ScalarImageType3D::IndexType neighbor_index={index[0]+i,index[1]+j,index[2]+k};
+										if ( test->GetPixel(neighbor_index) == 0) {
+											dilateTest->SetPixel( neighbor_index, 1 );
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+	}
+
+	printf("Time elapsed: %f\n", ((double)clock() - start) / CLOCKS_PER_SEC);
+	WriteITK <ScalarImageType3D> (dilateTest, "test4.hdr");
+
+
+
+
+
+	/*ReaderType2::Pointer reader3 = ReaderType2::New();
 	reader3->SetFileName( "trial1data/7_stoolThresholdWithoutBone.hdr" );
 	reader3->Update();
 	ScalarImageType3D::Pointer stoolThreshold = reader3->GetOutput();
