@@ -32,6 +32,13 @@ typedef itk::ImageRegionIteratorWithIndex< ScalarImageType3D >	ScalarIteratorTyp
 
 typedef itk::NeighborhoodIterator< ScalarImageType3D > NeighborhoodIteratorType;
 
+typedef itk::ConnectedComponentImageFilter< ScalarImageType3D, ScalarImageType3D > ConnectedComponentFilterType;
+typedef itk::RelabelComponentImageFilter< ScalarImageType3D, ScalarImageType3D > RelabelFilterType;
+
+typedef itk::BinaryBallStructuringElement< ScalarImageType3D::PixelType, 3> StructuringElementType;
+typedef itk::BinaryDilateImageFilter< ScalarImageType3D, ScalarImageType3D, StructuringElementType > BinaryDilateFilterType;
+typedef itk::BinaryMedianImageFilter< ScalarImageType3D, ScalarImageType3D> BinaryMedianFilterType;
+
 
 template< class T >
 void WriteITK ( typename T::Pointer image , std::string ss );
@@ -39,6 +46,9 @@ int writeCount = 1;
 
 int main()
 {
+	// Start clock
+	//clock_t start = clock();
+
 	// Read input
 	typedef itk::ImageFileReader< ImageType3D > ReaderType;
 	ReaderType::Pointer reader = ReaderType::New();
@@ -74,16 +84,20 @@ int main()
 	typedef itk::ImageFileReader< ScalarImageType3D > ReaderType2;
 	ReaderType2::Pointer reader2 = ReaderType2::New();
 	//reader2->SetFileName( "trial1data/4_airThresholdWithoutLungs.hdr" );
-	reader2->SetFileName( "C:/GitProjects/HeterogeneousStoolColonSegmentation2/build64-3.16.0/9_taggedAll.hdr" );
+	reader2->SetFileName( "C:/GitProjects/HeterogeneousStoolColonSegmentation2/build64-3.16.0/8_stoolThresholdWithoutBoneSmoothed.hdr" );
 	reader2->Update();
-	ScalarImageType3D::Pointer test = reader2->GetOutput();
-	ScalarIteratorType testIt( test, region );
+	ScalarImageType3D::Pointer stoolThresholdSmooth = reader2->GetOutput();
+
+	ReaderType2::Pointer reader3 = ReaderType2::New();
+	reader3->SetFileName( "C:/GitProjects/HeterogeneousStoolColonSegmentation2/build64-3.16.0/4_airThresholdWithoutLungs.hdr" );
+	reader3->Update();
+	ScalarImageType3D::Pointer airThreshold = reader3->GetOutput();
 
 	// Fast Dilate Test
 
 	/*NeighborhoodIteratorType::RadiusType radius;
 	radius.Fill(1);
-	NeighborhoodIteratorType nit( radius, test, test->GetLargestPossibleRegion() );*/
+	NeighborhoodIteratorType nit( radius, test, test->GetLargestPossibleRegion() );
 
 	clock_t start = clock();
 
@@ -92,8 +106,8 @@ int main()
 	dilateTest->SetSpacing( spacing );
 	dilateTest->Allocate();
 	ScalarIteratorType dilateTestIt( dilateTest, region );
-
-	/*for (nit.GoToBegin(), dilateTestIt.GoToBegin();
+	
+	for (nit.GoToBegin(), dilateTestIt.GoToBegin();
 		!nit.IsAtEnd() && !dilateTestIt.IsAtEnd();
 		++nit, ++dilateTestIt ) {
 
@@ -118,8 +132,7 @@ int main()
 		}
 	}*/
 
-	
-
+	/*
 	
 	for (testIt.GoToBegin(), dilateTestIt.GoToBegin();
 		!testIt.IsAtEnd() && !dilateTestIt.IsAtEnd();
@@ -151,10 +164,7 @@ int main()
 
 	printf("Time elapsed: %f\n", ((double)clock() - start) / CLOCKS_PER_SEC);
 	WriteITK <ScalarImageType3D> (dilateTest, "test4.hdr");
-
-
-
-
+	*/
 
 	/*ReaderType2::Pointer reader3 = ReaderType2::New();
 	reader3->SetFileName( "trial1data/7_stoolThresholdWithoutBone.hdr" );
@@ -162,236 +172,359 @@ int main()
 	ScalarImageType3D::Pointer stoolThreshold = reader3->GetOutput();
 	stoolThreshold->SetSpacing( spacing );*/
 	
-	// Threshold to detect air
-	ScalarImageType3D::Pointer airThreshold = ScalarImageType3D::New();
-	airThreshold->SetRegions( region );
-	airThreshold->SetSpacing( spacing );
-	airThreshold->Allocate();
+	//// Threshold to detect air
+	//ScalarImageType3D::Pointer airThreshold = ScalarImageType3D::New();
+	//airThreshold->SetRegions( region );
+	//airThreshold->SetSpacing( spacing );
+	//airThreshold->Allocate();
 	ScalarIteratorType airThresholdIt( airThreshold, region );
 
-	for (	inputIt.GoToBegin(), airThresholdIt.GoToBegin();
-			!inputIt.IsAtEnd() && !airThresholdIt.IsAtEnd();
-			++inputIt, ++airThresholdIt		) 
-	{
-		if ( inputIt.Get() <= -600 )	{ airThresholdIt.Set( 1 ); }
-		else							{ airThresholdIt.Set( 0 ); }
-	}
+	//for (	inputIt.GoToBegin(), airThresholdIt.GoToBegin();
+	//		!inputIt.IsAtEnd() && !airThresholdIt.IsAtEnd();
+	//		++inputIt, ++airThresholdIt		) 
+	//{
+	//	if ( inputIt.Get() <= -600 )	{ airThresholdIt.Set( 1 ); }
+	//	else							{ airThresholdIt.Set( 0 ); }
+	//}
 
-	WriteITK <ScalarImageType3D> (airThreshold, "airThreshold.hdr");
+	//WriteITK <ScalarImageType3D> (airThreshold, "airThreshold.hdr");
 
-	// Run connected component filter to remove lungs from air threshold
-	typedef itk::ConnectedComponentImageFilter< ScalarImageType3D, ScalarImageType3D > ConnectedComponentFilterType;
-	ConnectedComponentFilterType::Pointer connectedComponentAirFilter = ConnectedComponentFilterType::New();
-	connectedComponentAirFilter->SetInput( airThreshold );
+	//// Run connected component filter to remove lungs from air threshold
+	//ConnectedComponentFilterType::Pointer connectedComponentAirFilter = ConnectedComponentFilterType::New();
+	//connectedComponentAirFilter->SetInput( airThreshold );
 
-	try
-	{
-		connectedComponentAirFilter->Update();
-	} catch ( itk::ExceptionObject &excep )
-	{
-		std::cerr << "Exception caught !" << std::endl;
-		std::cerr << excep << std::endl;
-	}
+	//try
+	//{
+	//	connectedComponentAirFilter->Update();
+	//} catch ( itk::ExceptionObject &excep )
+	//{
+	//	std::cerr << "Exception caught !" << std::endl;
+	//	std::cerr << excep << std::endl;
+	//}
 
-	//WriteITK <ScalarImageType3D> ( connectedComponentAirFilter->GetOutput(), "connectedComponentAir.hdr");
+	////WriteITK <ScalarImageType3D> ( connectedComponentAirFilter->GetOutput(), "connectedComponentAir.hdr");
 
-	// Relabel components
-	typedef itk::RelabelComponentImageFilter< ScalarImageType3D, ScalarImageType3D > RelabelFilterType;
-	RelabelFilterType::Pointer relabelAirFilter = RelabelFilterType::New();
-	relabelAirFilter->SetInput( connectedComponentAirFilter->GetOutput() );
-	relabelAirFilter->SetMinimumObjectSize( 5000 );
+	//// Relabel components
+	//RelabelFilterType::Pointer relabelAirFilter = RelabelFilterType::New();
+	//relabelAirFilter->SetInput( connectedComponentAirFilter->GetOutput() );
+	//relabelAirFilter->SetMinimumObjectSize( 5000 );
 
-	try
-	{
-		relabelAirFilter->Update();
-	} catch ( itk::ExceptionObject &excep )
-	{
-		std::cerr << "Exception caught !" << std::endl;
-		std::cerr << excep << std::endl;
-	}
+	//try
+	//{
+	//	relabelAirFilter->Update();
+	//} catch ( itk::ExceptionObject &excep )
+	//{
+	//	std::cerr << "Exception caught !" << std::endl;
+	//	std::cerr << excep << std::endl;
+	//}
 
-	ScalarImageType3D::Pointer relabelAir = relabelAirFilter->GetOutput();
+	//ScalarImageType3D::Pointer relabelAir = relabelAirFilter->GetOutput();
 
-	std::cout << "Number of objects: " << relabelAirFilter->GetNumberOfObjects() << std::endl;
+	//std::cout << "Number of objects: " << relabelAirFilter->GetNumberOfObjects() << std::endl;
 
-	WriteITK <ScalarImageType3D> ( relabelAir, "relabelAirThreshold.hdr");
-	
-	// Convert label image to label map
-	typedef unsigned long LabelType;	
-	typedef itk::ShapeLabelObject< LabelType, 3 > LabelObjectType;
-	typedef itk::LabelMap< LabelObjectType > LabelMapType;
+	//WriteITK <ScalarImageType3D> ( relabelAir, "relabelAirThreshold.hdr");
+	//
+	//// Convert label image to label map
+	//typedef unsigned long LabelType;	
+	//typedef itk::ShapeLabelObject< LabelType, 3 > LabelObjectType;
+	//typedef itk::LabelMap< LabelObjectType > LabelMapType;
 
-	typedef itk::LabelImageToShapeLabelMapFilter< ScalarImageType3D, LabelMapType > 	ConverterType;
-	ConverterType::Pointer converter = ConverterType::New();
-	//converter->SetInput( test );
-	converter->SetInput( relabelAir );
-	converter->Update();
-	LabelMapType::Pointer labelMap = converter->GetOutput();
+	//typedef itk::LabelImageToShapeLabelMapFilter< ScalarImageType3D, LabelMapType > 	ConverterType;
+	//ConverterType::Pointer converter = ConverterType::New();
+	//converter->SetInput( relabelAir );
+	//converter->Update();
+	//LabelMapType::Pointer labelMap = converter->GetOutput();
 
-	std::cout << "#\tPhysicalSize\tCentroid\tModifiedCentroid" << std::endl;
+	//std::cout << "#\tPhysicalSize\tCentroid\tModifiedCentroid" << std::endl;
 
-	// Find labels for lungs and store
-	std::vector< unsigned int > lungLabel;
+	//// Find labels for lungs and store
+	//std::vector< unsigned int > lungLabel;
 
-	for( unsigned int label=2; label<=labelMap->GetNumberOfLabelObjects(); label++ )	//ignore labels 0 and 1 (body and external air)
-	{
-		const LabelObjectType * lo = labelMap->GetLabelObject( label );
-		
-		float centroidX = lo->GetCentroid()[0] / spacing[0];
-		float centroidY = lo->GetCentroid()[1] / spacing[1];
-		float ps = lo->GetPhysicalSize();
-		std::cout << label << "\t" << lo->GetPhysicalSize() << "\t" << lo->GetCentroid() << "\t[" << centroidX << ", " << centroidY << "]\t";
+	//for( unsigned int label=2; label<=labelMap->GetNumberOfLabelObjects(); label++ )	//ignore labels 0 and 1 (body and external air)
+	//{
+	//	const LabelObjectType * lo = labelMap->GetLabelObject( label );
+	//	
+	//	float centroidX = lo->GetCentroid()[0] / spacing[0];
+	//	float centroidY = lo->GetCentroid()[1] / spacing[1];
+	//	float ps = lo->GetPhysicalSize();
+	//	std::cout << label << "\t" << lo->GetPhysicalSize() << "\t" << lo->GetCentroid() << "\t[" << centroidX << ", " << centroidY << "]\t";
 
-		if ( centroidY > size[1]/2 && ps > 100000) {
-			std::cout << "FOUND LUNG";
-			lungLabel.push_back( label );
-		}
+	//	if ( centroidY > size[1]/2 && ps > 100000) {
+	//		std::cout << "FOUND LUNG";
+	//		lungLabel.push_back( label );
+	//	}
 
-		std::cout << std::endl;
-	}
+	//	std::cout << std::endl;
+	//}
 
-	// Remove external air and lungs from air threshold
-	ScalarIteratorType relabelAirIt( relabelAir, region );
+	//// Remove external air and lungs from air threshold
+	//ScalarIteratorType relabelAirIt( relabelAir, region );
 
-	for (	relabelAirIt.GoToBegin(), airThresholdIt.GoToBegin();
-			!relabelAirIt.IsAtEnd() && !airThresholdIt.IsAtEnd();
-			++relabelAirIt, ++airThresholdIt		) 
-	{
-		if ( relabelAirIt.Get() == 1 )		{ airThresholdIt.Set( 0 ); }
+	//for (	relabelAirIt.GoToBegin(), airThresholdIt.GoToBegin();
+	//		!relabelAirIt.IsAtEnd() && !airThresholdIt.IsAtEnd();
+	//		++relabelAirIt, ++airThresholdIt		) 
+	//{
+	//	if ( relabelAirIt.Get() == 1 )		{ airThresholdIt.Set( 0 ); }
 
-		for (int i = 0; i < lungLabel.size() ; i++ ) {
-			if ( relabelAirIt.Get() == lungLabel[i] ) {
-				airThresholdIt.Set( 0 );
-			}
-		}
-	}
+	//	for (int i = 0; i < lungLabel.size() ; i++ ) {
+	//		if ( relabelAirIt.Get() == lungLabel[i] ) {
+	//			airThresholdIt.Set( 0 );
+	//		}
+	//	}
+	//}
 
-	WriteITK <ScalarImageType3D> (airThreshold, "airThresholdWithoutLungs.hdr");
+	//WriteITK <ScalarImageType3D> (airThreshold, "airThresholdWithoutLungs.hdr");
 
 
-	// Threshold to detect stool
-	ScalarImageType3D::Pointer stoolThreshold = ScalarImageType3D::New();
-	stoolThreshold->SetRegions( region );
-	stoolThreshold->Allocate();
-	ScalarIteratorType stoolThresholdIt( stoolThreshold, region );
+	//// Threshold to detect stool
+	//ScalarImageType3D::Pointer stoolThreshold = ScalarImageType3D::New();
+	//stoolThreshold->SetRegions( region );
+	//stoolThreshold->Allocate();
+	//ScalarIteratorType stoolThresholdIt( stoolThreshold, region );
 
-	for (	inputIt.GoToBegin(), stoolThresholdIt.GoToBegin();
-			!inputIt.IsAtEnd() && !stoolThresholdIt.IsAtEnd();
-			++inputIt, ++stoolThresholdIt		) 
-	{
-		if ( inputIt.Get() >= 200 )		{ stoolThresholdIt.Set( 1 ); }
-		else							{ stoolThresholdIt.Set( 0 ); }
-	}
+	//for (	inputIt.GoToBegin(), stoolThresholdIt.GoToBegin();
+	//		!inputIt.IsAtEnd() && !stoolThresholdIt.IsAtEnd();
+	//		++inputIt, ++stoolThresholdIt		) 
+	//{
+	//	if ( inputIt.Get() >= 200 )		{ stoolThresholdIt.Set( 1 ); }
+	//	else							{ stoolThresholdIt.Set( 0 ); }
+	//}
 
-	WriteITK <ScalarImageType3D> (stoolThreshold, "stoolThreshold.hdr");
+	//WriteITK <ScalarImageType3D> (stoolThreshold, "stoolThreshold.hdr");
 
-	// Run connected component filter to remove bone from stool threshold
-	ConnectedComponentFilterType::Pointer connectedComponentStoolFilter = ConnectedComponentFilterType::New();
-	connectedComponentStoolFilter->SetInput( stoolThreshold );
+	//// Run connected component filter to remove bone from stool threshold
+	//ConnectedComponentFilterType::Pointer connectedComponentStoolFilter = ConnectedComponentFilterType::New();
+	//connectedComponentStoolFilter->SetInput( stoolThreshold );
 
-	try
-	{
-		connectedComponentStoolFilter->Update();
-	} catch ( itk::ExceptionObject &excep )
-	{
-		std::cerr << "Exception caught !" << std::endl;
-		std::cerr << excep << std::endl;
-	}
+	//try
+	//{
+	//	connectedComponentStoolFilter->Update();
+	//} catch ( itk::ExceptionObject &excep )
+	//{
+	//	std::cerr << "Exception caught !" << std::endl;
+	//	std::cerr << excep << std::endl;
+	//}
 
-	//WriteITK <ScalarImageType3D> ( connectedComponentStoolFilter->GetOutput(), "connectedComponentStool.hdr");
+	////WriteITK <ScalarImageType3D> ( connectedComponentStoolFilter->GetOutput(), "connectedComponentStool.hdr");
 
-	// Relabel components
-	RelabelFilterType::Pointer relabelStoolFilter = RelabelFilterType::New();
-	relabelStoolFilter->SetInput( connectedComponentStoolFilter->GetOutput() );
-	relabelStoolFilter->SetMinimumObjectSize( 300000 );
+	//// Relabel components
+	//RelabelFilterType::Pointer relabelStoolFilter = RelabelFilterType::New();
+	//relabelStoolFilter->SetInput( connectedComponentStoolFilter->GetOutput() );
+	//relabelStoolFilter->SetMinimumObjectSize( 300000 );
 
-	try
-	{
-		relabelStoolFilter->Update();
-	} catch ( itk::ExceptionObject &excep )
-	{
-		std::cerr << "Exception caught !" << std::endl;
-		std::cerr << excep << std::endl;
-	}
+	//try
+	//{
+	//	relabelStoolFilter->Update();
+	//} catch ( itk::ExceptionObject &excep )
+	//{
+	//	std::cerr << "Exception caught !" << std::endl;
+	//	std::cerr << excep << std::endl;
+	//}
 
-	ScalarImageType3D::Pointer relabelStool = relabelStoolFilter->GetOutput();
+	//ScalarImageType3D::Pointer relabelStool = relabelStoolFilter->GetOutput();
 
-	std::cout << "Number of objects: " << relabelStoolFilter->GetNumberOfObjects() << std::endl;
+	//std::cout << "Number of objects: " << relabelStoolFilter->GetNumberOfObjects() << std::endl;
 
-	WriteITK <ScalarImageType3D> ( relabelStool, "relabelStoolThreshold.hdr");
+	//WriteITK <ScalarImageType3D> ( relabelStool, "relabelStoolThreshold.hdr");
 
-	// Remove bone from stool threshold
-	ScalarIteratorType relabelStoolIt( relabelStool, region );
-	for (	relabelStoolIt.GoToBegin(), stoolThresholdIt.GoToBegin();
-			!relabelStoolIt.IsAtEnd() && !stoolThresholdIt.IsAtEnd();
-			++relabelStoolIt, ++stoolThresholdIt		) 
-	{
-		if ( relabelStoolIt.Get() == 1 )		{ stoolThresholdIt.Set( 0 ); }
-	}
+	//// Remove bone from stool threshold
+	//ScalarIteratorType relabelStoolIt( relabelStool, region );
+	//for (	relabelStoolIt.GoToBegin(), stoolThresholdIt.GoToBegin();
+	//		!relabelStoolIt.IsAtEnd() && !stoolThresholdIt.IsAtEnd();
+	//		++relabelStoolIt, ++stoolThresholdIt		) 
+	//{
+	//	if ( relabelStoolIt.Get() == 1 )		{ stoolThresholdIt.Set( 0 ); }
+	//}
 
-	WriteITK <ScalarImageType3D> ( stoolThreshold, "stoolThresholdWithoutBone.hdr");
+	//WriteITK <ScalarImageType3D> ( stoolThreshold, "stoolThresholdWithoutBone.hdr");
 
-	// Remove noise from stool threshold image using mean filter
-	typedef itk::BinaryMedianImageFilter< ScalarImageType3D, ScalarImageType3D> BinaryMedianFilterType;
-	BinaryMedianFilterType::Pointer medianFilter = BinaryMedianFilterType::New();
-	
-	ScalarImageType3D::SizeType indexRadius;
-	indexRadius[0] = 1;
-	indexRadius[1] = 1;
-	indexRadius[2] = 1;
-	
-	medianFilter->SetRadius( indexRadius );
-	medianFilter->SetInput( stoolThreshold );
-	medianFilter->SetForegroundValue( 1 );
-	medianFilter->Update();
+	//// Remove noise from stool threshold image using median filter
+	//BinaryMedianFilterType::Pointer medianFilter = BinaryMedianFilterType::New();
+	//
+	//ScalarImageType3D::SizeType indexRadius;
+	//indexRadius[0] = 1;
+	//indexRadius[1] = 1;
+	//indexRadius[2] = 1;
+	//
+	//medianFilter->SetRadius( indexRadius );
+	//medianFilter->SetInput( stoolThreshold );
+	//medianFilter->SetForegroundValue( 1 );
+	//medianFilter->Update();
 
-	ScalarImageType3D::Pointer stoolThresholdSmooth = ScalarImageType3D::New();
-	stoolThresholdSmooth->SetRegions( region );
-	stoolThresholdSmooth->Allocate();
-	stoolThresholdSmooth = medianFilter->GetOutput();
+	//ScalarImageType3D::Pointer stoolThresholdSmooth = ScalarImageType3D::New();
+	//stoolThresholdSmooth->SetRegions( region );
+	//stoolThresholdSmooth->Allocate();
+	//stoolThresholdSmooth = medianFilter->GetOutput();
 	ScalarIteratorType stoolThresholdSmoothIt( stoolThresholdSmooth, region );
 
-	WriteITK <ScalarImageType3D> ( stoolThresholdSmooth, "stoolThresholdWithoutBoneSmoothed.hdr");
+	//WriteITK <ScalarImageType3D> ( stoolThresholdSmooth, "stoolThresholdWithoutBoneSmoothed.hdr");
 
-	// Add stool regions to air image
+	/*// Add air stool boundaries to air image if stool is nearby
+	ScalarImageType3D::Pointer airThresholdWithBoundaries = ScalarImageType3D::New();
+	airThresholdWithBoundaries->SetRegions( region );
+	airThresholdWithBoundaries->Allocate();
+	ScalarIteratorType airThresholdWithBoundariesIt( airThresholdWithBoundaries, region );
+
+	// Initialize air boundaries image to 0
+	for (	airThresholdWithBoundariesIt.GoToBegin(); !airThresholdWithBoundariesIt.IsAtEnd();	++airThresholdWithBoundariesIt) 
+	{
+		airThresholdWithBoundariesIt.Set( 0 );
+	}
+
 	for (	stoolThresholdSmoothIt.GoToBegin(), airThresholdIt.GoToBegin();
 			!stoolThresholdSmoothIt.IsAtEnd() && !airThresholdIt.IsAtEnd();
 			++stoolThresholdSmoothIt, ++airThresholdIt		) 
 	{
-		if ( stoolThresholdSmoothIt.Get() == 1 ) { airThresholdIt.Set( 1 ); }
+
+			ScalarImageType3D::IndexType index = airThresholdIt.GetIndex();
+	
+			if ( airThresholdIt.Get() == 1 ) {
+				for(int i=-1;i<=1;i++) {
+					if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
+						for (int j=-1;j<=1;j++) {
+							if (index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
+								for (int k=-1;k<=1;k++) {
+									if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
+										
+										ScalarImageType3D::IndexType neighbor_index={index[0]+i,index[1]+j,index[2]+k};
+										
+										if ( stoolThresholdSmooth->GetPixel(neighbor_index) == 1) {
+											airThresholdWithBoundaries->SetPixel( neighbor_index, 1 );
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
 	}
 
-	WriteITK <ScalarImageType3D> ( airThreshold, "taggedAll.hdr");
+	WriteITK <ScalarImageType3D> ( airThresholdWithBoundaries, "airWithStoolBoundaries_1.hdr");
+	*/
 
+	// Median filter on air
+	BinaryMedianFilterType::Pointer medianFilterAir = BinaryMedianFilterType::New();
+	
+	ScalarImageType3D::SizeType indexRadiusAir;
+	indexRadiusAir[0] = 1;
+	indexRadiusAir[1] = 1;
+	indexRadiusAir[2] = 1;
+	
+	medianFilterAir->SetRadius( indexRadiusAir );
+	medianFilterAir->SetInput( airThreshold );
+	medianFilterAir->SetForegroundValue( 1 );
+	medianFilterAir->Update();
+
+	ScalarImageType3D::Pointer airThresholdSmooth = ScalarImageType3D::New();
+	airThresholdSmooth->SetRegions( region );
+	airThresholdSmooth->Allocate();
+	airThresholdSmooth = medianFilterAir->GetOutput();
+	ScalarIteratorType airThresholdSmoothIt( airThresholdSmooth, region );
+
+	WriteITK <ScalarImageType3D> ( airThresholdSmooth, "airThresholdSmooth.hdr");
+
+	// Dilate Air
 	// Create binary ball structuring element
-	typedef itk::BinaryBallStructuringElement< ScalarImageType3D::PixelType, 3> StructuringElementType;
 	StructuringElementType structuringElement;
     structuringElement.SetRadius( 1 );
     structuringElement.CreateStructuringElement();
+	
+	BinaryDilateFilterType::Pointer dilateAirFilter = BinaryDilateFilterType::New();
+	dilateAirFilter->SetInput( airThresholdSmooth );
+	dilateAirFilter->SetKernel( structuringElement );
+	dilateAirFilter->SetDilateValue( 1 );
+	dilateAirFilter->Update();
 
-	// Dilate
-	typedef itk::BinaryDilateImageFilter< ScalarImageType3D, ScalarImageType3D, StructuringElementType > BinaryDilateFilterType;
-	BinaryDilateFilterType::Pointer dilateFilter = BinaryDilateFilterType::New();
-	dilateFilter->SetInput( airThreshold );
-	dilateFilter->SetKernel( structuringElement );
-	dilateFilter->SetDilateValue( 1 );
+	ScalarImageType3D::Pointer dilateAir = ScalarImageType3D::New();
+	dilateAir->SetRegions( region );
+	dilateAir->Allocate();
+	dilateAir = dilateAirFilter->GetOutput();
 
-	try
+	ScalarIteratorType dilateAirIt( dilateAir, region );
+
+	WriteITK <ScalarImageType3D> ( dilateAir, "dilateAir_1px.hdr");
+
+	// Add stool regions to air image
+	for (	stoolThresholdSmoothIt.GoToBegin(), dilateAirIt.GoToBegin();
+			!stoolThresholdSmoothIt.IsAtEnd() && !dilateAirIt.IsAtEnd();
+			++stoolThresholdSmoothIt, ++dilateAirIt) 
 	{
-		dilateFilter->Update();
-	} catch ( itk::ExceptionObject &excep )
-	{
-		std::cerr << "Exception caught !" << std::endl;
-		std::cerr << excep << std::endl;
+		if ( stoolThresholdSmoothIt.Get() == 1) { 
+			dilateAirIt.Set( 1 ); 
+		}
 	}
 
-	ScalarImageType3D::Pointer dilateAir = dilateFilter->GetOutput();
+	WriteITK <ScalarImageType3D> ( dilateAir, "taggedAll.hdr");
 
-	WriteITK <ScalarImageType3D> ( dilateAir , "airThresholdDilated_1.hdr");
+	/*// Add stool regions and air boundaries to air threshold image
+	for (	stoolThresholdSmoothIt.GoToBegin(), airThresholdIt.GoToBegin(), airThresholdWithBoundariesIt.GoToBegin();
+			!stoolThresholdSmoothIt.IsAtEnd() && !airThresholdIt.IsAtEnd() &&  !airThresholdWithBoundariesIt.IsAtEnd();
+			++stoolThresholdSmoothIt, ++airThresholdIt, ++airThresholdWithBoundariesIt	) 
+	{
+		if ( stoolThresholdSmoothIt.Get() == 1 || airThresholdWithBoundariesIt.Get() == 1) { 
+			airThresholdIt.Set( 1 ); 
+		}
+	}
+
+	WriteITK <ScalarImageType3D> ( airThreshold, "taggedAllWithBoundaries_post.hdr");
+	*/
+	
+	/*
+	// Dilate air and stool using 3x3x3 region
+	clock_t start = clock();
+
+	ScalarImageType3D::Pointer dilateAirStool = ScalarImageType3D::New();
+	dilateAirStool->SetRegions( region );
+	dilateAirStool->SetSpacing( spacing );
+	dilateAirStool->Allocate();
+	ScalarIteratorType dilateAirStoolIt( dilateAirStool, region );
+
+	// Copy image
+	for (dilateAirStoolIt.GoToBegin(), airThresholdIt.GoToBegin();
+		!dilateAirStoolIt.IsAtEnd() && !airThresholdIt.IsAtEnd();
+		++dilateAirStoolIt, ++airThresholdIt ) {
+		
+			dilateAirStoolIt.Set( airThresholdIt.Get() );
+	}
+
+	printf("Time elapsed: %f\n", ((double)clock() - start) / CLOCKS_PER_SEC);
+	start = clock();
+
+	// Dilate by 1 pixel in each dimension
+	for (dilateAirStoolIt.GoToBegin(); !dilateAirStoolIt.IsAtEnd(); ++dilateAirStoolIt ) {
+
+			ScalarImageType3D::IndexType index = dilateAirStoolIt.GetIndex();
+	
+			if ( dilateAirStoolIt.Get() == 1 ) {
+				for(int i=-1;i<=1;i++) {
+					if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
+						for (int j=-1;j<=1;j++) {
+							if (index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
+								for (int k=-1;k<=1;k++) {
+									if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
+										
+										ScalarImageType3D::IndexType neighbor_index={index[0]+i,index[1]+j,index[2]+k};
+										
+										if ( dilateAirStool->GetPixel(neighbor_index) == 0) {
+											dilateAirStool->SetPixel( neighbor_index, 1 );
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+	}
+
+	WriteITK <ScalarImageType3D> ( dilateAirStool , "airThresholdDilated_1_new.hdr");
+	printf("Time elapsed: %f\n", ((double)clock() - start) / CLOCKS_PER_SEC);
+	*/
 
 	// Run connected component to remove erroneus regions
 	ConnectedComponentFilterType::Pointer connectedComponentAirStoolFilter = ConnectedComponentFilterType::New();
-	connectedComponentAirStoolFilter->SetInput( airThreshold );
+	connectedComponentAirStoolFilter->SetInput( dilateAir );
 
 	try
 	{
@@ -426,7 +559,7 @@ int main()
 
 	// Remove erroneous regions
 	ScalarIteratorType relabelAirStoolIt( relabelAirStool, region );
-	ScalarIteratorType dilateAirIt( dilateAir, region );
+
 	for (	relabelAirStoolIt.GoToBegin(), dilateAirIt.GoToBegin();
 			!relabelAirStoolIt.IsAtEnd() && !dilateAirIt.IsAtEnd();
 			++relabelAirStoolIt, ++dilateAirIt		) 
@@ -434,7 +567,26 @@ int main()
 		if ( relabelAirStoolIt.Get() != 1 ) { dilateAirIt.Set( 0 ); }
 	}
 
-	WriteITK <ScalarImageType3D> ( dilateAir , "segmentedColon.hdr");
+	WriteITK <ScalarImageType3D> ( dilateAir , "colonClean.hdr");
+
+	clock_t start = clock();
+
+	// Create binary ball structuring element
+	StructuringElementType structuringElement2;
+    structuringElement2.SetRadius( 4 );
+    structuringElement2.CreateStructuringElement();
+
+	// Dilate
+	typedef itk::BinaryDilateImageFilter< ScalarImageType3D, ScalarImageType3D, StructuringElementType > BinaryDilateFilterType;
+	BinaryDilateFilterType::Pointer dilateFilter = BinaryDilateFilterType::New();
+	dilateFilter->SetInput( dilateAir );
+	dilateFilter->SetKernel( structuringElement2 );
+	dilateFilter->SetDilateValue( 1 );
+	dilateFilter->Update();
+
+	WriteITK <ScalarImageType3D> ( dilateFilter->GetOutput() , "segmentedColon_4px.hdr");
+
+	printf("Time elapsed: %f\n", ((double)clock() - start) / CLOCKS_PER_SEC);
 
 	system("pause");
 	return 0;
