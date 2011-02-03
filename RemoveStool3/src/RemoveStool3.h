@@ -26,9 +26,10 @@
 #include <itkSimpleContourExtractorImageFilter.h>
 #include <itkCurvesLevelSetImageFilter.h>
 #include <itkContinuousIndex.h>
-
-// Add regular expressions
-//#include "pcre.h"
+#include <itkConnectedComponentImageFilter.h>
+#include <itkBinaryShapeOpeningImageFilter.h>
+#include <itkLabelImageToShapeLabelMapFilter.h>
+#include <itkBinaryMedianImageFilter.h>
 
 // Outdated includes
 //#include "Typedef.h"
@@ -37,6 +38,8 @@
 //#include <NIH_Algo_TextureAnalysis.h>
 //#include <DynArray.h>
 
+// Regex
+#include <boost/xpressive/xpressive.hpp>
 
 #include <itkCastImageFilter.h>
 #include <itkGradientMagnitudeRecursiveGaussianImageFilter.h>
@@ -66,6 +69,10 @@ enum VoxelType {
 typedef float                                                               PixelType;
 typedef itk::ContinuousIndex< PixelType, 3 >								ContinuousIndexType;
 
+typedef unsigned long														LabelType;
+typedef itk::ShapeLabelObject< LabelType, 3 >								LabelObjectType;
+typedef itk::LabelMap< LabelObjectType >									LabelMapType;
+
 //CovariantVector Type
 typedef itk::CovariantVector<PixelType,3>                                   CovariantVectorType;
 typedef itk::Image<PixelType, 3>                                            ImageType;
@@ -74,6 +81,9 @@ typedef itk::Image<CovariantVectorType, 3>                                  Imag
 
 typedef itk::Image<BYTE, 3>													ByteImageType;
 typedef itk::ImageRegionIteratorWithIndex<ByteImageType>                    IteratorTypeByteWithIndex;
+
+typedef itk::Image<int, 3>													IntImageType;
+typedef itk::ImageRegionIteratorWithIndex<IntImageType>						IteratorTypeIntWithIndex;
 
 
 typedef itk::ImageRegionIterator<ImageVectorType>                           IteratorImageVectorType;
@@ -114,6 +124,11 @@ typedef itk::SimpleContourExtractorImageFilter<ImageType, ImageType>		SimpleCont
 
 //typedef itk::LocalRoughnessImageFilter<ImageType, ImageType>				LocalRoughnessImageFilterType;
 
+typedef itk::ConnectedComponentImageFilter<ByteImageType, IntImageType>		ConnectedComponentFilterType;
+typedef itk::BinaryShapeOpeningImageFilter<ByteImageType>					BinaryShapeOpeningFilterType;
+typedef itk::LabelImageToShapeLabelMapFilter< IntImageType, LabelMapType > 	LabelImageToShapeLabelMapFilterType;
+typedef itk::BinaryMedianImageFilter< ByteImageType, ByteImageType >		BinaryMedianFilterType;
+
 //Main Operation Function
 ImageType::Pointer RemoveStool(ImageType::Pointer input);
 VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, 
@@ -137,16 +152,29 @@ float AverageStoolAirDist(float Smax, float intensity[], float gradient_magnitud
 vnl_matrix<float> GetNeighbor(ImageVectorType::Pointer partialVector, ImageType::IndexType index);
 ByteImageType::Pointer AllocateNewByteImage(ImageType::RegionType fullRegion) ;
 
+vnl_vector<float> expectation(double Y, double mean[], double variance[], float weight[],  vnl_matrix<float> neighbor, float current_partial[], float gradient);
+vnl_vector<float> expectation(double Y, float mean[], float variance[], float weight[], float current_partial[]);
+void EMClassification(IteratorTypeFloat4WithIndex input_iter, IteratorTypeVoxelType voxel_type_iter, IteratorImageVectorType partialVector_iter,
+					  IteratorTypeByteWithIndex chamfer_colon_iter, IteratorTypeFloat4WithIndex temp_iter);
+	
+
 //New functions
-void OptimizeVoxelEdge(ImageType::Pointer input, IteratorTypeFloat4WithIndex inputIt, VoxelTypeImage::Pointer &voxelEdge, IteratorTypeVoxelType &voxelEdgeIt );
-void FindVoxelsByGradient(VoxelTypeImage::Pointer voxelEdge, ImageType::IndexType index, ImageType::IndexType startIndex, ImageType::IndexType endIndex, CovariantVectorType grad, int numOfVoxels, std::vector<ImageType::IndexType> &indexVector);
 double round(float d);
-bool MatchVoxels(std::string inputString, char * regex);
+void FindVoxelsByGradient(VoxelTypeImage::Pointer voxelEdge, ImageType::IndexType &index, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex, CovariantVectorType &grad, int numOfVoxels, std::vector<ImageType::IndexType> &indexVector);
+void FindVoxelsByGradient2(VoxelTypeImage::Pointer voxelEdge, ImageType::IndexType &index, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex, CovariantVectorType &grad, int numOfVoxels, std::vector<ImageType::IndexType> &indexVector);
+void OptimizeVoxelEdge(ImageType::Pointer input, IteratorTypeFloat4WithIndex inputIt, VoxelTypeImage::Pointer &voxelEdge, IteratorTypeVoxelType &voxelEdgeIt );
 void WriteITK(ImageType::Pointer image, std::string name);
 void WriteITK(ByteImageType::Pointer image, std::string name);
+void WriteITK(VoxelTypeImage::Pointer vimage, std::string name);
+void WriteITK(IntImageType::Pointer image, std::string name);
 void ReadITK(ImageType::Pointer &image, char * fileName);
+void ReadITK(VoxelTypeImage::Pointer &vimage, char * fileName);
+bool compareSizeOnBorder(LabelObjectType::Pointer a, LabelObjectType::Pointer b);	
+bool compareSize(LabelObjectType::Pointer a, LabelObjectType::Pointer b);
+int VoxelTypeToNum(VoxelType type);
 
 template <class T> int solveNormalizedCubic (T r, T s, T t, T x[3]);
 template <class T> int solveCubic (T a, T b, T c, T d, T x[3]);
 
 typedef unsigned char SSlice[512][512]; 
+
