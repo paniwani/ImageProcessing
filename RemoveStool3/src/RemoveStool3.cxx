@@ -14,16 +14,20 @@ int main(int argc, char * argv[])
 
 	std::cerr<<"Started"<<std::endl;
 
-	//set parameters for single material classification
-	Modified = false;
+	// Use parameter changes
+	Modified = true;
 
 	// Read input
 	ImageType::Pointer input = ImageType::New();
 	ReadITK(input, "C:/ImageData/mr10_092_13p.i0344_100-105.hdr");
-	WriteITK(input, "input.hdr");
 
 	// Set region
 	ImageType::RegionType fullRegion = input->GetLargestPossibleRegion();
+	ImageType::IndexType endIndex = fullRegion.GetIndex();
+	ImageType::IndexType startIndex = fullRegion.GetIndex();	
+	endIndex[0]+=(fullRegion.GetSize()[0]-1);
+	endIndex[1]+=(fullRegion.GetSize()[1]-1);
+	endIndex[2]+=(fullRegion.GetSize()[2]-1);
 
 	//declares a temporary storage of the image with the selected region
 	ImageType::Pointer input_temp = AllocateNewImage(fullRegion);
@@ -39,15 +43,12 @@ int main(int argc, char * argv[])
 	}
 
 	//Print out the sub region of the image, un modified
-	//WriteITK(input_temp,"input_temp.hdr");
+	WriteITK(input_temp,"input_temp.hdr");
 
 	//Creates an image to store the type of voxel for each voxel in the sub image
 	VoxelTypeImage::Pointer voxel_type = VoxelTypeImage::New();
 	voxel_type->SetRegions(fullRegion);
 	voxel_type->Allocate();
-
-	//ReadITK(voxel_type, "C:/ImageData/mr10_092_13p.i0344_100-105_voxel_edge.hdr");
-	//WriteITK(voxel_type, "voxel_input.hdr");
 
 	IteratorTypeVoxelType voxel_type_iter(voxel_type,fullRegion);
 
@@ -111,6 +112,23 @@ int main(int argc, char * argv[])
 
 	WriteITK(temp, "temp_stool.hdr");
 
+	/*// Use voting filter to fill in holes
+	HoleFillingFilterType::Pointer holeFilter = HoleFillingFilterType::New();
+	holeFilter->SetInput(temp);
+	ByteImageType::SizeType hole_radius;
+	hole_radius[0] = 1;
+	hole_radius[1] = 1;
+	hole_radius[2] = 1;
+	holeFilter->SetRadius(hole_radius);
+	holeFilter->SetBackgroundValue(0);
+	holeFilter->SetForegroundValue(1);
+	holeFilter->SetMajorityThreshold( 11 );
+	holeFilter->SetMaximumNumberOfIterations(1);
+	holeFilter->Update();
+	temp=holeFilter->GetOutput();
+	WriteITK(temp,"stool_voting_hole_filled_11.hdr");
+	*/
+
     StructuringElementType  structuringElement;
     structuringElement.SetRadius( 1 );  // .5
     structuringElement.CreateStructuringElement();
@@ -164,10 +182,8 @@ int main(int argc, char * argv[])
 
 	WriteITK(temp, "temp_tissue_closed.hdr");
 
-    ByteImageType::Pointer chamfer_colon=AllocateNewByteImage( fullRegion );
+	ByteImageType::Pointer chamfer_colon=AllocateNewByteImage( fullRegion );
 	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,fullRegion);
-
-	WriteITK(chamfer_colon, "chamfer_colon_test.hdr");
 
     // Updates Information after morphological operations
     for (chamfer_colon_iter.GoToBegin(), voxel_type_iter.GoToBegin(), temp_iter.GoToBegin();
@@ -259,12 +275,6 @@ int main(int argc, char * argv[])
 	// Distance map to air
 	WriteITK(chamfer_colon, "distance_map_to_air.hdr");
 
-	ImageType::IndexType endIndex = fullRegion.GetIndex();
-	ImageType::IndexType startIndex = fullRegion.GetIndex();	
-	endIndex[0]+=(fullRegion.GetSize()[0]-1);
-	endIndex[1]+=(fullRegion.GetSize()[1]-1);
-	endIndex[2]+=(fullRegion.GetSize()[2]-1);
-
 	chamfer_colon_iter.GoToBegin();
 	chamfer_colon_iter.Set(-1);	//first pixel == -1
 
@@ -281,43 +291,60 @@ int main(int argc, char * argv[])
 
 	WriteITK(chamfer_colon, "chamfer_colon_air_mask.hdr");
 
+	// Read chamfer colon
+	//ReadITK(chamfer_colon, "mr10_092_13p.i0344_100-105_chamfer_colon_air_mask.hdr");
+	//chamfer_colon_iter=IteratorTypeByteWithIndex(chamfer_colon,fullRegion);
+	//WriteITK(chamfer_colon,"chamfer_colon.hdr");
+	
+
 	//-------------------------------------------END SETUP-------------------------------------------------------
 
-	//-------------------------------------------BEGIN QR-----------------------------------------------------
+	//-------------------------------------------BEGIN QR--------------------------------------------------------
+
+	//ReadITK(voxel_type, "C:/ImageData/mr10_092_13p.i0344_100-105_voxel_edge_optimized.hdr");
+	//voxel_type_iter = IteratorTypeVoxelType(voxel_type,fullRegion);
+	//WriteITK(voxel_type, "voxel_input.hdr");
+
+	
 	
     // get cubic bspline image interpolation
     InterpolationType::Pointer input_interpolator = InterpolationType::New();
     input_interpolator->SetSplineOrder(3);
     input_interpolator->SetInputImage(input);
-	//Storage for Smax
-    ImageType::Pointer input_smax = AllocateNewImage(fullRegion);
-    IteratorTypeFloat4WithIndex input_smax_iter(input_smax,fullRegion);
+	// Storage for Smax
+	ImageType::Pointer input_smax = AllocateNewImage(fullRegion);
+
+	// Load smax
+	//ReadITK(input_smax, "mr10_092_13p.i0344_100-105_smax.hdr");
+	//WriteITK(input_smax, "smax.hdr");
+
+	IteratorTypeFloat4WithIndex input_smax_iter(input_smax,fullRegion);
 
 	std::cerr << "Running voxel edge classification..." << std::endl;
 
-	//Runs edge classification with 3 different increments
-    for (voxel_type_iter.GoToBegin(), input_smax_iter.GoToBegin(), temp_iter.GoToBegin(); 
-		!voxel_type_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !temp_iter.IsAtEnd(); 
-		++voxel_type_iter, ++input_smax_iter, ++temp_iter) {
-		if (voxel_type_iter.Get()==Unclassified) {
+	std::ofstream myfile;
+	myfile.open("gradient.txt");
+
+	//Runs edge classification with 3 different increments inside the colon only
+    for (voxel_type_iter.GoToBegin(), input_smax_iter.GoToBegin(), temp_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(); 
+		!voxel_type_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !temp_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd(); 
+		++voxel_type_iter, ++input_smax_iter, ++temp_iter, ++chamfer_colon_iter) {
+		
+		if (chamfer_colon_iter.Get() == 1 && voxel_type_iter.Get()==Unclassified) {
+			
 			//Initialization
 			ImageType::IndexType voxel_index = voxel_type_iter.GetIndex();
 			float temp_threshold=-1;
 			VoxelType temp_type = Unclassified;
-			//+/- 1.5, +/-1.0
-			VoxelEdgeClassification(&temp_threshold,&temp_type,1.5,1.0,
-				input_interpolator,input_smax_iter,voxel_index);
-			//+/- 1.0, +/-0.5
-			VoxelEdgeClassification(&temp_threshold,&temp_type,1.0,0.5,
-				input_interpolator,input_smax_iter,voxel_index);
-			//+/- .6, +/-.3
-			VoxelEdgeClassification(&temp_threshold,&temp_type,0.6,0.3,
-				input_interpolator,input_smax_iter,voxel_index);
-			//std::cerr<<"result: "<<temp_type<<" "<<temp_threshold<<std::endl;
+			VoxelEdgeClassification(&temp_threshold,&temp_type,1.5,1.0,input_interpolator,input_smax_iter,voxel_index);
+			VoxelEdgeClassification(&temp_threshold,&temp_type,1.0,0.5,input_interpolator,input_smax_iter,voxel_index);
+			VoxelEdgeClassification(&temp_threshold,&temp_type,0.6,0.3,input_interpolator,input_smax_iter,voxel_index);
 
 			voxel_type_iter.Set(temp_type);
 		}
     }
+
+	myfile.close();
 
 	std::cerr<<"Done Edge"<<std::endl;
 
@@ -333,7 +360,86 @@ int main(int argc, char * argv[])
 	// Deletes the Interpolators
 	input_interpolator.~SmartPointer();
 
-	// Find thin stool regions (Carston 2.3.6)
+	// Find thin stool regions [Carston 2.3.6]
+	ByteImageType::Pointer chamfer_from_stool_involvement=AllocateNewByteImage(fullRegion);
+	IteratorTypeByteWithIndex chamfer_from_stool_involvement_iter(chamfer_from_stool_involvement,fullRegion);
+
+	for(voxel_type_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin(); 
+		!voxel_type_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd(); 
+		++voxel_type_iter, ++chamfer_from_stool_involvement_iter) 
+    {
+		if (voxel_type_iter.Get()==Stool || voxel_type_iter.Get()==TissueStool || voxel_type_iter.Get()==StoolAir) {
+			chamfer_from_stool_involvement_iter.Set(0);     //stool
+		} else {
+			chamfer_from_stool_involvement_iter.Set(1);     //non stool is the object
+		}
+	}
+
+	WriteITK(chamfer_from_stool_involvement,"non_stool_mask.hdr");
+
+	chamfer_filter = ChamferDistanceFilterType::New();
+	chamfer_filter->SetInput(chamfer_from_stool_involvement);
+	int weights[3]={3,4,5};	//3d distance weight recommended by julian
+	chamfer_filter->SetWeights(weights, weights+3);
+	chamfer_filter->SetDistanceFromObject(true);
+	chamfer_filter->Update();
+	chamfer_from_stool_involvement=chamfer_filter->GetOutput();
+	chamfer_from_stool_involvement_iter = IteratorTypeByteWithIndex(chamfer_from_stool_involvement,fullRegion);
+	chamfer_filter.~SmartPointer();
+
+	WriteITK(chamfer_from_stool_involvement, "non_stool_distance.hdr");
+
+	// Find thin stool voxels <=8 and no neighbors >=8
+	int chamfercutoff = 8;
+	int thinStoolCount = 0;
+
+	for(voxel_type_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin();
+		!voxel_type_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd(); 
+		++voxel_type_iter, ++chamfer_from_stool_involvement_iter) 
+    {
+		
+		if (chamfer_from_stool_involvement_iter.Get() <= chamfercutoff && chamfer_from_stool_involvement_iter.Get() > 0)
+		{
+			ImageType::IndexType index = chamfer_from_stool_involvement_iter.GetIndex();
+
+			bool thinNeighbors = true;
+
+			for(int i=-1;i<=1; i++) {
+				if (thinNeighbors && index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
+					for (int j=-1;j<=1 && thinNeighbors; j++) {
+						if (thinNeighbors && index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
+							for (int k=-1;k<=1; k++) {
+								if (thinNeighbors && index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
+									
+									ImageType::IndexType neighbor_index={index[0]+i,index[1]+j,index[2]+k};
+									
+									if (chamfer_from_stool_involvement->GetPixel(neighbor_index) >= chamfercutoff) {
+										thinNeighbors = false;
+									}
+								
+								}
+							}
+						}
+					}
+				}
+			}
+
+			if (thinNeighbors)
+			{
+				voxel_type_iter.Set(ThinStool);
+				thinStoolCount++;
+			}
+		}
+	}
+
+	std::cout << "Number of thin stool voxels: " << thinStoolCount << std::endl;
+
+	WriteITK(voxel_type,"voxel_type_thinstool.hdr");
+
+
+
+
+
 
 
 
@@ -343,81 +449,81 @@ int main(int argc, char * argv[])
 
 	//-------------------------------------------BEGIN PARTIAL VOLUME COMP----------------------------------
 	
-	std::cerr<<"Compute partial volumes "<<std::endl;
-    //0: ps
-    //1: pt
-    //2: pa
-    ImageType::Pointer partialVolume = AllocateNewImage(fullRegion);
-    IteratorTypeFloat4WithIndex partialVolume_iter(partialVolume,fullRegion);
-	//bool random=true;
+	//std::cerr<<"Compute partial volumes "<<std::endl;
+ //   //0: ps
+ //   //1: pt
+ //   //2: pa
+ //   ImageType::Pointer partialVolume = AllocateNewImage(fullRegion);
+ //   IteratorTypeFloat4WithIndex partialVolume_iter(partialVolume,fullRegion);
+	////bool random=true;
 
-	ByteImageType::Pointer chamfer_from_stool_involvement=AllocateNewByteImage(fullRegion);
-	IteratorTypeByteWithIndex chamfer_from_stool_involvement_iter(chamfer_from_stool_involvement,fullRegion);
-	
-	std::cerr << "Partial volume computation..." << std::endl;
-	//Sets the partial volumes
-    for(voxel_type_iter.GoToBegin(), input_iter.GoToBegin(), partialVolume_iter.GoToBegin(), input_smax_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin();
-        !voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd() && !partialVolume_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd();
-        ++voxel_type_iter, ++input_iter, ++partialVolume_iter, ++input_smax_iter, ++chamfer_from_stool_involvement_iter) 
-    {
-		//prepares information for chamfer stool calculation
-		if (voxel_type_iter.Get()==Stool || voxel_type_iter.Get()==TissueStool || voxel_type_iter.Get()==StoolAir) {
-			chamfer_from_stool_involvement_iter.Set(1);     //stool
-		} else {
-			chamfer_from_stool_involvement_iter.Set(0);     //non stool is the object
-		}
-		partialVolume_iter.Set(0);
-		float value=0;
-        switch(voxel_type_iter.Get()) {
-			case Tissue:
-				partialVolume_iter.Set(1.0);
-				break;
-			case Stool:
-			case Air:
-				partialVolume_iter.Set(0.0);
-				break;
-            case TissueAir:
-				//std::cerr<<"TA reached"<<std::endl;
-				
-				//partialVolume_iter.Set(1.0);	
-				value = 1.0+(input_iter.Get()-1024)/1000;
-				if (value<=1 && value>=0) {
-					partialVolume_iter.Set(value);
-					std::cout << "Set partial volume correctly!" << std::endl;
-				} else if (value<0) {
-					partialVolume_iter.Set(0);	
-				} else {
-					partialVolume_iter.Set(1);	
-				}
-                break;
-            case TissueStool:
-					value=1.0-(input_iter.Get())/(input_smax_iter.Get());
-					if (value<=1 && value>=0) {
-						partialVolume_iter.Set(value);
-					} else if (value<0) {
-						partialVolume_iter.Set(0);	
-					} else {
-						partialVolume_iter.Set(1);	
-					}
+	//ByteImageType::Pointer chamfer_from_stool_involvement=AllocateNewByteImage(fullRegion);
+	//IteratorTypeByteWithIndex chamfer_from_stool_involvement_iter(chamfer_from_stool_involvement,fullRegion);
+	//
+	//std::cerr << "Partial volume computation..." << std::endl;
+	////Sets the partial volumes
+ //   for(voxel_type_iter.GoToBegin(), input_iter.GoToBegin(), partialVolume_iter.GoToBegin(), input_smax_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin();
+ //       !voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd() && !partialVolume_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd();
+ //       ++voxel_type_iter, ++input_iter, ++partialVolume_iter, ++input_smax_iter, ++chamfer_from_stool_involvement_iter) 
+ //   {
+	//	//prepares information for chamfer stool calculation
+	//	if (voxel_type_iter.Get()==Stool || voxel_type_iter.Get()==TissueStool || voxel_type_iter.Get()==StoolAir) {
+	//		chamfer_from_stool_involvement_iter.Set(1);     //stool
+	//	} else {
+	//		chamfer_from_stool_involvement_iter.Set(0);     //non stool is the object
+	//	}
+	//	partialVolume_iter.Set(0);
+	//	float value=0;
+ //       switch(voxel_type_iter.Get()) {
+	//		case Tissue:
+	//			partialVolume_iter.Set(1.0);
+	//			break;
+	//		case Stool:
+	//		case Air:
+	//			partialVolume_iter.Set(0.0);
+	//			break;
+ //           case TissueAir:
+	//			//std::cerr<<"TA reached"<<std::endl;
+	//			
+	//			//partialVolume_iter.Set(1.0);	
+	//			value = 1.0+(input_iter.Get()-1024)/1000;
+	//			if (value<=1 && value>=0) {
+	//				partialVolume_iter.Set(value);
+	//				std::cout << "Set partial volume correctly!" << std::endl;
+	//			} else if (value<0) {
+	//				partialVolume_iter.Set(0);	
+	//			} else {
+	//				partialVolume_iter.Set(1);	
+	//			}
+ //               break;
+ //           case TissueStool:
+	//				value=1.0-(input_iter.Get())/(input_smax_iter.Get());
+	//				if (value<=1 && value>=0) {
+	//					partialVolume_iter.Set(value);
+	//				} else if (value<0) {
+	//					partialVolume_iter.Set(0);	
+	//				} else {
+	//					partialVolume_iter.Set(1);	
+	//				}
 
-					////special case when there is nothing really to fit
-					//if (input_smax_iter.Get()-input_iter.Get()<50 && input_iter.Get()-1024<500) {
-					//	partialVolume_iter.Set(1);	
-					//}
-                break;
-            case StoolAir:
-                partialVolume_iter.Set(0);
-                break;
-        }
-		if (-partialVolume_iter.Get()==std::numeric_limits<float>::infinity()) {
-			//std::cerr<<partialVolume_iter.GetIndex()[0]<<" "<<partialVolume_iter.GetIndex()[1]<<" "<<partialVolume_iter.GetIndex()[2]<<std::endl;
-		}
-    }
+	//				////special case when there is nothing really to fit
+	//				//if (input_smax_iter.Get()-input_iter.Get()<50 && input_iter.Get()-1024<500) {
+	//				//	partialVolume_iter.Set(1);	
+	//				//}
+ //               break;
+ //           case StoolAir:
+ //               partialVolume_iter.Set(0);
+ //               break;
+ //       }
+	//	if (-partialVolume_iter.Get()==std::numeric_limits<float>::infinity()) {
+	//		//std::cerr<<partialVolume_iter.GetIndex()[0]<<" "<<partialVolume_iter.GetIndex()[1]<<" "<<partialVolume_iter.GetIndex()[2]<<std::endl;
+	//	}
+ //   }
 
-	input_smax.~SmartPointer();
+	//input_smax.~SmartPointer();
 
-	//Write out partial volume
-	WriteITK(partialVolume,"tissue_partial_one.hdr");
+	////Write out partial volume
+	//WriteITK(partialVolume,"tissue_partial_one.hdr");
 
 	////Write out unmodified image
 	//WriteITK(chamfer_from_stool_involvement,"chamfer_from_stool_input.hdr");
@@ -1014,6 +1120,11 @@ void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2,
                                       ImageType::IndexType index) 
 
 {
+
+	//if (index[0] == 90 && index[1] == 512-274 && index[2] == 2) {
+	//	std::cout<<"stop"<<std::endl;
+	//}
+
 	ImageType::RegionType fullRegion = input_interpolator->GetInputImage()->GetLargestPossibleRegion();
     InterpolationType::ContinuousIndexType offset_index;
     offset_index[0]=index[0];
@@ -1022,7 +1133,21 @@ void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2,
 	ImageType::IndexType endIndex = input_interpolator->GetEndIndex();
 	ImageType::IndexType startIndex = input_interpolator->GetStartIndex();
     InterpolationType::CovariantVectorType gradient = input_interpolator->EvaluateDerivativeAtContinuousIndex(offset_index);
-    gradient.Normalize();
+    
+	double norm = gradient.GetNorm();
+	if (norm>0)
+	{
+		for(int i=0; i<3;i++)
+		{
+			gradient[i] /= norm;
+
+			if ( fabs( gradient[i] ) < 1E-5 )
+				gradient[i] = 0;
+		}
+	} 
+
+	//myfile << "index: (" << index[0] << " " << 512-index[1] << " " << index[2] << ") grad: (" << gradient[0] << " " << -gradient[1] << " " << gradient[2] << ")\n";
+
     //stores the intensity
     float temp_intensity[5];
     float temp_gradient_magnitude[5];
@@ -1061,7 +1186,7 @@ void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2,
 	stool_tissue_Smax=ComputeSmax(temp_intensity,temp_gradient_magnitude, 5);
 	stool_air_Smax=Stool_Air_ComputeSmax(temp_intensity,temp_gradient_magnitude, 5);
     float distanceTS=AverageTissueStoolDist(stool_tissue_Smax, temp_intensity,temp_gradient_magnitude);
-	float distanceSA=1.2*AverageStoolAirDist(stool_air_Smax, temp_intensity,temp_gradient_magnitude);
+	float distanceSA=AverageStoolAirDist(stool_air_Smax, temp_intensity,temp_gradient_magnitude);
 	float max_gradient =0;
 	
 	for (int i=0;i<5;i++) {
@@ -1077,6 +1202,8 @@ void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2,
 
 
 	float distanceTA=AverageTissueAirDist(temp_intensity,temp_gradient_magnitude);
+
+	
 
 	/*bool containPositive=false;
 	bool containNegative=false;
@@ -1139,13 +1266,13 @@ void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2,
 }
 float Stool_Air_ComputeSmax(float intensity[], float gradient_magnitude[], int size) {
 	//std::cerr<<"Value ";
-	float intensity2[7];
+	float intensity2[5];
 	for (int i=0;i<size;i++) {
-		intensity2[i]=intensity[i]+1024;
+		intensity2[i]=intensity[i]+1000;
 	//	std::cerr<<intensity2[i]<<" ";
 	}
 	//std::cerr<<std::endl;
-	return ComputeSmax(intensity2,gradient_magnitude, size)-1024;
+	return ComputeSmax(intensity2,gradient_magnitude, size)-1000;
 }
 float ComputeSmax(float intensity[], float gradient_magnitude[], int size) {
 	double Smax =0;
@@ -1176,11 +1303,19 @@ float ComputeSmaxFit(float intensity[], float gradient_magnitude[], float Smax) 
 float AverageTissueAirDist(float intensity[], float gradient_magnitude[]) {
 //	std::cerr<<"TissueAir"<<std::endl;
 	double coefficients[3]={-4.0/1000,-4.0,0};;
-	if (Modified) {
+	
+	/*if (Modified) {
 		coefficients[0]= -6.0/1000;
 		coefficients[1]= -6.0;
 		coefficients[2]=	0;
+	}*/
+
+	if (Modified) {
+		coefficients[0]= -2.4/1000;
+		coefficients[1]= -2.4;
+		coefficients[2]=	0;
 	}
+
 	vnl_real_polynomial poly(coefficients,3);
     double average=0;
     for(int i=0;i<5;i++) {
@@ -1238,7 +1373,7 @@ float PolyDist(float X, vnl_real_polynomial poly, float x, float y) {
     return sqrtf(vnl_math_sqr(X-x)+vnl_math_sqr(poly.evaluate(X)-y));
 }
 VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, ImageType::PixelType input_gradient_pixel) {
-	if (Modified) {
+	/*if (Modified) {
 		if ((input_pixel >=400 && input_gradient_pixel<=0.8*input_pixel) || input_pixel >= 1000) {
 			return Stool;
 		} else if (input_pixel<=-800 && input_gradient_pixel<=250) {
@@ -1248,7 +1383,7 @@ VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, ImageTy
 		} else {
 			return Unclassified;
 		}
-	} else {
+	} else {*/
 		if ((input_pixel >=180 && input_gradient_pixel<=0.8*input_pixel)) {
 			return Stool;
 		} else if (input_pixel<=-800 && input_gradient_pixel<=250) {
@@ -1258,7 +1393,7 @@ VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, ImageTy
 		} else {
 			return Unclassified;
 		}
-	}
+	//}
     return Stool;
 }
 
@@ -1621,15 +1756,13 @@ void WriteITK(ImageType::Pointer image, std::string name) {
 	WriterType::SetGlobalWarningDisplay(false);
 	
 	std::stringstream ss;
-	ss << writeCount++;
-
-	std::string str = ss.str();
-	str += "_";
-	str += name;
-	writer->SetFileName(str.c_str());
+	if (Modified)
+		ss << "Modified_";
+	ss << writeCount++ << "_" << name;
+	writer->SetFileName(ss.str().c_str());
 
 	writer->SetInput(image);
-	std::cout<<"Writing: "<<str<<std::endl;
+	std::cout<<"Writing: "<<ss.str()<<std::endl;
 	writer->Update();
 	writer.~SmartPointer();
 }
@@ -1640,15 +1773,13 @@ void WriteITK(ByteImageType::Pointer image, std::string name) {
 	WriterType::SetGlobalWarningDisplay(false);
 
 	std::stringstream ss;
-	ss << writeCount++;
-
-	std::string str = ss.str();
-	str += "_";
-	str += name;
-	writer->SetFileName(str.c_str());
+	if (Modified)
+		ss << "Modified_";
+	ss << writeCount++ << "_" << name;
+	writer->SetFileName(ss.str().c_str());
 
 	writer->SetInput(image);
-	std::cout<<"Writing: "<<str<<std::endl;
+	std::cout<<"Writing: "<<ss.str()<<std::endl;
 	writer->Update();
 	writer.~SmartPointer();
 }
@@ -1659,15 +1790,13 @@ void WriteITK(IntImageType::Pointer image, std::string name) {
 	WriterType::SetGlobalWarningDisplay(false);
 
 	std::stringstream ss;
-	ss << writeCount++;
-
-	std::string str = ss.str();
-	str += "_";
-	str += name;
-	writer->SetFileName(str.c_str());
+	if (Modified)
+		ss << "Modified_";
+	ss << writeCount++ << "_" << name;
+	writer->SetFileName(ss.str().c_str());
 
 	writer->SetInput(image);
-	std::cout<<"Writing: "<<str<<std::endl;
+	std::cout<<"Writing: "<<ss.str()<<std::endl;
 	writer->Update();
 	writer.~SmartPointer();
 }
@@ -1722,6 +1851,15 @@ void WriteITK(VoxelTypeImage::Pointer vimage, std::string name) {
 void ReadITK(ImageType::Pointer &image, char * fileName) {
 	std::cout << "Reading " <<  fileName << std::endl;
 	typedef itk::ImageFileReader< ImageType > ReaderType;
+	ReaderType::Pointer reader = ReaderType::New();
+	reader->SetFileName( fileName );
+	reader->Update();
+	image = reader->GetOutput();
+}
+
+void ReadITK(ByteImageType::Pointer &image, char * fileName) {
+	std::cout << "Reading " <<  fileName << std::endl;
+	typedef itk::ImageFileReader< ByteImageType > ReaderType;
 	ReaderType::Pointer reader = ReaderType::New();
 	reader->SetFileName( fileName );
 	reader->Update();

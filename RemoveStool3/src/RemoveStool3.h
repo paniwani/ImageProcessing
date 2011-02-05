@@ -30,6 +30,7 @@
 #include <itkBinaryShapeOpeningImageFilter.h>
 #include <itkLabelImageToShapeLabelMapFilter.h>
 #include <itkBinaryMedianImageFilter.h>
+#include <itkVotingBinaryIterativeHoleFillingImageFilter.h>
 
 // Outdated includes
 //#include "Typedef.h"
@@ -128,6 +129,7 @@ typedef itk::ConnectedComponentImageFilter<ByteImageType, IntImageType>		Connect
 typedef itk::BinaryShapeOpeningImageFilter<ByteImageType>					BinaryShapeOpeningFilterType;
 typedef itk::LabelImageToShapeLabelMapFilter< IntImageType, LabelMapType > 	LabelImageToShapeLabelMapFilterType;
 typedef itk::BinaryMedianImageFilter< ByteImageType, ByteImageType >		BinaryMedianFilterType;
+typedef itk::VotingBinaryIterativeHoleFillingImageFilter< ImageType >	HoleFillingFilterType;
 
 //Main Operation Function
 ImageType::Pointer RemoveStool(ImageType::Pointer input);
@@ -169,6 +171,7 @@ void WriteITK(VoxelTypeImage::Pointer vimage, std::string name);
 void WriteITK(IntImageType::Pointer image, std::string name);
 void ReadITK(ImageType::Pointer &image, char * fileName);
 void ReadITK(VoxelTypeImage::Pointer &vimage, char * fileName);
+void ReadITK(ByteImageType::Pointer &image, char * fileName);
 bool compareSizeOnBorder(LabelObjectType::Pointer a, LabelObjectType::Pointer b);	
 bool compareSize(LabelObjectType::Pointer a, LabelObjectType::Pointer b);
 int VoxelTypeToNum(VoxelType type);
