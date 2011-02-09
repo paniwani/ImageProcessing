@@ -31,6 +31,11 @@
 #include <itkLabelImageToShapeLabelMapFilter.h>
 #include <itkBinaryMedianImageFilter.h>
 #include <itkVotingBinaryIterativeHoleFillingImageFilter.h>
+#include "itkRegularExpressionSeriesFileNames.h"
+#include "itkGDCMImageIO.h"
+#include "itkImageSeriesReader.h"
+#include "itkOrientImageFilter.h"
+#include <boost/math/special_functions/erf.hpp>
 
 // Outdated includes
 //#include "Typedef.h"
@@ -40,7 +45,7 @@
 //#include <DynArray.h>
 
 // Regex
-#include <boost/xpressive/xpressive.hpp>
+//#include <boost/xpressive/xpressive.hpp>
 
 #include <itkCastImageFilter.h>
 #include <itkGradientMagnitudeRecursiveGaussianImageFilter.h>
@@ -93,6 +98,9 @@ typedef itk::ImageRegionIteratorWithIndex<VoxelTypeImage>                   Iter
 //Axillary Types
 typedef itk::BinaryBallStructuringElement<PixelType, 3>                     StructuringElementType;
 typedef itk::BSplineInterpolateImageFunction<ImageType, float>				InterpolationType;
+typedef itk::BSplineInterpolateImageFunction<ImageVectorType, float>		InterpolationVectorType;
+
+
 typedef itk::GaussianBlurImageFunction<ImageType>                           GaussianFilterType;
 
 //Image Filters
@@ -138,10 +146,13 @@ VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel,
 ImageType::Pointer AllocateNewImage(ImageType::RegionType fullRegion);
 ImageVectorType::Pointer AllocateNewVectorImage(ImageType::RegionType fullRegion);
 
-void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2, double d1, 
-                                      InterpolationType::Pointer input_interpolator, 
-                                      IteratorTypeFloat4WithIndex input_smax,
-                                      ImageType::IndexType index);
+void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2, double d1,
+                                      InterpolationType::Pointer &input_interpolator, 
+									  InterpolationType::Pointer &gradient_magnitude_interpolator,
+                                      IteratorTypeFloat4WithIndex &input_smax,
+                                      ImageType::IndexType &index,
+									  CovariantVectorType &gradient);
+
 float PolyDist(float X, vnl_real_polynomial poly, float x, float y);
 float PolyMinDist(vnl_real_polynomial poly, float x, float y);
 float ComputeSmaxFit(float intensity[], float gradient_magnitude[], float Smax);
@@ -154,7 +165,7 @@ float AverageStoolAirDist(float Smax, float intensity[], float gradient_magnitud
 vnl_matrix<float> GetNeighbor(ImageVectorType::Pointer partialVector, ImageType::IndexType index);
 ByteImageType::Pointer AllocateNewByteImage(ImageType::RegionType fullRegion) ;
 
-vnl_vector<float> expectation(double Y, double mean[], double variance[], float weight[],  vnl_matrix<float> neighbor, float current_partial[], float gradient);
+vnl_vector<float> expectation(double Y, double mean[], double variance[], float weight[],  vnl_matrix<float> neighbor, float current_partial[]);
 vnl_vector<float> expectation(double Y, float mean[], float variance[], float weight[], float current_partial[]);
 void EMClassification(IteratorTypeFloat4WithIndex input_iter, IteratorTypeVoxelType voxel_type_iter, IteratorImageVectorType partialVector_iter,
 					  IteratorTypeByteWithIndex chamfer_colon_iter, IteratorTypeFloat4WithIndex temp_iter);
@@ -164,7 +175,7 @@ void EMClassification(IteratorTypeFloat4WithIndex input_iter, IteratorTypeVoxelT
 double round(float d);
 void FindVoxelsByGradient(VoxelTypeImage::Pointer voxelEdge, ImageType::IndexType &index, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex, CovariantVectorType &grad, int numOfVoxels, std::vector<ImageType::IndexType> &indexVector);
 void FindVoxelsByGradient2(VoxelTypeImage::Pointer voxelEdge, ImageType::IndexType &index, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex, CovariantVectorType &grad, int numOfVoxels, std::vector<ImageType::IndexType> &indexVector);
-void OptimizeVoxelEdge(ImageType::Pointer input, IteratorTypeFloat4WithIndex inputIt, VoxelTypeImage::Pointer &voxelEdge, IteratorTypeVoxelType &voxelEdgeIt );
+//void OptimizeVoxelEdge(ImageType::Pointer input, IteratorTypeFloat4WithIndex inputIt, VoxelTypeImage::Pointer &voxelEdge, IteratorTypeVoxelType &voxelEdgeIt );
 void WriteITK(ImageType::Pointer image, std::string name);
 void WriteITK(ByteImageType::Pointer image, std::string name);
 void WriteITK(VoxelTypeImage::Pointer vimage, std::string name);
@@ -175,6 +186,7 @@ void ReadITK(ByteImageType::Pointer &image, char * fileName);
 bool compareSizeOnBorder(LabelObjectType::Pointer a, LabelObjectType::Pointer b);	
 bool compareSize(LabelObjectType::Pointer a, LabelObjectType::Pointer b);
 int VoxelTypeToNum(VoxelType type);
+ImageType::Pointer ReadDicom( std::string path );
 
 template <class T> int solveNormalizedCubic (T r, T s, T t, T x[3]);
 template <class T> int solveCubic (T a, T b, T c, T d, T x[3]);
