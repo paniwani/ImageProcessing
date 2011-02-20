@@ -35,7 +35,13 @@
 #include "itkGDCMImageIO.h"
 #include "itkImageSeriesReader.h"
 #include "itkOrientImageFilter.h"
-#include <boost/math/special_functions/erf.hpp>
+#include "itkRescaleIntensityImageFilter.h"
+#include "itkResampleImageFilter.h"
+#include "itkAffineTransform.h"
+#include "itkNearestNeighborInterpolateImageFunction.h"
+
+//#include <algorithm>
+//#include <vector>
 
 // Outdated includes
 //#include "Typedef.h"
@@ -46,6 +52,7 @@
 
 // Regex
 //#include <boost/xpressive/xpressive.hpp>
+#include "pcre.h"
 
 #include <itkCastImageFilter.h>
 #include <itkGradientMagnitudeRecursiveGaussianImageFilter.h>
@@ -53,6 +60,8 @@
 #include <itkFastMarchingImageFilter.h>
 #include <itkBinaryThresholdImageFilter.h>
 #include <itkSimilarityIndexImageFilter.h>
+#include <itkHessianRecursiveGaussianImageFilter.h>
+#include <itkSymmetricEigenAnalysisImageFilter.h>
 
 #include <fstream>
 #include <iostream>
@@ -75,6 +84,8 @@ enum VoxelType {
 typedef float                                                               PixelType;
 typedef itk::ContinuousIndex< PixelType, 3 >								ContinuousIndexType;
 
+typedef  itk::FixedArray< double, 3 >										EigenValueArrayType;
+
 typedef unsigned long														LabelType;
 typedef itk::ShapeLabelObject< LabelType, 3 >								LabelObjectType;
 typedef itk::LabelMap< LabelObjectType >									LabelMapType;
@@ -84,12 +95,16 @@ typedef itk::CovariantVector<PixelType,3>                                   Cova
 typedef itk::Image<PixelType, 3>                                            ImageType;
 typedef itk::ImageRegionIteratorWithIndex<ImageType>                        IteratorTypeFloat4WithIndex;
 typedef itk::Image<CovariantVectorType, 3>                                  ImageVectorType;
+typedef itk::Image< EigenValueArrayType, 3 >								EigenValueImageType;
+
 
 typedef itk::Image<BYTE, 3>													ByteImageType;
 typedef itk::ImageRegionIteratorWithIndex<ByteImageType>                    IteratorTypeByteWithIndex;
 
 typedef itk::Image<int, 3>													IntImageType;
 typedef itk::ImageRegionIteratorWithIndex<IntImageType>						IteratorTypeIntWithIndex;
+
+typedef itk::ImageRegionIteratorWithIndex<EigenValueImageType>				EigenValueIterType;
 
 
 typedef itk::ImageRegionIterator<ImageVectorType>                           IteratorImageVectorType;
@@ -101,7 +116,7 @@ typedef itk::BSplineInterpolateImageFunction<ImageType, float>				InterpolationT
 typedef itk::BSplineInterpolateImageFunction<ImageVectorType, float>		InterpolationVectorType;
 
 
-typedef itk::GaussianBlurImageFunction<ImageType>                           GaussianFilterType;
+typedef itk::GaussianBlurImageFunction<ImageVectorType>                     GaussianBlurVectorType;
 
 //Image Filters
 typedef itk::GradientImageFilter< ImageType >								GradientFilterType;
@@ -121,11 +136,12 @@ typedef itk::ChamferDistanceTransformImageFilter<
 	ByteImageType, ByteImageType>											ChamferDistanceFilterType;
 
 
-typedef itk::DiscreteGaussianImageFilter<ImageType, ImageType>				GaussianFilterType2;
-typedef itk::RecursiveGaussianImageFilter<ImageType, ImageType>				GaussianFilterType3;
+typedef itk::DiscreteGaussianImageFilter<ImageType, ImageType>				DiscreteGaussianFilterType;
+//typedef itk::RecursiveGaussianImageFilter<ImageType, ImageType>				GaussianFilterType3;
 // define the fillhole filter
 typedef itk::GrayscaleFillholeImageFilter<ImageType, ImageType>				FillholeFilterType;
 typedef itk::NeighborhoodIterator<ImageType>								NeighborhoodIteratorType;
+typedef itk::NeighborhoodIterator<VoxelTypeImage>							NeighborhoodIteratorVoxelType;
 typedef itk::NeighborhoodIterator<ImageVectorType>							NeighborhoodVectorIteratorType;
 
 
@@ -137,7 +153,11 @@ typedef itk::ConnectedComponentImageFilter<ByteImageType, IntImageType>		Connect
 typedef itk::BinaryShapeOpeningImageFilter<ByteImageType>					BinaryShapeOpeningFilterType;
 typedef itk::LabelImageToShapeLabelMapFilter< IntImageType, LabelMapType > 	LabelImageToShapeLabelMapFilterType;
 typedef itk::BinaryMedianImageFilter< ByteImageType, ByteImageType >		BinaryMedianFilterType;
-typedef itk::VotingBinaryIterativeHoleFillingImageFilter< ImageType >	HoleFillingFilterType;
+typedef itk::VotingBinaryIterativeHoleFillingImageFilter< ImageType >	    HoleFillingFilterType;
+typedef itk::HessianRecursiveGaussianImageFilter<ImageType>					HessianGaussianFilterType;
+typedef itk::SymmetricEigenAnalysisImageFilter< HessianGaussianFilterType::OutputImageType, EigenValueImageType> EigenAnalysisFilterType;
+typedef itk::RescaleIntensityImageFilter< ImageType >						RescaleIntensityFilterType;
+typedef itk::ResampleImageFilter< ImageType, ImageType >					ResampleImageFilterType;
 
 //Main Operation Function
 ImageType::Pointer RemoveStool(ImageType::Pointer input);
@@ -175,7 +195,7 @@ void EMClassification(IteratorTypeFloat4WithIndex input_iter, IteratorTypeVoxelT
 double round(float d);
 void FindVoxelsByGradient(VoxelTypeImage::Pointer voxelEdge, ImageType::IndexType &index, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex, CovariantVectorType &grad, int numOfVoxels, std::vector<ImageType::IndexType> &indexVector);
 void FindVoxelsByGradient2(VoxelTypeImage::Pointer voxelEdge, ImageType::IndexType &index, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex, CovariantVectorType &grad, int numOfVoxels, std::vector<ImageType::IndexType> &indexVector);
-//void OptimizeVoxelEdge(ImageType::Pointer input, IteratorTypeFloat4WithIndex inputIt, VoxelTypeImage::Pointer &voxelEdge, IteratorTypeVoxelType &voxelEdgeIt );
+void OptimizeVoxelEdge(ImageType::Pointer input, VoxelTypeImage::Pointer voxelEdge, ImageVectorType::Pointer gradient );
 void WriteITK(ImageType::Pointer image, std::string name);
 void WriteITK(ByteImageType::Pointer image, std::string name);
 void WriteITK(VoxelTypeImage::Pointer vimage, std::string name);
@@ -186,7 +206,20 @@ void ReadITK(ByteImageType::Pointer &image, char * fileName);
 bool compareSizeOnBorder(LabelObjectType::Pointer a, LabelObjectType::Pointer b);	
 bool compareSize(LabelObjectType::Pointer a, LabelObjectType::Pointer b);
 int VoxelTypeToNum(VoxelType type);
+//VoxelType NumToVoxelType(int num);
 ImageType::Pointer ReadDicom( std::string path );
+void SmoothPartialVector(ImageVectorType::Pointer pv, IteratorTypeByteWithIndex &chamfer_colon_iter);
+ImageType::Pointer ComputeHessianResponse(ImageType::Pointer input);
+bool OrderByMagnitude (double a, double b);
+double fA(EigenValueArrayType lambda, double alpha);
+double fB(EigenValueArrayType lambda, double beta, double gamma);
+double fC(double ev1, double ev2, double eta);
+double fRut(EigenValueArrayType lambda, double alpha, double beta, double gamma);
+double fCup(EigenValueArrayType lambda, double eta);
+ImageType::Pointer ResampleImage(ImageType::Pointer input);
+bool MatchVoxels(std::string s);
+void VoteVoxels(VoxelTypeImage::Pointer v, ByteImageType::Pointer mask);
+ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer input, VoxelTypeImage::Pointer v, IteratorTypeByteWithIndex &mask_iter, ImageType::IndexType &sidx, ImageType::IndexType &eidx);
 
 template <class T> int solveNormalizedCubic (T r, T s, T t, T x[3]);
 template <class T> int solveCubic (T a, T b, T c, T d, T x[3]);
