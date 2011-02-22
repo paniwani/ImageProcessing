@@ -79,7 +79,7 @@ int main(int argc, char * argv[])
 	gradient_filter.~SmartPointer();
 	IteratorImageVectorType gradient_iter(gradient,fullRegion);
 
-	// Calculate gradient magnitude
+	// Calculate gradient magnitude and normalize gradient
 	ImageType::Pointer gradient_magnitude = AllocateNewImage(fullRegion);
 	IteratorTypeFloat4WithIndex gradient_magnitude_iter(gradient_magnitude,fullRegion);
 
@@ -87,12 +87,26 @@ int main(int argc, char * argv[])
 		 !gradient_iter.IsAtEnd() && !gradient_magnitude_iter.IsAtEnd();
 		 ++gradient_iter, ++gradient_magnitude_iter)
 	{
-		gradient_magnitude_iter.Set( gradient_iter.Get().GetNorm() );
+		CovariantVectorType grad = gradient_iter.Get();
+		float norm = grad.GetNorm();
+		
+		if (norm > 0)
+		{
+			grad[0] /= norm;
+			grad[1] /= norm;
+			grad[2] /= norm;
+			gradient_iter.Set(grad);
+		}
+
+		gradient_magnitude_iter.Set( 2*norm );
 	}
-	gradient_magnitude_iter = IteratorTypeFloat4WithIndex(gradient_magnitude,fullRegion);
 	
 	//writes out the gradient magnitude for the input image
 	WriteITK(gradient_magnitude, "gradient.hdr");
+
+	// Create temporary image and iter
+	//ByteImageType::Pointer temp = AllocateNewByteImage(fullRegion);
+	//IteratorTypeByteWithIndex temp_iter(temp,fullRegion);
 
 	//stores the largest gradient magnitude, this is purely for reference on the validity of the image
 	float gradient_max=0;
@@ -106,19 +120,14 @@ int main(int argc, char * argv[])
 		if (gradient_max<gradient_magnitude_iter.Get()) { gradient_max=gradient_magnitude_iter.Get(); }
 
 		//computes the hard threshold classification for a voxel in the image: Air/Tissue/Stool/Unclassified
-		//std::cerr << "input_iter.Get(): " << input_iter.Get() << std::endl;
         VoxelType type = SingleMaterialClassification(input_iter.Get(), gradient_magnitude_iter.Get());
 		voxel_type_iter.Set(type);		//sets the type in the voxel_type structure
     }
 
-	WriteITK(voxel_type, "voxel_type_start_modified_400_air.hdr");
+	WriteITK(voxel_type, "voxel_type_start.hdr");
 
 	// outputs the gradient magnitude purely for reference
 	std::cerr<<"Gradient max: "<<gradient_max<<std::endl;
-
-	// Create temporary image and iter
-	ImageType::Pointer temp = AllocateNewImage(fullRegion);
-	IteratorTypeFloat4WithIndex temp_iter(temp,fullRegion);
 
 
 	//// Fill in Stool Holes
@@ -242,9 +251,9 @@ int main(int argc, char * argv[])
 	ByteImageType::Pointer chamfer_colon=AllocateNewByteImage( fullRegion );
 	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,fullRegion);
 
-	for (chamfer_colon_iter.GoToBegin(), voxel_type_iter.GoToBegin(), temp_iter.GoToBegin();
-		!voxel_type_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
-		++voxel_type_iter, ++chamfer_colon_iter, ++temp_iter) 
+	for (chamfer_colon_iter.GoToBegin(), voxel_type_iter.GoToBegin();
+		!voxel_type_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();  
+		++voxel_type_iter, ++chamfer_colon_iter) 
 	{
 		switch(voxel_type_iter.Get()) {
 			case Tissue:
@@ -277,9 +286,9 @@ int main(int argc, char * argv[])
 	sort(labelVector.begin(), labelVector.end(), compareSizeOnBorder);
 	int externalAirLabel = labelVector[0]->GetLabel();
 	
-	labelVector.erase( labelVector.begin() );
-	sort(labelVector.begin(), labelVector.end(), compareSize);
-	int colonLabel = labelVector[0]->GetLabel();
+	//labelVector.erase( labelVector.begin() );
+	//sort(labelVector.begin(), labelVector.end(), compareSize);
+	//int colonLabel = labelVector[0]->GetLabel();
 
 	labelVector.clear();
 	labelMap.~SmartPointer();
@@ -326,9 +335,9 @@ int main(int argc, char * argv[])
 	chamfer_colon_iter.GoToBegin();
 	chamfer_colon_iter.Set(-1);	//first pixel == -1
 
-	for (chamfer_colon_iter.GoToBegin(), temp_iter.GoToBegin(), input_iter.GoToBegin();
-        !chamfer_colon_iter.IsAtEnd() && !temp_iter.IsAtEnd() && ! input_iter.IsAtEnd();  
-        ++chamfer_colon_iter, ++temp_iter, ++input_iter) 
+	for (chamfer_colon_iter.GoToBegin(), input_iter.GoToBegin();
+        !chamfer_colon_iter.IsAtEnd() && ! input_iter.IsAtEnd();  
+        ++chamfer_colon_iter, ++input_iter) 
     {
 		if (chamfer_colon_iter.Get()<20 && chamfer_colon_iter.Get()>-1) {
 			chamfer_colon_iter.Set(1);
@@ -343,10 +352,6 @@ int main(int argc, char * argv[])
 	//ReadITK(chamfer_colon, "mr10_092_13p.i0344_100-105_chamfer_colon_air_mask.hdr");
 	//chamfer_colon_iter=IteratorTypeByteWithIndex(chamfer_colon,fullRegion);
 	//WriteITK(chamfer_colon,"chamfer_colon.hdr");
-	
-	// Custom smax
-	ImageType::Pointer Smax = ComputeNeighborhoodSmax(input_temp, voxel_type, chamfer_colon_iter, startIndex, endIndex);
-	WriteITK(Smax, "neighborhood_smax.hdr");
 
 	//-------------------------------------------END SETUP-------------------------------------------------------
 
@@ -361,30 +366,15 @@ int main(int argc, char * argv[])
     input_interpolator->SetSplineOrder(3);
     input_interpolator->SetInputImage(input);
 
-	// Normalize gradient vector image
-	for (gradient_iter.GoToBegin(); !gradient_iter.IsAtEnd(); ++gradient_iter)
-	{
-		// Normalize gradient vector
-		CovariantVectorType grad = gradient_iter.Get();
-		float norm = grad.GetNorm();
-		
-		if (norm > 0)
-		{
-			grad[0] /= norm;
-			grad[1] /= norm;
-			grad[2] /= norm;
-			gradient_iter.Set(grad);
-		}
-	}
-	gradient_iter = IteratorImageVectorType(gradient,fullRegion);
-
 	// Interpolate gradient magnitude image
 	InterpolationType::Pointer gradient_magnitude_interpolator = InterpolationType::New();
 	gradient_magnitude_interpolator->SetSplineOrder(3);
 	gradient_magnitude_interpolator->SetInputImage(gradient_magnitude);
 
 	// Storage for Smax
-	ImageType::Pointer input_smax = AllocateNewImage(fullRegion);
+	//ImageType::Pointer input_smax = AllocateNewImage(fullRegion);
+	ImageType::Pointer input_smax = ComputeNeighborhoodSmax(input_temp, voxel_type, chamfer_colon_iter, startIndex, endIndex);
+	//WriteITK(input_smax, "neighborhood_smax_radius2.hdr");
 
 	// Load smax
 	//ReadITK(input_smax, "C:/ImageData/mr10_092_13p.i0344_100-105_smax2.hdr");
@@ -400,31 +390,34 @@ int main(int argc, char * argv[])
 		
 		if (chamfer_colon_iter.Get() == 1 && voxel_type_iter.Get()==Unclassified) {
 			ImageType::IndexType voxel_index = voxel_type_iter.GetIndex();
-			CovariantVectorType grad = gradient_iter.Get();
+			CovariantVectorType grad = gradient_iter.Get();	//NOTE: using 2x image gradient, (See Carston paper)
 
 			float temp_threshold=-1;
 			VoxelType temp_type = Unclassified;
 
-			VoxelEdgeClassification(&temp_threshold,&temp_type,1.5,1.0,input_interpolator,gradient_magnitude_interpolator,input_smax_iter,voxel_index,grad);
-			
-			VoxelEdgeClassification(&temp_threshold,&temp_type,1.0,0.5,input_interpolator,gradient_magnitude_interpolator,input_smax_iter,voxel_index,grad);
+			if (input_smax_iter.Get() > 0)
+			{
 
-			VoxelEdgeClassification(&temp_threshold,&temp_type,0.6,0.3,input_interpolator,gradient_magnitude_interpolator,input_smax_iter,voxel_index,grad);
-			
+				VoxelEdgeClassification(&temp_threshold,&temp_type,1.5,1.0,input_interpolator,gradient_magnitude_interpolator,input_smax_iter,voxel_index,grad);
+				
+				VoxelEdgeClassification(&temp_threshold,&temp_type,1.0,0.5,input_interpolator,gradient_magnitude_interpolator,input_smax_iter,voxel_index,grad);
+
+				VoxelEdgeClassification(&temp_threshold,&temp_type,0.6,0.3,input_interpolator,gradient_magnitude_interpolator,input_smax_iter,voxel_index,grad);
+
+			} else {
+				temp_type = TissueAir;
+			}
 
 			voxel_type_iter.Set(temp_type);
-		} else {
-			input_smax_iter.Set(0);
 		}
     }
 
 	// Deletes the Interpolators
 	input_interpolator.~SmartPointer();
 
-	std::string note = "_no_bias_1000";
+	WriteITK(voxel_type,"voxel_edge_class.hdr");
 
-	WriteITK(voxel_type,"voxel_edge_class"+note+".hdr");
-
+	/*
 	// Set min of smax to 0
 	input_smax_iter = IteratorTypeFloat4WithIndex(input_smax,fullRegion);
 	for (input_smax_iter.GoToBegin(); !input_smax_iter.IsAtEnd(); ++input_smax_iter)
@@ -432,17 +425,56 @@ int main(int argc, char * argv[])
 		if (input_smax_iter.Get() < 0)
 			input_smax_iter.Set(0);
 	}
+	*/
 
-	WriteITK(input_smax,"smax"+note+".hdr");
+	WriteITK(input_smax,"smax.hdr");
 
-	std::cerr<<"Done Edge"<<std::endl;
+ 	std::cerr<<"Done Edge"<<std::endl;
+
+	/*
+	// Fix TS using distance map to tissue
+	// Create mask of known tissue
+	ByteImageType::Pointer tissue_mask = AllocateNewByteImage(fullRegion);
+	IteratorTypeByteWithIndex tissue_mask_iter(tissue_mask,fullRegion);
+
+	for (voxel_type_iter.GoToBegin(), tissue_mask_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();
+		!voxel_type_iter.IsAtEnd() && !tissue_mask_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();
+		++voxel_type_iter, ++tissue_mask_iter, ++chamfer_colon_iter)
+	{
+		if (chamfer_colon_iter.Get() == 1)
+		{
+			VoxelType voxel = voxel_type_iter.Get();
+
+			if (voxel == Tissue)
+			{
+				tissue_mask_iter.Set(1);
+			} else {
+				tissue_mask_iter.Set(0);
+			}
+		} else {
+			tissue_mask_iter.Set(0);
+		}
+	}
+
+	// Run distance map
+	chamfer_filter = ChamferDistanceFilterType::New();
+	chamfer_filter->SetInput(tissue_mask);
+	chamfer_filter->SetWeights(chamfer_weights, chamfer_weights+3);
+	chamfer_filter->SetDistanceFromObject(true);
+	chamfer_filter->Update();
+	tissue_mask=chamfer_filter->GetOutput();
+	tissue_mask_iter = IteratorTypeByteWithIndex(chamfer_colon,fullRegion);
+	chamfer_filter.~SmartPointer();
+
+	WriteITK(tissue_mask,"tissue_chamfer.hdr");
+	*/
 
 	// Optimize SA transitions using gradient information
-	std::cerr<<"Running voxel edge optimization"<<std::endl;
+	//std::cerr<<"Running voxel edge optimization"<<std::endl;
 	
-	OptimizeVoxelEdge(input, voxel_type, gradient);
+	//OptimizeVoxelEdge(input, voxel_type, gradient);
 	
-	WriteITK(voxel_type, "voxel_edge_optimized_noz.hdr");
+	//WriteITK(voxel_type, "voxel_edge_optimized_noz.hdr");
 
 	// Find thin stool regions [Carston 2.3.6]
 	ByteImageType::Pointer chamfer_from_stool_involvement=AllocateNewByteImage(fullRegion);
@@ -1462,10 +1494,6 @@ void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2,
 									  CovariantVectorType &gradient) 
 
 {
-	//if (index[0] == 90 && index[1] == 512-274 && index[2] == 2) {
-	//	std::cout<<"stop"<<std::endl;
-	//}
-
 	ImageType::RegionType fullRegion = input_interpolator->GetInputImage()->GetLargestPossibleRegion();
     InterpolationType::ContinuousIndexType offset_index;
     offset_index[0]=index[0];
@@ -1506,90 +1534,44 @@ void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2,
     temp_gradient_magnitude[0]=gradient_magnitude_interpolator->EvaluateAtContinuousIndex(offset_index);
 	//std::cerr<<"vector created"<<std::endl;
 	float min_distance=*threshold;
-	float stool_tissue_Smax;
-	float stool_air_Smax;
+	//float stool_tissue_Smax;
+	//float stool_air_Smax;
+	
 	//Tissue Stool
-	stool_tissue_Smax=ComputeSmax(temp_intensity,temp_gradient_magnitude, 5);
-	stool_air_Smax=Stool_Air_ComputeSmax(temp_intensity,temp_gradient_magnitude, 5);
-    float distanceTS=AverageTissueStoolDist(stool_tissue_Smax, temp_intensity,temp_gradient_magnitude);
-	float distanceSA=AverageStoolAirDist(stool_air_Smax, temp_intensity,temp_gradient_magnitude); // bias stool air distance to preserve tissue
-	float max_gradient=0;
+
+	//stool_tissue_Smax=ComputeSmax(temp_intensity,temp_gradient_magnitude, 5);
+	//stool_air_Smax=Stool_Air_ComputeSmax(temp_intensity,temp_gradient_magnitude, 5);
 	
-	for (int i=0;i<5;i++) {
-		if (max_gradient<temp_gradient_magnitude[i]) {
-			max_gradient=temp_gradient_magnitude[i];
-		}
-	}
+	float smax = input_smax.Get();
+	//float smax=0;
 
-	//for (int i=0;i<5;i++) {
-	//	temp_gradient_magnitude[i]=temp_gradient_magnitude[i]/max_gradient*1000;
-	//	
-	//}
-
-
-	float distanceTA=AverageTissueAirDist(temp_intensity,temp_gradient_magnitude);
-
-	
-
-	/*bool containPositive=false;
-	bool containNegative=false;
-	for (int i=0;i<5;i++) {
-		if (50<temp_intensity[i]) {
-			containPositive=true;
-		} else if (temp_intensity[i]<-50) {
-			containNegative=true;
-		}
-	}*/
-
-	float smax=0;
 	float distance=0;
 	VoxelType voxel_type=Unclassified;
 	
+	//float distanceTS=AverageTissueStoolDist(stool_tissue_Smax, temp_intensity,temp_gradient_magnitude);
+	//float distanceSA=AverageStoolAirDist(stool_air_Smax, temp_intensity,temp_gradient_magnitude); // bias stool air distance to preserve tissue
+
+	float distanceTS=AverageTissueStoolDist(smax, temp_intensity,temp_gradient_magnitude);
+	float distanceSA=AverageStoolAirDist(smax, temp_intensity,temp_gradient_magnitude); // bias stool air distance to preserve tissue
+	float distanceTA=AverageTissueAirDist(temp_intensity,temp_gradient_magnitude);
+
 	if (distanceSA<=distanceTS && distanceSA<=distanceTA){
-		//if (containNegative && !containPositive) {
-		//	distance=distanceTA;
-		//	voxel_type=TissueAir;
-		//	smax=stool_air_Smax;
-		//} else if (containPositive && !containNegative) {
-		//	distance=distanceTS;
-		//	voxel_type=TissueStool;
-		//	smax=stool_tissue_Smax;
-		//} else {
-		//if (stool_air_Smax>600 || !Modified) {
-			distance=distanceSA;
-			voxel_type=StoolAir;
-			smax=stool_air_Smax;
-		//} else {
-		//	distance=distanceSA;
-		//	voxel_type=TissueStool;
-		//	smax=stool_tissue_Smax;
-		//}
-		//}
+		distance=distanceSA;
+		voxel_type=StoolAir;
 	} else if (distanceTS<=distanceTA && distanceTS<=distanceSA ) {
 		distance=distanceTS;
 		voxel_type=TissueStool;
-		smax=stool_tissue_Smax;
 	} else {
-		smax=stool_air_Smax;
 		distance=distanceTA;
 		voxel_type=TissueAir;
 	}
-
-	/*
-	if (smax<150 && Modified) {
-		smax=stool_air_Smax;
-		distance=distanceTA;
-		voxel_type=TissueAir;
-	}
-	*/
-
 
     if (min_distance>=distance || min_distance==-1 || *previous==Unclassified) {
 		*threshold=distance;
         *previous=voxel_type;
-        input_smax.Set(smax);
     }
 }
+
 float Stool_Air_ComputeSmax(float intensity[], float gradient_magnitude[], int size) {
 	//std::cerr<<"Value ";
 	float intensity2[5];
@@ -1662,7 +1644,7 @@ float AverageTissueStoolDist(float Smax, float intensity[], float gradient_magni
 
 float AverageStoolAirDist(float Smax, float intensity[], float gradient_magnitude[]) {
 //	std::cerr<<"StoolAir"<<std::endl;
-    double coefficients[3] ={-4/(Smax+1000),-4/(Smax+1000)*(1000-Smax),4/(Smax+1000)*1000*Smax};
+    double coefficients[3] ={-4/(Smax+1000),-4*(1000-Smax)/(Smax+1000),4000*Smax/(Smax+1000)};
     vnl_real_polynomial poly(coefficients,3);
     double average=0;
     for(int i=0;i<5;i++) {
@@ -1700,9 +1682,9 @@ float PolyDist(float X, vnl_real_polynomial poly, float x, float y) {
 }
 VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, ImageType::PixelType input_gradient_pixel) {
 	if (Modified) {
-		if ((input_pixel >=400 && input_gradient_pixel<=0.8*input_pixel) || input_pixel >= 1000) {
+		if ((input_pixel >=800 && input_gradient_pixel<=0.8*input_pixel) || input_pixel >= 1000) {
 			return Stool;
-		} else if (input_pixel<=-800 /*&& input_gradient_pixel<=250*/) {
+		} else if (input_pixel<=-800) {
 			return Air;
 		} else if (input_pixel<=150  && input_pixel>=-250 && input_gradient_pixel<=300) {
 			return Tissue;
@@ -2811,7 +2793,7 @@ ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer input, VoxelTypeIm
 
 	NeighborhoodIteratorVoxelType::RadiusType radius;
 
-	radius.Fill(3);
+	radius.Fill(2);
 
 	NeighborhoodIteratorVoxelType nit(radius, v, v->GetLargestPossibleRegion());
 
