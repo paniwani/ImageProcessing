@@ -26,7 +26,6 @@ int main( int argc, char *argv[] )
 
 	// Setup IO
 	typedef itk::ImageFileReader< ImageType > ReaderType;
-	typedef itk::ImageFileWriter< ImageType > WriterType;
 	ReaderType::Pointer reader = ReaderType::New();
 
 	reader->SetFileName( "C:/Users/Neil/Documents/My Dropbox/Work Projects/ImageData/mr10_092_13p.i0344_100.hdr" );
