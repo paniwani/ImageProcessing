@@ -39,6 +39,9 @@
 #include "itkResampleImageFilter.h"
 #include "itkAffineTransform.h"
 #include "itkNearestNeighborInterpolateImageFunction.h"
+#include <itkHessian3DToVesselnessMeasureImageFilter.h>
+#include <itkHessianToObjectnessMeasureImageFilter.h>
+
 
 //#include <algorithm>
 //#include <vector>
@@ -62,6 +65,7 @@
 #include <itkSimilarityIndexImageFilter.h>
 #include <itkHessianRecursiveGaussianImageFilter.h>
 #include <itkSymmetricEigenAnalysisImageFilter.h>
+#include <itkDerivativeImageFilter.h>
 
 #include <fstream>
 #include <iostream>
@@ -158,6 +162,9 @@ typedef itk::HessianRecursiveGaussianImageFilter<ImageType>					HessianGaussianF
 typedef itk::SymmetricEigenAnalysisImageFilter< HessianGaussianFilterType::OutputImageType, EigenValueImageType> EigenAnalysisFilterType;
 typedef itk::RescaleIntensityImageFilter< ImageType >						RescaleIntensityFilterType;
 typedef itk::ResampleImageFilter< ImageType, ImageType >					ResampleImageFilterType;
+typedef itk::DerivativeImageFilter<ImageType,ImageType>						DerivativeImageFilterType;
+typedef itk::Hessian3DToVesselnessMeasureImageFilter<float>					HessianVesselnessFilterType;
+typedef itk::HessianToObjectnessMeasureImageFilter< HessianGaussianFilterType::OutputImageType, ImageType> ObjectnessFilterType;
 
 //Main Operation Function
 ImageType::Pointer RemoveStool(ImageType::Pointer input);
@@ -209,8 +216,27 @@ int VoxelTypeToNum(VoxelType type);
 //VoxelType NumToVoxelType(int num);
 ImageType::Pointer ReadDicom( std::string path );
 void SmoothPartialVector(ImageVectorType::Pointer pv, IteratorTypeByteWithIndex &chamfer_colon_iter);
+
 ImageType::Pointer ComputeHessianResponse(ImageType::Pointer input);
+ImageType::Pointer ComputeHessianResponse2(ImageType::Pointer input);
+ImageType::Pointer ComputeHessianResponse3(ImageType::Pointer input);
+
+ImageType::Pointer ComputeHessianTest(ImageType::Pointer input);
+
+void ComputeVesselness(ImageType::Pointer input);
+void ComputeThinness(ImageType::Pointer input);
+void HessianMeasure(ImageType::Pointer input);
+
+
+
+void MeasureObjectness(ImageType::Pointer input);
+float vesselness(const float lambda1, const float lambda2, const float lambda3, const float alpha, const float gamma12, const float gamma23);
+float thinness( float l[3] );
+
 bool OrderByMagnitude (double a, double b);
+bool OrderByValue (double a, double b);
+bool OrderByValueDesc (double a, double b);
+
 double fA(EigenValueArrayType lambda, double alpha);
 double fB(EigenValueArrayType lambda, double beta, double gamma);
 double fC(double ev1, double ev2, double eta);
@@ -221,6 +247,7 @@ bool MatchVoxels(std::string s);
 void VoteVoxels(VoxelTypeImage::Pointer v, ByteImageType::Pointer mask);
 ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer input, VoxelTypeImage::Pointer v, IteratorTypeByteWithIndex &mask_iter, ImageType::IndexType &sidx, ImageType::IndexType &eidx);
 void WritePartialImages(ImageVectorType::Pointer partialVector, ByteImageType::Pointer chamfer_colon, std::string name);
+vnl_matrix_fixed< float, 3, 3> EvaluateAtNeighborhood (const vnl_matrix_fixed<float,3,3> Next, const vnl_matrix_fixed<float,3,3> Previous, float weights[3]);
 
 template <class T> int solveNormalizedCubic (T r, T s, T t, T x[3]);
 template <class T> int solveCubic (T a, T b, T c, T d, T x[3]);
