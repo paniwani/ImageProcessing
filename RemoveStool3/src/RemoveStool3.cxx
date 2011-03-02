@@ -6,7 +6,7 @@ double neighbor_weight[3]={1,1,.5};
 double beta=.7;
 double weight_sum=2.5;
 int writeCount=1;
-std::string note = "";
+std::string note = "SATO_OBJECTNESS";
 
 const double ALPHA = 0.5;
 const double BETA = 0.3;
@@ -55,6 +55,8 @@ int main(int argc, char * argv[])
 
 	// Print out the sub region of the image, un modified
 	WriteITK(input_temp,"input_temp.hdr");
+
+	ComputeSatoHessian(input);
 
 	//HessianMeasure(input);
 
@@ -356,6 +358,12 @@ int main(int argc, char * argv[])
 
 	WriteITK(chamfer_colon, "chamfer_colon_air_mask.hdr");
 
+	// Test fuzzy
+
+	//ImageType::Pointer RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type)
+
+	ImageType::Pointer fuzzy = RunFuzzy(input_temp,chamfer_colon,voxel_type);
+
 	// Read chamfer colon
 	//ReadITK(chamfer_colon, "mr10_092_13p.i0344_100-105_chamfer_colon_air_mask.hdr");
 	//chamfer_colon_iter=IteratorTypeByteWithIndex(chamfer_colon,fullRegion);
@@ -387,11 +395,8 @@ int main(int argc, char * argv[])
 
 	std::cerr << "Running voxel edge classification..." << std::endl;
 
-	ReadITK(voxel_type, "Modified_6_voxel_edge_class.hdr");
+	//ReadITK(voxel_type, "Modified_6_voxel_edge_class.hdr");
 	voxel_type_iter = IteratorTypeVoxelType(voxel_type,fullRegion);
-
-
-	/*
 
 	int count = 0;
 	//Runs edge classification with 3 different increments inside the colon only
@@ -425,8 +430,6 @@ int main(int argc, char * argv[])
 		if (++count % 100000 == 0)
 			std::cout << "Voxel edge count: " << count << std::endl;
     }
-
-	*/
 
 	// Deletes the Interpolators
 	input_interpolator.~SmartPointer();
@@ -807,16 +810,18 @@ int main(int argc, char * argv[])
 
 	cc_iter=IteratorTypeIntWithIndex(cc,fullRegion );
 	
+	// Set to air partial
 	for (partialVector_iter.GoToBegin(), cc_iter.GoToBegin();
         !partialVector_iter.IsAtEnd() && !cc_iter.IsAtEnd();  
         ++partialVector_iter, ++cc_iter) 
 	{
 		if (cc_iter.Get() != tissueLabel)
 		{
-			CovariantVectorType partial = partialVector_iter.Get();
-			partial[1] = 0;
-
-			partialVector_iter.Set( partial );
+			CovariantVectorType p;
+			p[0] = 1;
+			p[1] = 0;
+			p[2] = 0;
+			partialVector_iter.Set( p );
 		}
 	}
 
@@ -825,7 +830,7 @@ int main(int argc, char * argv[])
 	WritePartialImages(partialVector, chamfer_colon, "QR_CC");
 
 	// Smooth partial vector
-	SmoothPartialVector(partialVector,chamfer_colon_iter);
+	SmoothPartialVector(partialVector,chamfer_colon,startIndex,endIndex);
 
 	WritePartialImages(partialVector, chamfer_colon, "QR_Smooth");
 
@@ -848,6 +853,13 @@ int main(int argc, char * argv[])
 
 			if ( pt < 0.05 )
 			{
+				// Set to air partial
+				CovariantVectorType p;
+				p[0] = 1;
+				p[1] = 0;
+				p[2] = 0;
+				partialVector_iter.Set( p );
+
 				output_iter.Set(-1024);
 			} else if ( pt >= 0.05 && pt <= 0.95) {
 				output_iter.Set( pt*(input_iter.Get()+1000)-1000 ); 
@@ -978,11 +990,15 @@ int main(int argc, char * argv[])
 				CovariantVectorType partial = partialVector_iter.Get();		//retrieves the partial informations
 				float Z[3]={partial[0],partial[1],partial[2]};
 
-				vnl_vector<float> Z_update=expectation(input_iter.Get(),mean, variance, weight, GetNeighbor(partialVector,input_iter.GetIndex()), Z);	//updates the partial values
-				partial[0]=Z_update[0];										
-				partial[1]=Z_update[1];
-				partial[2]=Z_update[2];
-				partialVector_iter.Set(partial);
+				// Only update uncertain partials
+				if ( !(partial[0] == 1 || partial[1] == 1 || partial[2] == 1) )
+				{
+					vnl_vector<float> Z_update=expectation(input_iter.Get(),mean, variance, weight, GetNeighbor(partialVector,input_iter.GetIndex()), Z);	//updates the partial values
+					partial[0]=Z_update[0];										
+					partial[1]=Z_update[1];
+					partial[2]=Z_update[2];
+					partialVector_iter.Set(partial);
+				}
 
 				//updates the new mean total partial sum for each class accordingly
 				for (int i=0;i<3;i++) 
@@ -990,6 +1006,7 @@ int main(int argc, char * argv[])
 					mean_temp[i]+=partial[i]*input_iter.Get();	
 					sum_temp[i]+=partial[i];
 				}
+
 			}
         }
 
@@ -1031,7 +1048,10 @@ int main(int argc, char * argv[])
 		ss<<"\t"<<mean[0]<<"\t"<<mean[1]<<"\t"<<mean[2]<<"\t"<<variance[0]<<"\t"<<variance[1]<<"\t"<<variance[2]<<"\t"<<weight[0]<<"\t"<<weight[1]<<"\t"<<weight[2]<<"\n";
 		em<<ss.str();
 
-		WritePartialImages(partialVector,chamfer_colon,"EM");
+		std::stringstream ss2;
+		ss2<<"EM"<<emNum+1;
+
+		WritePartialImages(partialVector,chamfer_colon,ss2.str());
     }
 
 	em.close();
@@ -1361,9 +1381,11 @@ double Probability(double Y, double mean, double variance,  double current_parti
 	if (variance>0.01) {
 		if (local_variance>0.01) { //?
 		//return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance))*exp(-beta*total_neighbor);
-			return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance))*exp(-vnl_math_sqr(current_partial-local_mean)/(2*local_variance))/(sqrt(2*PI*local_variance));
+			//return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance))*exp(-vnl_math_sqr(current_partial-local_mean)/(2*local_variance))/(sqrt(2*PI*local_variance));
+			return exp(-vnl_math_sqr(current_partial-local_mean)/(2*local_variance))/(sqrt(2*PI*local_variance));
 		} else {
-			return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance));
+			//return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance));
+			return exp(-vnl_math_sqr(current_partial-local_mean)/(2*local_variance))/(sqrt(2*PI*local_variance));
 		}
 	} else {
 		return 0;
@@ -2357,8 +2379,15 @@ ImageType::Pointer ReadDicom( std::string path )
 
 }
 
-void SmoothPartialVector(ImageVectorType::Pointer pv, IteratorTypeByteWithIndex &chamfer_colon_iter)
+void SmoothPartialVector(ImageVectorType::Pointer pv, ByteImageType::Pointer chamfer_colon, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex)
 {
+	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,pv->GetLargestPossibleRegion());
+
+	// Find edge of chamfer colon
+	//ByteImageType::Pointer chamfer_colon_edge = FindBinaryEdge(chamfer_colon,startIndex,endIndex);
+	//IteratorTypeByteWithIndex chamfer_colon_edge_iter(chamfer_colon_edge,pv->GetLargestPossibleRegion());
+	//WriteITK(chamfer_colon_edge,"chamfer_colon_edge.hdr");
+
 	IteratorImageVectorType pv_iter(pv,pv->GetLargestPossibleRegion());
 	
 	ImageType::Pointer part = AllocateNewImage(pv->GetLargestPossibleRegion());
@@ -2392,7 +2421,10 @@ void SmoothPartialVector(ImageVectorType::Pointer pv, IteratorTypeByteWithIndex 
 		// Apply smoothing filter to one dimension
 		DiscreteGaussianFilterType::Pointer dgFilter = DiscreteGaussianFilterType::New();
 		dgFilter->SetInput(part);
-		dgFilter->SetVariance(0.49);
+
+		std::cout << "Smoothing partial by " << pv->GetSpacing()[0] << "mm" << std::endl;
+
+		dgFilter->SetVariance(pv->GetSpacing()[0]*pv->GetSpacing()[0]);
 		dgFilter->Update();
 		part=dgFilter->GetOutput();
 		part_iter=IteratorTypeFloat4WithIndex(part,part->GetLargestPossibleRegion());
@@ -2400,14 +2432,19 @@ void SmoothPartialVector(ImageVectorType::Pointer pv, IteratorTypeByteWithIndex 
 		//WriteITK(part,"part_smooth.hdr");
 
 		// Set smoothed value back to partial vector image
-		for (pv_iter.GoToBegin(), part_iter.GoToBegin(); !pv_iter.IsAtEnd() && !part_iter.IsAtEnd(); ++pv_iter, ++part_iter)
+		for (pv_iter.GoToBegin(), part_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();//chamfer_colon_edge_iter.GoToBegin();
+			!pv_iter.IsAtEnd() && !part_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();// && !chamfer_colon_edge_iter.IsAtEnd();
+			 ++pv_iter, ++part_iter, ++chamfer_colon_iter)//, ++chamfer_colon_edge_iter)
 		{
-			CovariantVectorType p = pv_iter.Get();
-
-			if ( p[i] > 0 && p[i] < 1 )	 // only smooth uncertain partials
+			if (chamfer_colon_iter.Get() == 1 /*&& chamfer_colon_edge_iter.Get()==0*/) // in mask but not on edge
 			{
-				p[i] = part_iter.Get();
-				pv_iter.Set(p);
+				CovariantVectorType p = pv_iter.Get();
+
+				if ( p[i] < 1 )	 // only smooth uncertain partials
+				{
+					p[i] = part_iter.Get();
+					pv_iter.Set(p);
+				}
 			}
 		}
 	}
@@ -3023,11 +3060,15 @@ void ComputeThinness(ImageType::Pointer input)
 	// Create response image
 	ImageType::Pointer Himage = AllocateNewImage(region);
 	IteratorTypeFloat4WithIndex Himage_iter(Himage,region);
+	Himage->FillBuffer(0.0);
 
 	// Compute hessian across sigma scales
 	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
 
-	for (int k=0; k<2; k++)
+	std::ofstream file;
+	file.open("h.txt");
+
+	for (int k=0; k<1; k++)
 	{
 		// Compute smoothed Hessian
 		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
@@ -3071,17 +3112,23 @@ void ComputeThinness(ImageType::Pointer input)
 			}
 
 			float l[3];
-			l[0] = lambda[1];
-			l[1] = lambda[2];
-			l[2] = lambda[3];
+			l[0] = lambda[0];
+			l[1] = lambda[1];
+			l[2] = lambda[2];
 			
-			float t = thinness(l);
+			if (l[2] < -100.0)
+			{
+				float t = thinness(l);
+
+				file <<l[0]<<"\t"<<l[1]<<"\t"<<l[2]<<"\t"<<t<<"\n";
+
+				Himage_iter.Set(t);
+
+			}
 
 			if ( count % 50000 == 0) {
 				std::cout << "wait!" << std::endl;
 			}
-
-			Himage_iter.Set( t );
 
 			count++;
 
@@ -3095,7 +3142,7 @@ void ComputeThinness(ImageType::Pointer input)
 		{
 			std::stringstream ss;
 			ss << "sigma_" << sigma[k] << "_lambda_" << i << ".hdr";
-			//WriteITK(LambdaImageVector[i], ss.str());
+			WriteITK(LambdaImageVector[i], ss.str());
 		}
 
 		std::stringstream ss;
@@ -3104,6 +3151,7 @@ void ComputeThinness(ImageType::Pointer input)
 
 		
 	}
+	file.close();
 }
 
 ImageType::Pointer ComputeHessianTest(ImageType::Pointer input)
@@ -3685,5 +3733,283 @@ void HessianMeasure(ImageType::Pointer input)
 		ss << "sigma_" << sigma[k] << "ratio.hdr";
 		WriteITK(Himage,ss.str());
 		
+	}
+}
+
+ByteImageType::Pointer FindBinaryEdge(ByteImageType::Pointer im, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex)
+{
+	IteratorTypeByteWithIndex im_iter(im,im->GetLargestPossibleRegion());
+
+	ByteImageType::Pointer edge = AllocateNewByteImage(im->GetLargestPossibleRegion());
+	edge->FillBuffer(0);
+
+	IteratorTypeByteWithIndex edge_iter(edge,im->GetLargestPossibleRegion());
+
+	int radius = 2;
+
+	for (im_iter.GoToBegin(); !im_iter.IsAtEnd(); ++im_iter)
+	{
+
+		if ( im_iter.Get() == 1)
+		{
+			bool isEdge = false;
+
+			ImageType::IndexType index = im_iter.GetIndex();
+			for(int i=-radius;i<=radius;i++) {
+				if (!isEdge && index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
+					for (int j=-radius;j<=radius;j++) {
+						if (!isEdge && index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
+							for (int k=-radius;k<=radius;k++) {
+								if (!isEdge && index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
+									
+									ImageType::IndexType neighborIndex={index[0]+i,index[1]+j,index[2]+k};
+									if ( im->GetPixel( neighborIndex ) == 0 )
+									{
+										edge->SetPixel( index, 1);
+										isEdge = true;
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return edge;
+}
+
+ImageType::Pointer RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type)
+{
+	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,chamfer_colon->GetLargestPossibleRegion());
+	IteratorTypeVoxelType voxel_type_iter(voxel_type,voxel_type->GetLargestPossibleRegion());
+	IteratorTypeFloat4WithIndex input_iter(input,input->GetLargestPossibleRegion());
+
+	// Create smaller input region
+	ImageType::Pointer input_sub = AllocateNewImage(input->GetLargestPossibleRegion());
+	IteratorTypeFloat4WithIndex input_sub_iter(input_sub,input->GetLargestPossibleRegion());
+
+	for (input_sub_iter.GoToBegin(), input_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();
+		!input_sub_iter.IsAtEnd() && !input_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();
+		++input_sub_iter, ++input_iter, ++chamfer_colon_iter)
+	{
+		if ( chamfer_colon_iter.Get() == 1) {
+			input_sub_iter.Set(input_iter.Get());
+		} else {
+			input_sub_iter.Set(-1025);
+		}
+	}
+
+	// Calculate mean and variance of tissue voxels
+	float sum = 0;
+	int count = 0;
+
+	for (voxel_type_iter.GoToBegin(), input_iter.GoToBegin(); !voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd(); ++voxel_type_iter, ++input_iter)
+	{
+		if (voxel_type_iter.Get() == Tissue)
+		{
+			sum += input_iter.Get();
+			count++;
+		}
+	}
+
+	float mean = sum/count;
+
+	float variance = 0;
+
+	for (voxel_type_iter.GoToBegin(), input_iter.GoToBegin(); !voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd(); ++voxel_type_iter, ++input_iter)
+	{
+		if (voxel_type_iter.Get() == Tissue)
+		{
+			variance += vnl_math_sqr(input_iter.Get()-mean);
+		}
+	}
+	
+	variance = variance/count;
+
+	for (int i=0; i<3; i++)
+	{
+		FuzzyFilterType::Pointer fuzzyFilter = FuzzyFilterType::New();
+		fuzzyFilter->SetInput(input_sub);
+		fuzzyFilter->SetOutsideValue(0);
+		fuzzyFilter->SetInsideValue(1);
+		
+		float th = 0.05*(i+1);
+
+		fuzzyFilter->SetThreshold(th);
+
+		fuzzyFilter->SetMean(mean);
+		fuzzyFilter->SetVariance(variance);
+
+		input_iter.GoToBegin();
+		chamfer_colon_iter.GoToBegin();
+		voxel_type_iter.GoToBegin();
+
+		while (!input_iter.IsAtEnd())
+		{
+
+			if ( chamfer_colon_iter.Get() == 1 && voxel_type_iter.Get() == Tissue )
+			{
+				fuzzyFilter->SetObjectSeed(input_iter.GetIndex());
+				break;
+			}
+
+			++input_iter;
+			++chamfer_colon_iter;
+			++voxel_type_iter;
+		}
+
+		fuzzyFilter->Update();
+		ImageType::Pointer fuzzy = fuzzyFilter->GetOutput();
+
+		std::stringstream ss;
+		ss << "fuzzy_" << th << ".hdr";
+
+		WriteITK(fuzzy,ss.str());
+	}
+
+	return input;
+}
+
+float weight(float ls, float lt, float alpha, float gamma)
+{
+	if ( (lt <= ls) && (ls <= 0 ) )
+	{
+		return pow(1 + (ls/abs(lt)),gamma);
+	
+	} else if ( (abs(lt)/alpha > ls) && (ls > 0) )
+	{
+		return pow(1-(alpha*ls/abs(lt)),gamma);
+	} 
+
+	return 0;
+}
+
+float omega(float ls, float lt, float gamma)
+{
+	if ( (lt <= ls) && (ls < 0) )
+	{
+		return pow(ls/lt,gamma);
+	} 
+
+	return 0;
+}
+
+float S_line(float lambda[3], float alpha, float gamma)
+{
+	if ( (lambda[2] <= lambda[1]) && (lambda[1] < 0) )
+	{
+		return abs(lambda[2])*omega(lambda[1],lambda[2],gamma)*weight(lambda[0],lambda[1],alpha,gamma);
+	}
+
+	return 0;
+}
+
+float S_blob(float lambda[3], float gamma)
+{
+	if ( (lambda[2] <= lambda[1]) && (lambda[1] <= lambda[0]) && (lambda[0] < 0) )
+	{
+		return abs(lambda[2])*omega(lambda[1], lambda[2], gamma)*omega(lambda[0], lambda[1], gamma);
+	} 
+
+	return 0;
+}
+
+float S_sheet(float lambda[3], float alpha, float gamma)
+{
+	if (lambda[2] < 0)
+	{
+		return abs(lambda[2])*weight(lambda[1], lambda[2], alpha, gamma)*weight(lambda[0], lambda[2], alpha, gamma);
+	}
+
+	return 0;
+}
+
+void ComputeSatoHessian(ImageType::Pointer input)
+{
+	// Get input info
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+	ImageType::SpacingType spacing = input->GetSpacing();
+	ImageType::SizeType size = region.GetSize();
+
+	// Create response image
+	ImageType::Pointer S = AllocateNewImage(region);
+	
+
+	// Compute hessian across sigma scales
+	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
+
+	float alpha = 0.25;
+	float gamma = 0.5;
+
+	for (int k=0; k<1; k++)
+	{
+		
+		// Compute smoothed Hessian
+		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
+		hessianFilter->SetInput(input);
+		hessianFilter->SetNormalizeAcrossScale(true);
+		hessianFilter->SetSigma(sigma[k]);
+		hessianFilter->Update();
+		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
+
+		for (int j=0; j<3; j++) // loop over type: line, blob, sheet
+		{
+			S->FillBuffer(0.0);
+			IteratorTypeFloat4WithIndex S_iter(S,region);
+
+			hessian_iter.GoToBegin();
+			S_iter.GoToBegin();
+			
+			int count=0;
+
+			while (!hessian_iter.IsAtEnd()) 
+			{
+				EigenValueArrayType lambda;
+
+				// Get eigenvalues
+				hessian_iter.Get().ComputeEigenValues(lambda);
+				std::sort(lambda.Begin(),lambda.End(),OrderByValueDesc);
+
+				float l[3];
+				l[0] = lambda[0]; l[1] = lambda[1]; l[2] = lambda[2];
+
+				float val = 0;
+
+				switch (j)
+				{
+				case 0:
+					val = S_line(l, alpha, gamma);
+					break;
+				case 1:
+					val = S_blob(l, gamma);
+					break;
+				case 2:
+					val = S_sheet(l, alpha, gamma);
+					break;
+				}
+
+				S_iter.Set(val);
+
+				count++;
+
+				++hessian_iter;
+				++S_iter;
+
+			}
+
+			std::string type;
+			switch (j)
+			{
+			case 0: type="line";break;
+			case 1: type="blob";break;
+			case 2: type="sheet";break;
+			}
+
+			std::stringstream ss;
+			ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_type_" << type << ".hdr";
+			WriteITK(S,ss.str());
+		}
 	}
 }

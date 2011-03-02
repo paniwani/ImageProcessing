@@ -66,6 +66,8 @@
 #include <itkHessianRecursiveGaussianImageFilter.h>
 #include <itkSymmetricEigenAnalysisImageFilter.h>
 #include <itkDerivativeImageFilter.h>
+#include "itkSimpleFuzzyConnectednessScalarImageFilter.h"
+
 
 #include <fstream>
 #include <iostream>
@@ -107,6 +109,9 @@ typedef itk::ImageRegionIteratorWithIndex<ByteImageType>                    Iter
 
 typedef itk::Image<int, 3>													IntImageType;
 typedef itk::ImageRegionIteratorWithIndex<IntImageType>						IteratorTypeIntWithIndex;
+
+//typedef itk::Image<unsigned short,3>										UshortImageType;
+//typedef itk::ImageRegionIteratorWithIndex<UshortImageType>					UshortImageTypeWithIndex;
 
 typedef itk::ImageRegionIteratorWithIndex<EigenValueImageType>				EigenValueIterType;
 
@@ -166,6 +171,8 @@ typedef itk::DerivativeImageFilter<ImageType,ImageType>						DerivativeImageFilt
 typedef itk::Hessian3DToVesselnessMeasureImageFilter<float>					HessianVesselnessFilterType;
 typedef itk::HessianToObjectnessMeasureImageFilter< HessianGaussianFilterType::OutputImageType, ImageType> ObjectnessFilterType;
 
+typedef itk::SimpleFuzzyConnectednessScalarImageFilter<ImageType,ImageType> FuzzyFilterType;
+
 //Main Operation Function
 ImageType::Pointer RemoveStool(ImageType::Pointer input);
 VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, 
@@ -215,7 +222,7 @@ bool compareSize(LabelObjectType::Pointer a, LabelObjectType::Pointer b);
 int VoxelTypeToNum(VoxelType type);
 //VoxelType NumToVoxelType(int num);
 ImageType::Pointer ReadDicom( std::string path );
-void SmoothPartialVector(ImageVectorType::Pointer pv, IteratorTypeByteWithIndex &chamfer_colon_iter);
+void SmoothPartialVector(ImageVectorType::Pointer pv, ByteImageType::Pointer chamfer_colon, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex);
 
 ImageType::Pointer ComputeHessianResponse(ImageType::Pointer input);
 ImageType::Pointer ComputeHessianResponse2(ImageType::Pointer input);
@@ -226,7 +233,7 @@ ImageType::Pointer ComputeHessianTest(ImageType::Pointer input);
 void ComputeVesselness(ImageType::Pointer input);
 void ComputeThinness(ImageType::Pointer input);
 void HessianMeasure(ImageType::Pointer input);
-
+ImageType::Pointer RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type);
 
 
 void MeasureObjectness(ImageType::Pointer input);
@@ -236,6 +243,7 @@ float thinness( float l[3] );
 bool OrderByMagnitude (double a, double b);
 bool OrderByValue (double a, double b);
 bool OrderByValueDesc (double a, double b);
+ByteImageType::Pointer FindBinaryEdge(ByteImageType::Pointer im, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex);
 
 double fA(EigenValueArrayType lambda, double alpha);
 double fB(EigenValueArrayType lambda, double beta, double gamma);
@@ -253,4 +261,13 @@ template <class T> int solveNormalizedCubic (T r, T s, T t, T x[3]);
 template <class T> int solveCubic (T a, T b, T c, T d, T x[3]);
 
 typedef unsigned char SSlice[512][512]; 
+
+void ComputeSatoHessian(ImageType::Pointer input);
+
+float omega(float ls, float lt, float gamma);
+float weight(float ls, float lt, float alpha, float gamma);
+
+float S_sheet(float lambda[3], float alpha, float gamma);
+float S_blob(float lambda[3], float gamma);
+float S_line(float lambda[3], float alpha, float gamma);
 
