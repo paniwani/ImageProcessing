@@ -172,6 +172,7 @@ typedef itk::Hessian3DToVesselnessMeasureImageFilter<float>					HessianVesselnes
 typedef itk::HessianToObjectnessMeasureImageFilter< HessianGaussianFilterType::OutputImageType, ImageType> ObjectnessFilterType;
 
 typedef itk::SimpleFuzzyConnectednessScalarImageFilter<ImageType,ImageType> FuzzyFilterType;
+typedef FuzzyFilterType::FuzzySceneType										FuzzySceneType;
 
 //Main Operation Function
 ImageType::Pointer RemoveStool(ImageType::Pointer input);
@@ -211,6 +212,7 @@ void FindVoxelsByGradient(VoxelTypeImage::Pointer voxelEdge, ImageType::IndexTyp
 void FindVoxelsByGradient2(VoxelTypeImage::Pointer voxelEdge, ImageType::IndexType &index, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex, CovariantVectorType &grad, int numOfVoxels, std::vector<ImageType::IndexType> &indexVector);
 void OptimizeVoxelEdge(ImageType::Pointer input, VoxelTypeImage::Pointer voxelEdge, ImageVectorType::Pointer gradient );
 void WriteITK(ImageType::Pointer image, std::string name);
+void WriteITK(FuzzyFilterType::FuzzySceneType, std::string name);
 void WriteITK(ByteImageType::Pointer image, std::string name);
 void WriteITK(VoxelTypeImage::Pointer vimage, std::string name);
 void WriteITK(IntImageType::Pointer image, std::string name);
@@ -233,7 +235,7 @@ ImageType::Pointer ComputeHessianTest(ImageType::Pointer input);
 void ComputeVesselness(ImageType::Pointer input);
 void ComputeThinness(ImageType::Pointer input);
 void HessianMeasure(ImageType::Pointer input);
-ImageType::Pointer RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type);
+void RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type);
 
 
 void MeasureObjectness(ImageType::Pointer input);
@@ -263,6 +265,7 @@ template <class T> int solveCubic (T a, T b, T c, T d, T x[3]);
 typedef unsigned char SSlice[512][512]; 
 
 void ComputeSatoHessian(ImageType::Pointer input);
+void ComputeFrangiHessian(ImageType::Pointer input);
 
 float omega(float ls, float lt, float gamma);
 float weight(float ls, float lt, float alpha, float gamma);
@@ -270,4 +273,5 @@ float weight(float ls, float lt, float alpha, float gamma);
 float S_sheet(float lambda[3], float alpha, float gamma);
 float S_blob(float lambda[3], float gamma);
 float S_line(float lambda[3], float alpha, float gamma);
+float S_fold(float lambda[3], float alpha, float gamma);
 

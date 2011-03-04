@@ -6,7 +6,7 @@ double neighbor_weight[3]={1,1,.5};
 double beta=.7;
 double weight_sum=2.5;
 int writeCount=1;
-std::string note = "SATO_OBJECTNESS";
+std::string note = "";
 
 const double ALPHA = 0.5;
 const double BETA = 0.3;
@@ -30,6 +30,7 @@ int main(int argc, char * argv[])
 	//ReadITK(input, "C:/ImageData/mr10_092_13p.i0344_86-94.hdr");
 	//ReadITK(input, "C:/ImageData/mr10_092_13p.i0344.hdr");
 	ReadITK(input, "C:/ImageData/mr10_092_13p.i0344_100-105.hdr");
+	//ReadITK(input, "C:/ImageData/mr10_092_13p.i0344_75-125.hdr");
 	
 	// Set region
 	ImageType::RegionType fullRegion = input->GetLargestPossibleRegion();
@@ -56,7 +57,9 @@ int main(int argc, char * argv[])
 	// Print out the sub region of the image, un modified
 	WriteITK(input_temp,"input_temp.hdr");
 
-	ComputeSatoHessian(input);
+	//ComputeFrangiHessian(input);
+	//ComputeHessianResponse3(input);
+	//ComputeSatoHessian(input);
 
 	//HessianMeasure(input);
 
@@ -132,7 +135,7 @@ int main(int argc, char * argv[])
 		voxel_type_iter.Set(type);		//sets the type in the voxel_type structure
     }
 
-	WriteITK(voxel_type, "voxel_type_start.hdr");
+	WriteITK(voxel_type, "voxel_type_start_new.hdr");
 
 	// outputs the gradient magnitude purely for reference
 	std::cerr<<"Gradient max: "<<gradient_max<<std::endl;
@@ -362,7 +365,7 @@ int main(int argc, char * argv[])
 
 	//ImageType::Pointer RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type)
 
-	ImageType::Pointer fuzzy = RunFuzzy(input_temp,chamfer_colon,voxel_type);
+	RunFuzzy(input_temp,chamfer_colon,voxel_type);
 
 	// Read chamfer colon
 	//ReadITK(chamfer_colon, "mr10_092_13p.i0344_100-105_chamfer_colon_air_mask.hdr");
@@ -438,44 +441,6 @@ int main(int argc, char * argv[])
 
  	std::cerr<<"Done Edge"<<std::endl;
 
-	/*
-	// Fix TS using distance map to tissue
-	// Create mask of known tissue
-	ByteImageType::Pointer tissue_mask = AllocateNewByteImage(fullRegion);
-	IteratorTypeByteWithIndex tissue_mask_iter(tissue_mask,fullRegion);
-
-	for (voxel_type_iter.GoToBegin(), tissue_mask_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();
-		!voxel_type_iter.IsAtEnd() && !tissue_mask_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();
-		++voxel_type_iter, ++tissue_mask_iter, ++chamfer_colon_iter)
-	{
-		if (chamfer_colon_iter.Get() == 1)
-		{
-			VoxelType voxel = voxel_type_iter.Get();
-
-			if (voxel == Tissue)
-			{
-				tissue_mask_iter.Set(1);
-			} else {
-				tissue_mask_iter.Set(0);
-			}
-		} else {
-			tissue_mask_iter.Set(0);
-		}
-	}
-
-	// Run distance map
-	chamfer_filter = ChamferDistanceFilterType::New();
-	chamfer_filter->SetInput(tissue_mask);
-	chamfer_filter->SetWeights(chamfer_weights, chamfer_weights+3);
-	chamfer_filter->SetDistanceFromObject(true);
-	chamfer_filter->Update();
-	tissue_mask=chamfer_filter->GetOutput();
-	tissue_mask_iter = IteratorTypeByteWithIndex(chamfer_colon,fullRegion);
-	chamfer_filter.~SmartPointer();
-
-	WriteITK(tissue_mask,"tissue_chamfer.hdr");
-	*/
-
 	// Optimize SA transitions using gradient information
 	//std::cerr<<"Running voxel edge optimization"<<std::endl;
 	
@@ -498,7 +463,7 @@ int main(int argc, char * argv[])
 		}
 	}
 
-	WriteITK(chamfer_from_stool_involvement,"non_stool_mask.hdr");
+	//WriteITK(chamfer_from_stool_involvement,"non_stool_mask.hdr");
 
 	chamfer_filter = ChamferDistanceFilterType::New();
 	chamfer_filter->SetInput(chamfer_from_stool_involvement);
@@ -510,7 +475,7 @@ int main(int argc, char * argv[])
 	chamfer_from_stool_involvement_iter = IteratorTypeByteWithIndex(chamfer_from_stool_involvement,fullRegion);
 	chamfer_filter.~SmartPointer();
 
-	WriteITK(chamfer_from_stool_involvement, "non_stool_distance.hdr");
+	//WriteITK(chamfer_from_stool_involvement, "non_stool_distance.hdr");
 
 	// Find thin stool voxels < 8 and no neighbors > 8 (which were not already classified as stool)
 	int chamfercutoff = 8;
@@ -520,7 +485,7 @@ int main(int argc, char * argv[])
 		!voxel_type_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd(); 
 		++voxel_type_iter, ++chamfer_from_stool_involvement_iter) 
     {
-		if (voxel_type_iter.Get() != Stool)
+		if (voxel_type_iter.Get() != Stool && voxel_type_iter.Get() != TissueStool) // do not turn these into thin stool
 		{
 			if (chamfer_from_stool_involvement_iter.Get() < chamfercutoff && chamfer_from_stool_involvement_iter.Get() > 0)
 			{
@@ -592,7 +557,7 @@ int main(int argc, char * argv[])
 	chamfer_air=chamfer_filter->GetOutput();
 	chamfer_air_iter= IteratorTypeByteWithIndex(chamfer_air,fullRegion);
 	chamfer_filter.~SmartPointer();
-	WriteITK(chamfer_air,"chamfer_to_air.hdr");
+	//WriteITK(chamfer_air,"chamfer_to_air.hdr");
 	
 	// Convert stool and air chamfers to float and normalize
 	ImageType::Pointer ds = AllocateNewImage(fullRegion);
@@ -623,8 +588,8 @@ int main(int argc, char * argv[])
 	da_iter = IteratorTypeFloat4WithIndex(da,fullRegion);
 	ds_iter = IteratorTypeFloat4WithIndex(ds,fullRegion);
 
-	WriteITK(da,"normalized_air.hdr");
-	WriteITK(ds,"normalized_stool.hdr");
+	//WriteITK(da,"normalized_air.hdr");
+	//WriteITK(ds,"normalized_stool.hdr");
 
 	//-------------------------------------------------COMPUTE PARTIAL VOLUMES---------------------------------------------------------------
 	
@@ -641,9 +606,9 @@ int main(int argc, char * argv[])
 	file.open("pv.txt");
 	file << "Index\tIntensity\tGradient\tClass\tPa\tPt\tPs\n";
 
-	for(partialVector_iter.GoToBegin(), input_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), voxel_type_iter.GoToBegin(), input_smax_iter.GoToBegin(), da_iter.GoToBegin(), ds_iter.GoToBegin(), gradient_magnitude_iter.GoToBegin();
-		!partialVector_iter.IsAtEnd() && !input_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd() && !voxel_type_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !da_iter.IsAtEnd() && !ds_iter.IsAtEnd() && !gradient_magnitude_iter.IsAtEnd(); 
-        ++partialVector_iter, ++input_iter, ++chamfer_colon_iter, ++voxel_type_iter, ++input_smax_iter, ++da_iter, ++ds_iter, ++gradient_magnitude_iter) 
+	for(partialVector_iter.GoToBegin(), input_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), voxel_type_iter.GoToBegin(), input_smax_iter.GoToBegin(), gradient_magnitude_iter.GoToBegin(), da_iter.GoToBegin(), ds_iter.GoToBegin();
+		!partialVector_iter.IsAtEnd() && !input_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd() && !voxel_type_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !gradient_magnitude_iter.IsAtEnd() && !da_iter.IsAtEnd() && !ds_iter.IsAtEnd() ; 
+        ++partialVector_iter, ++input_iter, ++chamfer_colon_iter, ++voxel_type_iter, ++input_smax_iter, ++gradient_magnitude_iter, ++da_iter, ++ds_iter) 
 	{
 		if (chamfer_colon_iter.Get() == 1)
 		{
@@ -783,7 +748,7 @@ int main(int argc, char * argv[])
 		++chamfer_colon_iter;
 	}
 
-	WriteITK(pt_mask,"pt_mask.hdr");
+	//WriteITK(pt_mask,"pt_mask.hdr");
 
 	// Run cc on pt mask
 	ccFilter = ConnectedComponentFilterType::New();
@@ -791,7 +756,7 @@ int main(int argc, char * argv[])
 	ccFilter->Update();
 	cc=ccFilter->GetOutput();
 
-	WriteITK(cc, "pt_mask_cc.hdr");
+	//WriteITK(cc, "pt_mask_cc.hdr");
 
 	converter = LabelImageToShapeLabelMapFilterType::New();
 	converter->SetInput(cc);
@@ -1771,6 +1736,8 @@ float PolyDist(float X, vnl_real_polynomial poly, float x, float y) {
 }
 VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, ImageType::PixelType input_gradient_pixel) {
 	if (Modified) {
+
+		/*
 		if ((input_pixel >=800 && input_gradient_pixel<=0.8*input_pixel) || input_pixel >= 1000) {
 			return Stool;
 		} else if (input_pixel<=-800) {
@@ -1780,6 +1747,18 @@ VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, ImageTy
 		} else {
 			return Unclassified;
 		}
+		*/
+
+		if (input_pixel >=650) {
+			return Stool;
+		} else if (input_pixel<=-600) {
+			return Air;
+		} else if (input_pixel<=300  && input_pixel>=-300 && input_gradient_pixel<=700) {
+			return Tissue;
+		} else {
+			return Unclassified;
+		}
+
 	} else {
 		if ((input_pixel >=180 && input_gradient_pixel<=0.8*input_pixel)) {
 			return Stool;
@@ -2110,6 +2089,26 @@ double round(float d)
 void WriteITK(ImageType::Pointer image, std::string name) {
 	// Use ITK Writer
 	typedef itk::ImageFileWriter< ImageType >  WriterType;
+    WriterType::Pointer writer = WriterType::New();
+	WriterType::SetGlobalWarningDisplay(false);
+	
+	std::stringstream ss;
+	if (Modified)
+		ss << "Modified_";
+	if ( !note.empty() )
+		ss << note << "_";
+	ss << writeCount++ << "_" << name;
+	writer->SetFileName(ss.str().c_str());
+
+	writer->SetInput(image);
+	std::cout<<"Writing: "<<ss.str()<<std::endl;
+	writer->Update();
+	writer.~SmartPointer();
+}
+
+void WriteITK(FuzzySceneType::Pointer image, std::string name) {
+	// Use ITK Writer
+	typedef itk::ImageFileWriter< FuzzySceneType >  WriterType;
     WriterType::Pointer writer = WriterType::New();
 	WriterType::SetGlobalWarningDisplay(false);
 	
@@ -2484,9 +2483,9 @@ ImageType::Pointer ComputeHessianResponse(ImageType::Pointer input)
 	IteratorTypeFloat4WithIndex Himage_iter(Himage,region);
 
 	// Compute hessian across sigma scales
-	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
+	double sigma[7] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0], 6*spacing[0], 7*spacing[0]};
 
-	for (int k=0; k<2; k++)
+	for (int k=0; k<5; k++)
 	{
 		// Compute smoothed Hessian
 		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
@@ -2521,6 +2520,8 @@ ImageType::Pointer ComputeHessianResponse(ImageType::Pointer input)
 		tagged_iter.GoToBegin();
 		Himage_iter.GoToBegin();
 
+		int count=0;
+
 		while (!hessian_iter.IsAtEnd()) 
 		{
 			EigenValueArrayType lambda;
@@ -2529,15 +2530,20 @@ ImageType::Pointer ComputeHessianResponse(ImageType::Pointer input)
 				
 				// Get eigenvalues
 				hessian_iter.Get().ComputeEigenValues(lambda);
-				std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
-				//std::sort(lambda.Begin(),lambda.End(),OrderByValue);
+				//std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
+				std::sort(lambda.Begin(),lambda.End(),OrderByValueDesc);
+
+				if (count % 50000 == 0)
+				{
+					std::cout << "what" << std::endl;
+				}	
 
 				for (int i=0; i<3; i++)
 				{
 					LambdaIterVector[i].Set( lambda[i] );
 				}
 
-				if ( lambda[2] > 100.0 )
+				if ( lambda[2] < 0 )
 				{
 					// A, B, C1, C2, Cup, Rut
 					FIterVector[0].Set( fA(lambda, ALPHA) );
@@ -2568,6 +2574,7 @@ ImageType::Pointer ComputeHessianResponse(ImageType::Pointer input)
 			++hessian_iter;
 			++tagged_iter;
 			++Himage_iter;
+			count++;
 
 			for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
 			for (int i=0; i<7; i++) { ++FIterVector[i]; }
@@ -2980,7 +2987,7 @@ ImageType::Pointer ComputeHessianResponse3(ImageType::Pointer input)
 	// Compute hessian across sigma scales
 	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
 
-	for (int k=0; k<2; k++)
+	for (int k=0; k<3; k++)
 	{
 		// Compute smoothed Hessian
 		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
@@ -2993,6 +3000,9 @@ ImageType::Pointer ComputeHessianResponse3(ImageType::Pointer input)
 		// Create helper images and iters to visualize algorithm
 		std::vector< ImageType::Pointer > LambdaImageVector(3);
 		std::vector< itk::ImageRegionIterator<ImageType> > LambdaIterVector(3);
+
+		float alpha = 0.25;
+		float gamma = 0.5;
 
 		for (int i=0; i<3; i++)
 		{
@@ -3013,24 +3023,20 @@ ImageType::Pointer ComputeHessianResponse3(ImageType::Pointer input)
 
 			// Get eigenvalues
 			hessian_iter.Get().ComputeEigenValues(lambda);
-			std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
-			//std::sort(lambda.Begin(),lambda.End(),OrderByValue);
+			//std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
+			std::sort(lambda.Begin(),lambda.End(),OrderByValueDesc);
 
 			for (int i=0; i<3; i++)
 			{
 				LambdaIterVector[i].Set( lambda[i] );
 			}
 
-			if ( abs(lambda[0]) < 20 )
-			{
-				float R = abs(lambda[1]/lambda[2]);
+			float l[3];
+			l[0] = lambda[0];
+			l[1] = lambda[1];
+			l[2] = lambda[2];
 
-				Himage_iter.Set( 0.5*(1-vnl_erf((R-0.5)/(CDF_SIGMA*sqrtf(2)))) );
-
-				
-			} else {
-				Himage_iter.Set(0);
-			}			
+			Himage_iter.Set(S_fold(l, alpha, gamma));		
 
 			count++;
 
@@ -3046,6 +3052,10 @@ ImageType::Pointer ComputeHessianResponse3(ImageType::Pointer input)
 			ss << "sigma_" << sigma[k] << "_lambda_" << i << ".hdr";
 			WriteITK(LambdaImageVector[i], ss.str());
 		}
+
+		std::stringstream ss;
+		ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_S_fold.hdr";
+		WriteITK(Himage,ss.str());
 	}
 
 	return Himage;
@@ -3548,7 +3558,8 @@ ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer input, VoxelTypeIm
 					
 					if (idx[0] >= sidx[0] && idx[0] <= eidx[0] && idx[1] >= sidx[1] && idx[1] <= eidx[1] && idx[2] >= sidx[2] && idx[2] <= eidx[2])
 					{
-						if (nit.GetPixel(i) == Stool || input_iter.Get() >= 400)
+						
+						if (nit.GetPixel(i) == Stool /*|| val > 400 */)
 						{
 							float val = input->GetPixel(idx);
 
@@ -3780,7 +3791,7 @@ ByteImageType::Pointer FindBinaryEdge(ByteImageType::Pointer im, ImageType::Inde
 	return edge;
 }
 
-ImageType::Pointer RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type)
+void RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type)
 {
 	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,chamfer_colon->GetLargestPossibleRegion());
 	IteratorTypeVoxelType voxel_type_iter(voxel_type,voxel_type->GetLargestPossibleRegion());
@@ -3828,48 +3839,55 @@ ImageType::Pointer RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer cha
 	
 	variance = variance/count;
 
-	for (int i=0; i<3; i++)
+	FuzzyFilterType::Pointer fuzzyFilter = FuzzyFilterType::New();
+	fuzzyFilter->SetInput(input_sub);
+	fuzzyFilter->SetOutsideValue(0);
+	fuzzyFilter->SetInsideValue(1);
+	fuzzyFilter->SetThreshold(0.1);
+
+	fuzzyFilter->SetMean(mean);
+	fuzzyFilter->SetVariance(variance);
+
+	input_iter.GoToBegin();
+	chamfer_colon_iter.GoToBegin();
+	voxel_type_iter.GoToBegin();
+
+	while (!input_iter.IsAtEnd())
 	{
-		FuzzyFilterType::Pointer fuzzyFilter = FuzzyFilterType::New();
-		fuzzyFilter->SetInput(input_sub);
-		fuzzyFilter->SetOutsideValue(0);
-		fuzzyFilter->SetInsideValue(1);
-		
-		float th = 0.05*(i+1);
 
-		fuzzyFilter->SetThreshold(th);
-
-		fuzzyFilter->SetMean(mean);
-		fuzzyFilter->SetVariance(variance);
-
-		input_iter.GoToBegin();
-		chamfer_colon_iter.GoToBegin();
-		voxel_type_iter.GoToBegin();
-
-		while (!input_iter.IsAtEnd())
+		if ( chamfer_colon_iter.Get() == 1 && voxel_type_iter.Get() == Tissue )
 		{
-
-			if ( chamfer_colon_iter.Get() == 1 && voxel_type_iter.Get() == Tissue )
-			{
-				fuzzyFilter->SetObjectSeed(input_iter.GetIndex());
-				break;
-			}
-
-			++input_iter;
-			++chamfer_colon_iter;
-			++voxel_type_iter;
+			fuzzyFilter->SetObjectSeed(input_iter.GetIndex());
+			break;
 		}
 
-		fuzzyFilter->Update();
-		ImageType::Pointer fuzzy = fuzzyFilter->GetOutput();
-
-		std::stringstream ss;
-		ss << "fuzzy_" << th << ".hdr";
-
-		WriteITK(fuzzy,ss.str());
+		++input_iter;
+		++chamfer_colon_iter;
+		++voxel_type_iter;
 	}
 
-	return input;
+	fuzzyFilter->Update();
+
+	typedef itk::CastImageFilter< FuzzySceneType, ImageType > CastFilterType;
+	CastFilterType::Pointer caster = CastFilterType::New();
+	caster->SetInput(fuzzyFilter->GetFuzzyScene());
+	
+	typedef itk::RescaleIntensityImageFilter<ImageType, ImageType> RescaleFilterType;
+	RescaleFilterType::Pointer rescaler = RescaleFilterType::New();
+	rescaler->SetInput(caster->GetOutput());
+	rescaler->SetOutputMinimum(0);
+	rescaler->SetOutputMaximum(1);
+	rescaler->Update();
+
+	WriteITK(rescaler->GetOutput(),"fuzzy_scene3.hdr");
+	/*
+
+	typedef itk::ImageFileWriter< FuzzySceneType > FuzzyWriterType;
+	FuzzyWriterType::Pointer fwriter = FuzzyWriterType::New();
+	fwriter->SetFileName("fuzzy_scene.hdr");
+	fwriter->SetInput(fuzzyFilter->GetFuzzyScene());
+	fwriter->Update();
+	*/
 }
 
 float weight(float ls, float lt, float alpha, float gamma)
@@ -3926,6 +3944,16 @@ float S_sheet(float lambda[3], float alpha, float gamma)
 	return 0;
 }
 
+float S_fold(float lambda[3], float alpha, float gamma)
+{
+	if (lambda[2] < 0)
+	{
+		return abs(lambda[2])*weight(lambda[1], lambda[2], alpha, gamma)*weight(lambda[0], lambda[1], alpha, gamma);
+	}
+	
+	return 0;
+}
+
 void ComputeSatoHessian(ImageType::Pointer input)
 {
 	// Get input info
@@ -3943,7 +3971,7 @@ void ComputeSatoHessian(ImageType::Pointer input)
 	float alpha = 0.25;
 	float gamma = 0.5;
 
-	for (int k=0; k<1; k++)
+	for (int k=1; k<4; k++)
 	{
 		
 		// Compute smoothed Hessian
@@ -4010,6 +4038,48 @@ void ComputeSatoHessian(ImageType::Pointer input)
 			std::stringstream ss;
 			ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_type_" << type << ".hdr";
 			WriteITK(S,ss.str());
+		}
+	}
+}
+
+void ComputeFrangiHessian(ImageType::Pointer input)
+{
+	// Get input info
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+	ImageType::SpacingType spacing = input->GetSpacing();
+	ImageType::SizeType size = region.GetSize();
+
+	// Compute hessian across sigma scales
+	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
+
+	for (int k=0; k<3; k++)
+	{
+		
+		// Compute smoothed Hessian
+		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
+		hessianFilter->SetInput(input);
+		hessianFilter->SetNormalizeAcrossScale(true);
+		hessianFilter->SetSigma(sigma[k]);
+		hessianFilter->Update();
+
+		for (int j=0; j<3; j++) // loop over type: blobs, vessels, plates
+		{
+			ObjectnessFilterType::Pointer ofilter = ObjectnessFilterType::New();
+			ofilter->SetInput(hessianFilter->GetOutput());
+			ofilter->SetBrightObject(false);
+			ofilter->SetObjectDimension(j);
+
+			std::string type;
+			switch (j)
+			{
+				case 0: type="blob";break;
+				case 1: type="vessels";break;
+				case 2: type="plates";break;
+			}
+
+			std::stringstream ss;
+			ss << "sigma_" << sigma[k] << "_type_" << type << ".hdr";
+			WriteITK(ofilter->GetOutput(),ss.str());
 		}
 	}
 }
