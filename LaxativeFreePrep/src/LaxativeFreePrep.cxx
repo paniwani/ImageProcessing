@@ -124,7 +124,7 @@ vnl_matrix<float> GetNeighbor(ImageVectorType::Pointer partialVector, ImageType:
 
 
 void EMClassification(IteratorTypeFloat4WithIndex input_iter, IteratorTypeVoxelType voxel_type_iter, IteratorImageVectorType partialVector_iter,
-					  IteratorTypeFloat4WithIndex chamfer_colon_iter, IteratorTypeFloat4WithIndex temp_iter) {
+					  IteratorTypeByteWithIndex chamfer_colon_iter, IteratorTypeFloat4WithIndex temp_iter) {
 	for(input_iter.GoToBegin(), voxel_type_iter.GoToBegin(), partialVector_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), temp_iter.GoToBegin(); 
 		!input_iter.IsAtEnd() && !voxel_type_iter.IsAtEnd() && !partialVector_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd() && !temp_iter.IsAtEnd(); 
 		++input_iter, ++voxel_type_iter, ++partialVector_iter, ++chamfer_colon_iter, ++temp_iter) 
@@ -172,7 +172,7 @@ void EMClassification(IteratorTypeFloat4WithIndex input_iter, IteratorTypeVoxelT
 
 }
 
-ImageType::Pointer longruntests(ImageType::Pointer temp, int size, int direction) {
+ImageType::Pointer longruntests(ImageType::Pointer temp, int size, int direction, float modifier) {
 	ImageType::RegionType fullRegion=temp->GetLargestPossibleRegion();
 	temp->SetRequestedRegion(fullRegion);
 	
@@ -297,7 +297,7 @@ ImageType::Pointer longruntests(ImageType::Pointer temp, int size, int direction
 
 			int returned_value =NIH_Algo_Texture_StatisticalMoments_2D(short_data,x_end-x_start+1, y_end-y_start+1,texture_stat_momment,-1);
 			if (returned_value==0) {
-				temp_iter.Set(abs(texture_stat_momment.variance ));
+				temp_iter.Set(abs(texture_stat_momment.variance)*modifier);
 			} else {
 				std::cerr<<"fucked up somewher"<<std::endl;
 				break;
@@ -308,10 +308,10 @@ ImageType::Pointer longruntests(ImageType::Pointer temp, int size, int direction
 	return output;
 }
 
-ImageType::Pointer levelset_comp(ImageType::Pointer inputImage, ImageType::Pointer chamfer) {
+ImageType::Pointer levelset_comp(ImageType::Pointer inputImage) {
 
-	WriteITK(inputImage, "level set input.mhd");
-	WriteITK(chamfer, "level set chamfer.mhd");
+	//WriteITK(inputImage, "level set input.mhd");
+	//WriteITK(chamfer, "level set chamfer.mhd");
 
 
 	//typedef itk::GradientMagnitudeRecursiveGaussianImageFilter< ImageType,
@@ -337,37 +337,7 @@ ImageType::Pointer levelset_comp(ImageType::Pointer inputImage, ImageType::Point
 	test->SetInput(inputImage);
 	test->Update();
 	ImageType::Pointer edge_potential=test->GetOutput();
-  
-	/**
-   * Create an initial level.
-   * Use fast marching to create an signed distance from a seed point.
-   */
-	//typedef itk::FastMarchingImageFilter<ImageType> FastMarchingFilterType;
-	//FastMarchingFilterType::Pointer fastMarching = FastMarchingFilterType::New();
 
-	//typedef FastMarchingFilterType::NodeContainer NodeContainer;
-	//typedef FastMarchingFilterType::NodeType      NodeType;
-
-	//NodeContainer::Pointer seeds = NodeContainer::New();
-
- // // Choose an initial contour that overlaps the square to be segmented.
-	//ImageType::IndexType seedPosition;
-	//seedPosition[0] = 134;
-	//seedPosition[1] = 292;
-	//seedPosition[2] = 141;
-
-	//NodeType node;
-	//node.SetValue( -15 );
-	//node.SetIndex( seedPosition );
-
-	//seeds->Initialize();
-	//seeds->InsertElement( 0, node );
-
-	//fastMarching->SetInput( inputImage );
-	//fastMarching->SetTrialPoints( seeds );
-	//fastMarching->SetSpeedConstant( 1.0 );
-	//fastMarching->SetOutputSize( inputImage->GetLargestPossibleRegion().GetSize() );
-	//fastMarching->Update();
 
 	ImageType::Pointer marching = AllocateNewImage(inputImage->GetLargestPossibleRegion());
 	IteratorTypeFloat4WithIndex marching_iter(marching,marching->GetLargestPossibleRegion());
@@ -375,18 +345,13 @@ ImageType::Pointer levelset_comp(ImageType::Pointer inputImage, ImageType::Point
 	
 	for (marching_iter.GoToBegin(), input_iter.GoToBegin(); !marching_iter.IsAtEnd() && !input_iter.IsAtEnd(); ++marching_iter, ++input_iter) {
 		if (input_iter.Get()<300) {
-			marching_iter.Set(1000000);
+			marching_iter.Set(15);
 		} else {
 			marching_iter.Set(-15);
 		}
 	}
 
-	WriteITK(marching, "matching_output.mhd");
-  /**
-   * Set up and run the shape detection filter
-   */
-	typedef itk::CurvesLevelSetImageFilter<
-		ImageType, ImageType > CurvesFilterType;
+	typedef itk::CurvesLevelSetImageFilter< ImageType, ImageType > CurvesFilterType;
   
 	CurvesFilterType::Pointer curvesFilter = CurvesFilterType::New();
   
@@ -397,8 +362,8 @@ ImageType::Pointer levelset_comp(ImageType::Pointer inputImage, ImageType::Point
 	curvesFilter->SetFeatureImage( edge_potential );
 
   // set the weights between the propagation, curvature and advection terms
-	curvesFilter->SetPropagationScaling( .4 );
-	curvesFilter->SetCurvatureScaling( .1 );
+	curvesFilter->SetPropagationScaling( 0.1 );
+	curvesFilter->SetCurvatureScaling( 0.5 );
 	curvesFilter->SetAdvectionScaling( 0.4 );
 
   // set the convergence criteria
@@ -414,225 +379,11 @@ ImageType::Pointer levelset_comp(ImageType::Pointer inputImage, ImageType::Point
 	return curvesFilter->GetOutput();
 }
 
-ImageType::Pointer RemoveStool3(ImageType::Pointer input) {
- 
-	//ImageType::IndexType origin={0,0,0};
-	//ImageType::SizeType volume={150,150,150};
-	//ImageType::RegionType fullRegion(origin, volume);
-	//ImageType::Pointer image = AllocateNewImage(fullRegion);
-	//IteratorTypeFloat4WithIndex image_iter(image,image->GetLargestPossibleRegion());
-	//for(image_iter.GoToBegin(); !image_iter.IsAtEnd(); ++image_iter) {
-	//	if ((vnl_math_sqr(image_iter.GetIndex()[0]-125)+vnl_math_sqr(image_iter.GetIndex()[1]-75)+vnl_math_sqr(image_iter.GetIndex()[2]-75))<15) {
-	//		image_iter.Set(1);
-	//	} else if ((vnl_math_sqr(image_iter.GetIndex()[0]-25)+vnl_math_sqr(image_iter.GetIndex()[1]-75)+vnl_math_sqr(image_iter.GetIndex()[2]-75))<15) {
-	//		image_iter.Set(1);
-	//	} else if ((vnl_math_sqr(image_iter.GetIndex()[0]-75)+vnl_math_sqr(image_iter.GetIndex()[1]-75)+vnl_math_sqr(image_iter.GetIndex()[2]-125))<15) {
-	//		image_iter.Set(1);
-	//	} else if ((vnl_math_sqr(image_iter.GetIndex()[0]-75)+vnl_math_sqr(image_iter.GetIndex()[1]-75)+vnl_math_sqr(image_iter.GetIndex()[2]-25))<15) {
-	//		image_iter.Set(1);
-	//	} else if (image_iter.GetIndex()[2]>30 && image_iter.GetIndex()[2]<120 && (vnl_math_sqr(image_iter.GetIndex()[0]-75)+vnl_math_sqr(image_iter.GetIndex()[1]-75))<100) {
-	//		image_iter.Set(1);
-	//	} else {
-	//		image_iter.Set(0);
-	//	}
-	//}
-	//WriteITK(image, "image.mhd");
-
-
-	//Region Setup (this is for a sub region to increase testing/debugging efficiency)
-	ImageType::SizeType size = {512,512,60};
-	ImageType::IndexType index = {0,0,110};
-	ImageType::RegionType fullRegion(index,size);
-	////this is for the whole image
-	////ImageType::RegionType fullRegion=input->GetLargestPossibleRegion();
-
-	////declares a temporary storage of the image with the selected region
-	//ImageType::Pointer input_temp = AllocateNewImage(fullRegion);
-	//input_temp->SetSpacing(input->GetSpacing());
-
-	////declares two iterators, one for the original image, one for the sub image
-	//IteratorTypeFloat4WithIndex input_temp_iter(input,fullRegion);
-	//IteratorTypeFloat4WithIndex input_iter(input_temp,fullRegion);
-
-	////Copy Image the sub region into the temporary container
-	//for(input_iter.GoToBegin() , input_temp_iter.GoToBegin() ; !input_iter.IsAtEnd() && !input_temp_iter.IsAtEnd(); ++input_iter, ++input_temp_iter) {
-	//	input_iter.Set(input_temp_iter.Get());
-	//}
-
-
-
-
-
-
-
-
-	//WriteITK(min, "min variance.mhd");
-
-	////computes the gradient magnitude for the image and set it to a temporary variable
- //   GradientMagnitudeFilterType::Pointer gradient_filter = GradientMagnitudeFilterType::New();
- //   gradient_filter->SetInput(min);
- //   gradient_filter->Update();
- //   ImageType::Pointer temp = gradient_filter->GetOutput();					//this variable will be reused later for other purpose, meaning change will be commented
-	//gradient_filter.~SmartPointer();	
-
-	//WriteITK(temp, "min variance gradient.mhd");
-
-	typedef itk::ImageFileReader<ImageType> ReaderType;
-	ReaderType::Pointer reader = ReaderType::New();
-	reader->SetFileName("C:/ds/Uncleansed/mr10/mr10_330_13s.i0309/output one.mhd");
-	reader->Update();
-	ImageType::Pointer output = reader->GetOutput();
-	output->SetSpacing(input->GetSpacing());
-	output->SetRegions(fullRegion);
-	reader.~SmartPointer();
-
-	reader = ReaderType::New();
-	reader->SetFileName("C:/ds/Uncleansed/mr10/mr10_330_13s.i0309/chamfer from tissue back.mhd");
-	reader->Update();
-	ImageType::Pointer chamfer_from_stool_involvement = reader->GetOutput();
-	chamfer_from_stool_involvement->SetSpacing(input->GetSpacing());
-	chamfer_from_stool_involvement->SetRegions(fullRegion);
-	reader.~SmartPointer();
-
-	IteratorTypeFloat4WithIndex chamfer_from_stool_involvement_iter(chamfer_from_stool_involvement, chamfer_from_stool_involvement->GetLargestPossibleRegion());
-
-	ImageType::Pointer curvesFilter_image = levelset_comp(output, chamfer_from_stool_involvement);
-	WriteITK(curvesFilter_image, "levelset_output.mhd");
-	std::cerr<<curvesFilter_image->GetLargestPossibleRegion().GetIndex()[0]<<" "<<curvesFilter_image->GetLargestPossibleRegion().GetIndex()[1]<<" "<<curvesFilter_image->GetLargestPossibleRegion().GetIndex()[2]<<std::endl;
-	std::cerr<<output->GetLargestPossibleRegion().GetIndex()[0]<<" "<<output->GetLargestPossibleRegion().GetIndex()[1]<<" "<<output->GetLargestPossibleRegion().GetIndex()[2]<<std::endl;
-	std::cerr<<chamfer_from_stool_involvement->GetLargestPossibleRegion().GetIndex()[0]<<" "<<chamfer_from_stool_involvement->GetLargestPossibleRegion().GetIndex()[1]<<" "<<chamfer_from_stool_involvement->GetLargestPossibleRegion().GetIndex()[2]<<std::endl;
-	IteratorTypeFloat4WithIndex curvesFilter_iter(curvesFilter_image,curvesFilter_image->GetLargestPossibleRegion());
-
-	ImageType::IndexType endIndex = fullRegion.GetIndex();
-	ImageType::IndexType startIndex = fullRegion.GetIndex();	
-	endIndex[0]+=(fullRegion.GetSize()[0]-1);
-	endIndex[1]+=(fullRegion.GetSize()[1]-1);
-	endIndex[2]+=(fullRegion.GetSize()[2]-1);
-
-	int chamfercutoff=20;
-	for (int i=0;i<2;i++) {
-		//Forward
-		for(chamfer_from_stool_involvement_iter.GoToBegin(), curvesFilter_iter.GoToBegin(); 
-			!chamfer_from_stool_involvement_iter.IsAtEnd() && !curvesFilter_iter.IsAtEnd(); 
-			++chamfer_from_stool_involvement_iter, ++curvesFilter_iter){
-			ImageType::IndexType index = chamfer_from_stool_involvement_iter.GetIndex();
-			float temp_value=chamfer_from_stool_involvement_iter.Get();
-			if (temp_value>=chamfercutoff-2/* && curvesFilter_iter.Get()>-.5 && curvesFilter_iter.Get()<.5)*/) {
-				for(int i=-1;i<=1;i++) {
-					if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
-						for (int j=-1;j<=1;j++) {
-							if (index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
-								for (int k=-1;k<=1;k++) {
-									if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
-										ImageType::IndexType temp_index={index[0]+i,index[1]+j,index[2]+k};
-										if ((chamfer_from_stool_involvement->GetPixel(temp_index)>0 && chamfer_from_stool_involvement->GetPixel(temp_index)<temp_value)) {
-											if (abs(curvesFilter_image->GetPixel(temp_index)-curvesFilter_iter.Get())<=.5) {
-												chamfer_from_stool_involvement->SetPixel(temp_index,temp_value);
-											}/* else if ((curvesFilter_image->GetPixel(temp_index)-curvesFilter_iter.Get())>-.5) {
-												chamfer_from_stool_involvement->SetPixel(temp_index,temp_value-1);
-											}*/
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-
-		//Write the modified chamfer map
-		WriteITK(chamfer_from_stool_involvement,"chamfer from tissue forward 2 test.mhd");
-		
-		//Backward
-		for(chamfer_from_stool_involvement_iter.GoToReverseBegin(), curvesFilter_iter.GoToReverseBegin(); 
-			!chamfer_from_stool_involvement_iter.IsAtReverseEnd() && !curvesFilter_iter.IsAtReverseEnd(); 
-			--chamfer_from_stool_involvement_iter, --curvesFilter_iter){
-			ImageType::IndexType index = chamfer_from_stool_involvement_iter.GetIndex();
-			float temp_value=chamfer_from_stool_involvement_iter.Get();
-			if (temp_value>=chamfercutoff-2 /*&& (curvesFilter_iter.Get()>-.5 && curvesFilter_iter.Get()<.5)*/) {
-				for(int i=-1;i<=1;i++) {
-					if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
-						for (int j=-1;j<=1;j++) {
-							if (index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
-								for (int k=-1;k<=1;k++) {
-									if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
-										ImageType::IndexType temp_index={index[0]+i,index[1]+j,index[2]+k};
-										if ((chamfer_from_stool_involvement->GetPixel(temp_index)>0) && chamfer_from_stool_involvement->GetPixel(temp_index)<temp_value) {
-											if (abs(curvesFilter_image->GetPixel(temp_index)-curvesFilter_iter.Get())<=.5) {
-												chamfer_from_stool_involvement->SetPixel(temp_index,temp_value);
-											}/* else if ((curvesFilter_image->GetPixel(temp_index)-curvesFilter_iter.Get())>-.5) {
-												chamfer_from_stool_involvement->SetPixel(temp_index,temp_value-1);
-											}*/
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		//write the modified chamfer map
-		WriteITK(chamfer_from_stool_involvement,"chamfer from tissue back 2 test.mhd");
-	}
-
-	ImageType::Pointer chamfer_heterogenous = AllocateNewImage(fullRegion);
-	IteratorTypeFloat4WithIndex chamfer_heterogenous_iter(chamfer_heterogenous,fullRegion);
-	for(chamfer_heterogenous_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin(); 
-		!chamfer_heterogenous_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd(); 
-		++chamfer_heterogenous_iter, ++chamfer_from_stool_involvement_iter){
-		if (chamfer_from_stool_involvement_iter.Get()<chamfercutoff-2 && chamfer_from_stool_involvement_iter.Get()>5) {
-			chamfer_heterogenous_iter.Set(1);
-		}
-	}
-		
-WriteITK(chamfer_heterogenous,"chamfer partial.mhd");
-
-	ChamferDistanceFilterType::Pointer chamfer_filter = ChamferDistanceFilterType::New();
-	chamfer_filter->SetInput(chamfer_heterogenous);
-	int chamfer_weights[3]={3,4,5};	//3d distance weight recommended by julian
-	chamfer_filter->SetWeights(chamfer_weights, chamfer_weights+3);
-	chamfer_filter->SetDistanceFromObject(true);
-	chamfer_filter->Update();
-
-    chamfer_heterogenous=chamfer_filter->GetOutput();
-	chamfer_heterogenous_iter=IteratorTypeFloat4WithIndex(chamfer_heterogenous,fullRegion);
-	chamfer_filter.~SmartPointer();
-
-	for(chamfer_heterogenous_iter.GoToBegin(); 
-		!chamfer_heterogenous_iter.IsAtEnd(); 
-		++chamfer_heterogenous_iter){
-		if (chamfer_heterogenous_iter.Get()>=10) {
-			chamfer_heterogenous_iter.Set(10);
-		}
-	}
-WriteITK(chamfer_heterogenous,"chamfer hetero.mhd");
-
-	for(chamfer_heterogenous_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin(); 
-		!chamfer_heterogenous_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd(); 
-		++chamfer_heterogenous_iter, ++chamfer_from_stool_involvement_iter){
-		if (chamfer_heterogenous_iter.Get()<=20 && chamfer_from_stool_involvement_iter.Get()>0) {
-			chamfer_from_stool_involvement_iter.Set((chamfer_heterogenous_iter.Get()/20)*chamfercutoff);
-		}
-	}
-WriteITK(chamfer_from_stool_involvement,"chamfer updated.mhd");
-return input;
-}
-
-ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_offset, int z_offset, int x_size, int y_size, int z_size) {
+ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_offset, int z_offset, int x_size, int y_size, int z_size, SSlice*& DAB) {
 
 	std::cerr<<"Started"<<std::endl;
 
 	Modified=true;
-	////Region Setup (this is for a sub region to increase testing/debugging efficiency)
-	//ImageType::SizeType size = {512,512,60};
-	//ImageType::IndexType index = {0,0,110};
-	//ImageType::RegionType fullRegion(index,size);
-	////this is for the whole image
-	////ImageType::RegionType fullRegion=input->GetLargestPossibleRegion();
-
-
 
 	ImageType::SizeType size = {x_size, y_size, z_size};
 	ImageType::IndexType index = {x_offset,y_offset,z_offset};
@@ -653,8 +404,6 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 		input_iter.Set(input_temp_iter.Get());
 	}
 
-//AnisotropicFilterType
-
 	//Print out the sub region of the image, un modified
 	WriteITK(input_temp,"input_unmodified.mhd");
 
@@ -671,10 +420,8 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
     gradient_filter->SetInput(input_temp);
     gradient_filter->Update();
     ImageType::Pointer temp = gradient_filter->GetOutput();					//this variable will be reused later for other purpose, meaning change will be commented
+	temp->SetSpacing(input->GetSpacing());
 	gradient_filter.~SmartPointer();										//Deleting Gradient Filter
-
-	//Shan's Heuristic Gradient (this gradient is the magnitude of the lowest decent
-	//ImageType::Pointer temp = ComputePseudoGradient(input_temp);
 
 	//defines an iterator for the gradient magnitude
 	IteratorTypeFloat4WithIndex temp_iter(temp,fullRegion);
@@ -701,23 +448,27 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 	//outputs the gradient magnitude purely for reference
 	std::cerr<<"Gradient max: "<<gradient_max<<std::endl;
 
+	for (temp_iter.GoToBegin(), voxel_type_iter.GoToBegin();
+        !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
+        ++voxel_type_iter, ++temp_iter)
+    {
+        switch(voxel_type_iter.Get()) {
+            case Tissue:
+                temp_iter.Set(1);
+				break;
+			case Stool:
+                temp_iter.Set(2);
+                break;
+            case Unclassified:
+                temp_iter.Set(-1);
+                break;
+            case Air:
+                temp_iter.Set(0);
+                break;
+        }
+    }
 
-
-
-
-
-
-
-
-
-	//NOTE:
-	//the tissue holes closing seems useless (is not mentioned in flow chart
-	//should also be removed from code as soon as possible
-
-
-
-
-
+	WriteITK(temp,"hard threshold classification.mhd");
 
 	//Filling in Tissue Holes
 	for (voxel_type_iter.GoToBegin(), temp_iter.GoToBegin();
@@ -741,13 +492,8 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
         }
     }
 
-
-	//Writing out un filled image
-
-	//WriteITK(temp,"tissue holes.mhd");
-
     StructuringElementType  structuringElement;
-    structuringElement.SetRadius( 1 );  // 1
+    structuringElement.SetRadius( .5 );  // 1
     structuringElement.CreateStructuringElement();
 	ClosingFilterType::Pointer closingFilter = ClosingFilterType::New();
 	closingFilter->SetKernel(structuringElement);	 
@@ -756,9 +502,6 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 	temp=closingFilter->GetOutput();
 	temp_iter=IteratorTypeFloat4WithIndex(temp,fullRegion);
 	closingFilter.~SmartPointer();
-
-	//Writing out filled tissue hole image
-	//WriteITK(temp,"tissue holes filled.mhd");
 
     //Updates Information after morphological operations of tissue in stool
     //Begins update the unclassified in tissue morphological operation
@@ -786,12 +529,6 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
         }
     }
 
-	//Write out unmodified image
-
-	//WriteITK(temp,"unclassified holes.mhd");
-
-
-
 	closingFilter = ClosingFilterType::New();
 	closingFilter->SetKernel(structuringElement);
 	closingFilter->SetInput(temp);
@@ -799,45 +536,42 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 	temp= closingFilter->GetOutput();
 	temp_iter=IteratorTypeFloat4WithIndex(temp,fullRegion);
 	closingFilter.~SmartPointer();
-	//Write out unclassified holes filled
 
-	//WriteITK(temp,"unclassified holes filled.mhd");
-
-
+    ByteImageType::Pointer chamfer_colon=AllocateNewByteImage( fullRegion );
+	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,fullRegion);
 
     //Updates Information after morphological operations
-    for (temp_iter.GoToBegin(), voxel_type_iter.GoToBegin();
-        !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
-        ++voxel_type_iter, ++temp_iter) 
+    for (chamfer_colon_iter.GoToBegin(), voxel_type_iter.GoToBegin();
+        !voxel_type_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();  
+        ++voxel_type_iter, ++chamfer_colon_iter) 
     {
         switch(voxel_type_iter.Get()) {
             case Unclassified:
 			case Stool:
-                if (temp_iter.Get()==1) {
+                if (chamfer_colon_iter.Get()==1) {
                 //    voxel_type_iter.Set(Tissue);			//unclassified into tissue
-					temp_iter.Set(0);
+					chamfer_colon_iter.Set(0);
 				} else {
-					temp_iter.Set(1);
+					chamfer_colon_iter.Set(1);
 				}
                 break;
 			case Tissue:
-				temp_iter.Set(0);
+				chamfer_colon_iter.Set(0);
 				break;
 			default:
-				temp_iter.Set(1);
+				chamfer_colon_iter.Set(1);
 				break;
         }
     }
 
 	ChamferDistanceFilterType::Pointer chamfer_filter = ChamferDistanceFilterType::New();
-	chamfer_filter->SetInput(temp);
+	chamfer_filter->SetInput(chamfer_colon);
 	int chamfer_weights[3]={3,4,5};	//3d distance weight recommended by julian
 	chamfer_filter->SetWeights(chamfer_weights, chamfer_weights+3);
 	chamfer_filter->SetDistanceFromObject(true);
 	chamfer_filter->Update();
-
-    ImageType::Pointer chamfer_colon=chamfer_filter->GetOutput();
-	IteratorTypeFloat4WithIndex chamfer_colon_iter(chamfer_colon,fullRegion);
+	chamfer_colon=chamfer_filter->GetOutput();
+	chamfer_colon_iter = IteratorTypeByteWithIndex(chamfer_colon,fullRegion);
 	chamfer_filter.~SmartPointer();
 
 
@@ -850,58 +584,6 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 
 	chamfer_colon_iter.GoToBegin();
 	chamfer_colon_iter.Set(-1);	//first pixel == -1
-
-	for (int i=0;i<2;i++) {
-		//Forward
-		for(chamfer_colon_iter.GoToBegin(); !chamfer_colon_iter.IsAtEnd(); ++chamfer_colon_iter){
-			ImageType::IndexType index = chamfer_colon_iter.GetIndex();
-			float temp_value=chamfer_colon_iter.Get();
-			if (temp_value==-1) {
-				for(int i=-1;i<=1;i++) {
-					if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
-						for (int j=-1;j<=1;j++) {
-							if (index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
-								for (int k=-1;k<=1;k++) {
-									if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
-										ImageType::IndexType temp_index={index[0]+i,index[1]+j,index[2]+k};
-										if (chamfer_colon->GetPixel(temp_index)==0 && voxel_type->GetPixel(temp_index)==Air) {
-											chamfer_colon->SetPixel(temp_index,-1);
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		//Backward
-		for(chamfer_colon_iter.GoToReverseBegin(); !chamfer_colon_iter.IsAtReverseEnd(); --chamfer_colon_iter){
-			ImageType::IndexType index = chamfer_colon_iter.GetIndex();
-			float temp_value=chamfer_colon_iter.Get();
-			if (temp_value==-1) {
-				for(int i=-1;i<=1;i++) {
-					if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
-						for (int j=-1;j<=1;j++) {
-							if (index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
-								for (int k=-1;k<=1;k++) {
-									if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
-										ImageType::IndexType temp_index={index[0]+i,index[1]+j,index[2]+k};
-										if (chamfer_colon->GetPixel(temp_index)==0  && voxel_type->GetPixel(temp_index)==Air) {
-											chamfer_colon->SetPixel(temp_index,-1);
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-		
-
-	WriteITK(chamfer_colon,"chamfer colon.mhd");
 
 	for (chamfer_colon_iter.GoToBegin(), temp_iter.GoToBegin(), input_iter.GoToBegin();
         !chamfer_colon_iter.IsAtEnd() && !temp_iter.IsAtEnd() && ! input_iter.IsAtEnd();  
@@ -947,45 +629,37 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
         !partialVector_iter.IsAtEnd() && !input_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd() && !voxel_type_iter.IsAtEnd(); 
         ++partialVector_iter, ++input_iter, ++chamfer_colon_iter, ++voxel_type_iter) 
 	{
-		//computes the hard threshold classification for a voxel in the image: Air/Tissue/Stool/Unclassified
-		//if (chamfer_colon_iter.Get()==1) {
-			total_vertices++;
-		//}
-			VoxelType type=voxel_type_iter.Get();
-			float value[3]={.1,.45,.45};		//declares default partials for unclassified class
-			switch (type) {
-				case Tissue:
-					value[0]=0;
-					value[1]=1;					//sets the partial to all tissue
-					value[2]=0;
-					mean[1]+=input_iter.Get();	//updates the tissue mean
-					sum[1]++;					//updates the total partial count
-					break;
-				case Stool:
-					value[0]=0;
-					value[1]=0;
-					value[2]=1;					//sets the partial to all stool
-					mean[2]+=input_iter.Get();	//updates the stool mean
-					sum[2]++;					//updates the total stool partial
-					break;
-				case Air:
-					value[0]=1;					//sets the partial to all Air
-					value[1]=0;
-					value[2]=0;
-					mean[0]+=input_iter.Get();	//updates the air mean
-					sum[0]++;					//updates the total air partial
-					break;
-				case Unclassified:
-					//for (int i=0;i<3;i++) {
-					//	mean[i]+=value[i]*input_iter.Get();	//updates the air/tissue/stool mean
-					//	sum[0]+=value[i];					//updates the total air/tissue/stool partial
-					//}
-					//counter++;					//in this instance counter is used to represent the number of voxels in the unclassified class
-					break;
-			}   
+		total_vertices++;
+		VoxelType type=voxel_type_iter.Get();
+		float value[3]={.1,.45,.45};		//declares default partials for unclassified class
+		switch (type) {
+			case Tissue:
+				value[0]=0;
+				value[1]=1;					//sets the partial to all tissue
+				value[2]=0;
+				mean[1]+=input_iter.Get();	//updates the tissue mean
+				sum[1]++;					//updates the total partial count
+				break;
+			case Stool:
+				value[0]=0;
+				value[1]=0;
+				value[2]=1;					//sets the partial to all stool
+				mean[2]+=input_iter.Get();	//updates the stool mean
+				sum[2]++;					//updates the total stool partial
+				break;
+			case Air:
+				value[0]=1;					//sets the partial to all Air
+				value[1]=0;
+				value[2]=0;
+				mean[0]+=input_iter.Get();	//updates the air mean
+				sum[0]++;					//updates the total air partial
+				break;
+			case Unclassified:
+				break;
+		}   
 
-			CovariantVectorType data(value);	//sets the partial to be stored in the actual structure
-			partialVector_iter.Set(data);		//stores the partial in the structure
+		CovariantVectorType data(value);	//sets the partial to be stored in the actual structure
+		partialVector_iter.Set(data);		//stores the partial in the structure
     }
 
 	std::cerr<<"All partial Initlaized"<<std::endl;
@@ -1034,50 +708,19 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
         double variance_temp[3]={0,0,0};
 		double mean_temp[3]={0,0,0};
 
-
-		//for(input_iter.GoToBegin(), em_output_image_iter.GoToBegin(), partialVector_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(); 
-		//	!input_iter.IsAtEnd() && !em_output_image_iter.IsAtEnd() && !partialVector_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd(); 
-		//	++input_iter, ++em_output_image_iter, ++partialVector_iter, ++chamfer_colon_iter) 
-		//{
-		//	CovariantVectorType data = partialVector_iter.Get();		//retrieves the partial informations
-		//	em_output_image_iter.Set(data[1]);		//sets the voxel intensity for the i-th iteration output image
-		//}
-		
-		/* Outputing of images with conversion from itoa only works on windows not on biowolf, so this NEEDS to be commented out when using biowolf
-		char file_name[50];												//stores a file name
-		itoa(i*10,file_name,10);										//updates the file name with the appropriate end tag
-		for (int j=0;j<50;j++) {
-			if (file_name[j]=='0') {
-				file_name[j]='.';
-				file_name[j+1]='m';
-				file_name[j+2]='h';
-				file_name[j+3]='d';
-				file_name[j+4]=0;
-				break;
-			}
-		}
-
-		WriteITK(em_output_image,file_name);
-		 * End of biowolf compatibility comment section */
-		
-
 		for(input_iter.GoToBegin(), voxel_type_iter.GoToBegin(), partialVector_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), temp_iter.GoToBegin(); 
 			!input_iter.IsAtEnd() && !voxel_type_iter.IsAtEnd() && !partialVector_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd() && !temp_iter.IsAtEnd(); 
 			++input_iter, ++partialVector_iter, ++voxel_type_iter, ++chamfer_colon_iter, ++temp_iter) 
 		{
 			CovariantVectorType data = partialVector_iter.Get();		//retrieves the partial informations
 			float Z[3]={data[0],data[1],data[2]};
-		//	if (chamfer_colon_iter.Get()==1 || temp_iter.Get()>300) {
-		//		if (temp_iter.Get()>300 || voxel_type_iter.Get()==Unclassified || chamfer_colon_iter.Get()==1) {
-					//computes an updated partial for the current voxel using the expectation maximization algorithm
-					vnl_vector<float> Z_update=expectation(input_iter.Get(),mean, variance, weight, GetNeighbor(partialVector2,input_iter.GetIndex()), Z, temp_iter.Get());
-					data[0]=Z_update[0];										//updates the partial values
-					data[1]=Z_update[1];
-					data[2]=Z_update[2];
-					partialVector_iter.Set(data);
-					//std::cerr<<"changed something"<<std::endl;
-		//		}
-		//	}
+
+			vnl_vector<float> Z_update=expectation(input_iter.Get(),mean, variance, weight, GetNeighbor(partialVector2,input_iter.GetIndex()), Z, temp_iter.Get());
+			data[0]=Z_update[0];										//updates the partial values
+			data[1]=Z_update[1];
+			data[2]=Z_update[2];
+			partialVector_iter.Set(data);
+
 			//updates the new mean, variance, and total partial sum for each class accordingly
 			for (int k=0;k<3;k++) {
 				mean_temp[k]+=data[k]*input_iter.Get();	
@@ -1092,11 +735,6 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 			variance[k]=variance_temp[k]/sum_temp[k];
 			weight[k]=sum_temp[k]/total_vertices;
 		}
-     	//mean[2]=mean_temp[2]/sum_temp[2];
-		//variance[2]=variance_temp[2]/sum_temp[2];
-		//weight[2]=sum_temp[2]/total_vertices*(1-(weight[1]+weight[0]));
-
-		//outputs the mean and variance of each class on the (i+1)-th iteration
 		std::cerr<<"Mean: "<<mean[0]<<" "<<mean[1]<<" "<<mean[2]<<std::endl;
 		std::cerr<<"Variance: "<<variance[0]<<" "<<variance[1]<<" "<<variance[2]<<std::endl;
 		std::cerr<<"Weight: "<<weight[0]<<" "<<weight[1]<<" "<<weight[2]<<std::endl;
@@ -1106,7 +744,6 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 	//Updates the existing voxel type classifications with knowledge found in the EM
 	EMClassification(input_iter, voxel_type_iter, partialVector_iter, chamfer_colon_iter, temp_iter);
 	WriteITK(temp,"Global EM classification.mhd");
-
 
 	////std::cerr<<"Starting Localized EM"<<std::endl;
 
@@ -1331,65 +968,11 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 
 	WriteITK(em_output_image, "tissue partial.mhd");
 
-	////computes the gradient magnitude for the image and set it to a temporary variable
- //   gradient_filter = GradientMagnitudeFilterType::New();
- //   gradient_filter->SetInput(input_temp);
- //   gradient_filter->Update();
- //   temp = gradient_filter->GetOutput();					//this variable will be reused later for other purpose, meaning change will be commented
-	//temp_iter=IteratorTypeFloat4WithIndex(temp,fullRegion);
-	//gradient_filter.~SmartPointer();	
-
-	//for(input_iter.GoToBegin(), voxel_type_iter.GoToBegin(), partialVector_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), temp_iter.GoToBegin(); 
-	//	!input_iter.IsAtEnd() && !voxel_type_iter.IsAtEnd() && !partialVector_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd() && !temp_iter.IsAtEnd(); 
-	//	++input_iter, ++voxel_type_iter, ++partialVector_iter, ++chamfer_colon_iter, ++temp_iter) 
-	//{
-	//	if (chamfer_colon_iter.Get()==1) { 
-	//		CovariantVectorType data = partialVector_iter.Get();	//gets the partial information
-	//		switch (voxel_type_iter.Get()) {
-	//			case Unclassified:
-	//				//if an unclassified voxel has a high partial (probability) of being a solid 
-	//				//class and doesn't have a high gradient then reclassify it as the solid class
-	//				//
-	//				//it seems to mis classify a lot of stool and air, so for now just reclassifying the solid tissues
-	//				if (data[0]>.9 && temp_iter.Get()<250) {
-	//				//	voxel_type_iter.Set(Air);        //sets the voxel type
-	//				} else if (data[1]>.8 && temp_iter.Get()<600*data[1] && (input_iter.Get()-1024)<600) {
-	//					voxel_type_iter.Set(Tissue);        //sets the voxel type
-	//				} else if (data[2]>.9 && temp_iter.Get()<0.8*(input_iter.Get()-1024)) {
-	//				//	voxel_type_iter.Set(Stool);        //sets the voxel type
-	//				} else {
-	//					//voxel_type_iter.Set(Unclassified);        //sets the voxel type
-	//				}
-	//				break;
-	//			case Tissue:
-	//				if (data[1]<.1 && temp_iter.Get()>700*data[1]) {
-	//					voxel_type_iter.Set(Unclassified);
-	//				}
-	//				break;
-	//		}
-	//	}
-	//	//this seems useless
-	//	switch (voxel_type_iter.Get()) {
-	//		case Unclassified:
-	//			temp_iter.Set(0);
-	//			break;
-	//		case Stool:
-	//			temp_iter.Set(-2);
-	//			break;
-	//		case Tissue:
-	//			temp_iter.Set(1);
-	//			break;
-	//		case Air:
-	//			temp_iter.Set(-1);
-	//			break;
-	//	}
-	//}
-
-	//WriteITK(temp,"Localized EM classification.mhd");
-
 	//em_output_image.~SmartPointer();
 	std::cerr<<"Finished EM"<<std::endl;
+	em_output_image.~SmartPointer();
 	partialVector2.~SmartPointer();
+	std::cerr<<"partialVector2 has been destroyed: "<<partialVector2.IsNull()<<std::endl;
 
 
     //get cubic bspline image interpolation
@@ -1403,6 +986,33 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 	bool StoolAirbool=false;
 	bool TissueStoolbool=false;
 	bool TissueAirbool = false;
+
+
+	//Distribution Code Here
+
+	//ofstream distribution_record;
+	//distribution_record.open("C:/ds/distribution_record.csv");
+	//for (voxel_type_iter.GoToBegin(), input_iter.GoToBegin(); 
+	//	!voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd(); 
+	//	++voxel_type_iter, ++input_iter) {
+	//		switch (voxel_type_iter.Get()) {
+	//			case Tissue:
+	//				distribution_record<<"1";
+	//				break;
+	//			case Stool:
+	//				distribution_record<<"2";
+	//				break;
+	//			case Air:
+	//				distribution_record<<"0";
+	//				break;
+	//			default:
+	//				distribution_record<<"3";
+	//				break;
+	//		}
+	//		distribution_record<<","<<input_iter.Get()<<endl;
+	//}
+	//distribution_record.close();
+
 	//Runs edge classification with 3 different increments
     for (voxel_type_iter.GoToBegin(), input_smax_iter.GoToBegin(), temp_iter.GoToBegin(); 
 		!voxel_type_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !temp_iter.IsAtEnd(); 
@@ -1484,16 +1094,20 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
     ImageType::Pointer partialVolume = AllocateNewImage(fullRegion);
     IteratorTypeFloat4WithIndex partialVolume_iter(partialVolume,fullRegion);
 	//bool random=true;
+
+	ByteImageType::Pointer chamfer_from_stool_involvement=AllocateNewByteImage(fullRegion);
+	IteratorTypeByteWithIndex chamfer_from_stool_involvement_iter(chamfer_from_stool_involvement,fullRegion);
+
 	//Sets the partial volumes
-    for(voxel_type_iter.GoToBegin(), input_iter.GoToBegin(), partialVolume_iter.GoToBegin(), input_smax_iter.GoToBegin(), temp_iter.GoToBegin();
-        !voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd() && !partialVolume_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !temp_iter.IsAtEnd();
-        ++voxel_type_iter, ++input_iter, ++partialVolume_iter, ++input_smax_iter, ++temp_iter) 
+    for(voxel_type_iter.GoToBegin(), input_iter.GoToBegin(), partialVolume_iter.GoToBegin(), input_smax_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin();
+        !voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd() && !partialVolume_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd();
+        ++voxel_type_iter, ++input_iter, ++partialVolume_iter, ++input_smax_iter, ++chamfer_from_stool_involvement_iter) 
     {
 		//prepares information for chamfer stool calculation
 		if (voxel_type_iter.Get()==Stool || voxel_type_iter.Get()==TissueStool || voxel_type_iter.Get()==StoolAir) {
-			temp_iter.Set(1);     //stool
+			chamfer_from_stool_involvement_iter.Set(1);     //stool
 		} else {
-			temp_iter.Set(0);     //non stool is the object
+			chamfer_from_stool_involvement_iter.Set(0);     //non stool is the object
 		}
 		partialVolume_iter.Set(0);
 		float value=0;
@@ -1519,9 +1133,6 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 				}*/
                 break;
             case TissueStool:
-				//std::cerr<<"TS reached"<<std::endl;
-				if (input_smax_iter.Get()>600) {
-					//std::cerr<<"TS reached"<<std::endl;
 					value=1.0-(input_iter.Get()-1024)/(input_smax_iter.Get());
 					if (value<=1 && value>=0) {
 						partialVolume_iter.Set(value);
@@ -1530,18 +1141,11 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 					} else {
 						partialVolume_iter.Set(1);	
 					}
-				} else if (input_smax_iter.Get()>300) {
-					value=1.5-(input_iter.Get()-1024)/(input_smax_iter.Get());
-					if (value<=1 && value>=0) {
-						partialVolume_iter.Set(value);
-					} else if (value<0) {
-						partialVolume_iter.Set(0);	
-					} else {
-						partialVolume_iter.Set(1);	
-					}
-				} else {
-					partialVolume_iter.Set(1);	
-				}
+
+					////special case when there is nothing really to fit
+					//if (input_smax_iter.Get()-input_iter.Get()<50 && input_iter.Get()-1024<500) {
+					//	partialVolume_iter.Set(1);	
+					//}
                 break;
             case StoolAir:
                 partialVolume_iter.Set(0);
@@ -1551,6 +1155,9 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 			//std::cerr<<partialVolume_iter.GetIndex()[0]<<" "<<partialVolume_iter.GetIndex()[1]<<" "<<partialVolume_iter.GetIndex()[2]<<std::endl;
 		}
     }
+
+	input_smax.~SmartPointer();
+
 	//Write out partial volume
 	//WriteITK(partialVolume,"tissue partial one.mhd");
 
@@ -1558,14 +1165,16 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 	//WriteITK(temp,"chamfer from stool input.mhd");
 
 	chamfer_filter = ChamferDistanceFilterType::New();
-	chamfer_filter->SetInput(temp);
+	chamfer_filter->SetInput(chamfer_from_stool_involvement);
 	int weights[3]={3,4,5};	//3d distance weight recommended by julian
 	chamfer_filter->SetWeights(weights, weights+3);
 	chamfer_filter->SetDistanceFromObject(false);
 	chamfer_filter->Update();
-    ImageType::Pointer chamfer_from_stool_involvement=chamfer_filter->GetOutput();
-	IteratorTypeFloat4WithIndex chamfer_from_stool_involvement_iter(chamfer_from_stool_involvement,fullRegion);
+	chamfer_from_stool_involvement=chamfer_filter->GetOutput();
+	chamfer_from_stool_involvement_iter = IteratorTypeByteWithIndex(chamfer_from_stool_involvement,fullRegion);
 	chamfer_filter.~SmartPointer();
+
+
 	//Write out chamfer thickness of stool
 	//WriteITK(chamfer_from_stool_involvement,"chamfer from stool.mhd");
 	//Updates chamfer by setting all stool attached to an 8+ chamfer stool to also 8 chamfer units
@@ -1626,16 +1235,18 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 	}
 
 
+    ByteImageType::Pointer chamfer_air=AllocateNewByteImage( fullRegion );
+    IteratorTypeByteWithIndex chamfer_air_iter(chamfer_air,fullRegion);
 
-    for(voxel_type_iter.GoToBegin(), temp_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin(), input_iter.GoToBegin(), partialVolume_iter.GoToBegin();
-        !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd() && !input_iter.IsAtEnd() && !partialVolume_iter.IsAtEnd();
-        ++voxel_type_iter, ++temp_iter, ++chamfer_from_stool_involvement_iter, ++input_iter, ++partialVolume_iter)
+    for(voxel_type_iter.GoToBegin(), chamfer_air_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin(), input_iter.GoToBegin(), partialVolume_iter.GoToBegin();
+        !voxel_type_iter.IsAtEnd() && !chamfer_air_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd() && !input_iter.IsAtEnd() && !partialVolume_iter.IsAtEnd();
+        ++voxel_type_iter, ++chamfer_air_iter, ++chamfer_from_stool_involvement_iter, ++input_iter, ++partialVolume_iter)
     {
 		//prepare for computation of chamfer to air
 		if (voxel_type_iter.Get()==Air) {
-            temp_iter.Set(0);					//distance to AIR
+            chamfer_air_iter.Set(0);					//distance to AIR
         } else {
-            temp_iter.Set(1);					//non important locations
+            chamfer_air_iter.Set(1);					//non important locations
         }
 		float temp_value=chamfer_from_stool_involvement_iter.Get();
 		//the temp_value>3 is uncessary
@@ -1646,17 +1257,14 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 		}
     }
 
-
-
 	//compute chamfer for air
 	chamfer_filter = ChamferDistanceFilterType::New();
-	chamfer_filter->SetInput(temp);
+	chamfer_filter->SetInput(chamfer_air);
 	chamfer_filter->SetWeights(weights, weights+3);
 	chamfer_filter->SetDistanceFromObject(false);
 	chamfer_filter->Update();
-
-    ImageType::Pointer chamfer_air=chamfer_filter->GetOutput();
-    IteratorTypeFloat4WithIndex chamfer_air_iter(chamfer_air,fullRegion);
+	chamfer_air=chamfer_filter->GetOutput();
+	chamfer_air_iter= IteratorTypeByteWithIndex(chamfer_air,fullRegion);
 	chamfer_filter.~SmartPointer();
 	//Writes out the chamfer to air
 	//WriteITK(chamfer_air,"chamfer from air.mhd");
@@ -1673,8 +1281,6 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
             chamfer_air_iter.Set(chamfer_air_iter.Get()/8);
         }
     }
-
-
 
     //Calculating partial air
     for(voxel_type_iter.GoToBegin(), partialVolume_iter.GoToBegin(), chamfer_air_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin();
@@ -1717,7 +1323,7 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 		++output_iter, ++input_iter, ++temp_iter, ++voxel_type_iter, ++chamfer_colon_iter, ++partialVolume_iter) 
     {	
 		if (voxel_type_iter.Get()==Air|| voxel_type_iter.Get()==StoolAir) {
-			output_iter.Set(0);
+			output_iter.Set(mean[0]);
 		} else if (chamfer_colon_iter.Get()==1 || voxel_type_iter.Get()==TissueStool  || voxel_type_iter.Get()==Stool) { 
 	 //       ImageType::IndexType index =input_iter.GetIndex();
 			output_iter.Set(partialVolume_iter.Get()*input_iter.Get());
@@ -1725,49 +1331,56 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 			output_iter.Set(input_iter.Get());
 		}
 	}
-
 	//voxel_type.~SmartPointer();
 	chamfer_air.~SmartPointer();
-	//Delete the Gaussian filter
-
-	
 	//Writes out the output preclosing
 	WriteITK(output,"output one.mhd");
-
-
-	for(output_iter.GoToBegin(), temp_iter.GoToBegin(), voxel_type_iter.GoToBegin();
-        !output_iter.IsAtEnd() && !temp_iter.IsAtEnd() && !voxel_type_iter.IsAtEnd();
-		++output_iter, ++temp_iter, ++voxel_type_iter) 
+	for(output_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin(), voxel_type_iter.GoToBegin();
+        !output_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd() && !voxel_type_iter.IsAtEnd();
+		++output_iter, ++chamfer_from_stool_involvement_iter, ++voxel_type_iter) 
 	{
 		if (output_iter.Get()>300 || voxel_type_iter.Get()==Tissue || voxel_type_iter.Get()==TissueAir) {
-			temp_iter.Set(1);
+			chamfer_from_stool_involvement_iter.Set(1);
 		} else {
-			temp_iter.Set(0);
+			chamfer_from_stool_involvement_iter.Set(0);
 		}
 	}
-
-
 	//Write out unmodified image
 	WriteITK(temp,"chamfer from tissue input.mhd");
 	chamfer_filter = ChamferDistanceFilterType::New();
-	chamfer_filter->SetInput(temp);
+	chamfer_filter->SetInput(chamfer_from_stool_involvement);
 	chamfer_filter->SetWeights(weights, weights+3);
 	chamfer_filter->SetDistanceFromObject(false);
 	chamfer_filter->Update();
 
 	chamfer_from_stool_involvement = chamfer_filter->GetOutput();
-	chamfer_from_stool_involvement_iter=IteratorTypeFloat4WithIndex(chamfer_from_stool_involvement,fullRegion);
+	chamfer_from_stool_involvement_iter=IteratorTypeByteWithIndex(chamfer_from_stool_involvement,fullRegion);
 	chamfer_filter.~SmartPointer();
 
 	//Write out chamfer thickness of stool
 	WriteITK(chamfer_from_stool_involvement,"chamfer tissue stool.mhd");
 
 	
-	ImageType::Pointer min = longruntests(output, 2, 0);
+	ImageType::Pointer min = longruntests(output, 2, 0, input->GetSpacing().GetElement(2));
 	IteratorTypeFloat4WithIndex min_iter(min,min->GetLargestPossibleRegion());
 
+	float modifiers[9] = { input->GetSpacing().GetElement(2), //requires z axis 
+		input->GetSpacing().GetElement(2),	//requires z axis
+		input->GetSpacing().GetElement(0),
+
+		sqrt(input->GetSpacing().GetElement(2)*input->GetSpacing().GetElement(2)+input->GetSpacing().GetElement(1)*input->GetSpacing().GetElement(1)),
+		sqrt(input->GetSpacing().GetElement(2)*input->GetSpacing().GetElement(2)+input->GetSpacing().GetElement(1)*input->GetSpacing().GetElement(1)),
+
+		sqrt(input->GetSpacing().GetElement(2)*input->GetSpacing().GetElement(2)+input->GetSpacing().GetElement(1)*input->GetSpacing().GetElement(1)),
+		sqrt(input->GetSpacing().GetElement(2)*input->GetSpacing().GetElement(2)+input->GetSpacing().GetElement(1)*input->GetSpacing().GetElement(1)),
+
+		sqrt(input->GetSpacing().GetElement(2)*input->GetSpacing().GetElement(2)+input->GetSpacing().GetElement(1)*input->GetSpacing().GetElement(1)),
+		sqrt(input->GetSpacing().GetElement(2)*input->GetSpacing().GetElement(2)+input->GetSpacing().GetElement(1)*input->GetSpacing().GetElement(1))};
+
+	std::cerr<<modifiers[0]<<" "<<modifiers[1]<<" "<<modifiers[2]<<" "<<modifiers[3]<<std::endl;
 	for (int i=1;i<9;i++) {
-		ImageType::Pointer temp_image = longruntests(output, 2, i);
+		ImageType::Pointer temp_image = longruntests(output, 2, i, 1/modifiers[i]);
+		
 		IteratorTypeFloat4WithIndex axial_iter=IteratorTypeFloat4WithIndex(temp_image,temp_image->GetLargestPossibleRegion());
 		for (axial_iter.GoToBegin(), min_iter.GoToBegin();
 			!axial_iter.IsAtEnd()&& !min_iter.IsAtEnd();
@@ -1783,8 +1396,15 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 
 	WriteITK(min, "min variance.mhd");
 
-	//Updates chamfer by setting all stool attached to an 20+ chamfer stool to also 8 chamfer units
 	chamfercutoff=20;
+	for(chamfer_from_stool_involvement_iter.GoToBegin(); !chamfer_from_stool_involvement_iter.IsAtEnd(); ++chamfer_from_stool_involvement_iter) {
+		if (chamfer_from_stool_involvement_iter.Get()>chamfercutoff) {
+			chamfer_from_stool_involvement_iter.Set(chamfercutoff);
+		}
+	}
+
+	//Updates chamfer by setting all stool attached to an 20+ chamfer stool to also 8 chamfer units
+	
 	for (int i=0;i<2;i++) {
 		//Forward
 		for(chamfer_from_stool_involvement_iter.GoToBegin(), min_iter.GoToBegin(); 
@@ -1792,7 +1412,7 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 			++chamfer_from_stool_involvement_iter, ++min_iter){
 			ImageType::IndexType index = chamfer_from_stool_involvement_iter.GetIndex();
 			float temp_value=chamfer_from_stool_involvement_iter.Get();
-			if (temp_value>=chamfercutoff && min_iter.Get()<1200) {
+			if (temp_value>=chamfercutoff && min_iter.Get()<500 /*|| temp_value>chamfercutoff*/) {
 				for(int i=-1;i<=1;i++) {
 					if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
 						for (int j=-1;j<=1;j++) {
@@ -1821,7 +1441,7 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 			--min_iter, --chamfer_from_stool_involvement_iter){
 			ImageType::IndexType index = chamfer_from_stool_involvement_iter.GetIndex();
 			float temp_value=chamfer_from_stool_involvement_iter.Get();
-			if (temp_value>=chamfercutoff && min_iter.Get()<1200 ) {
+			if (temp_value>=chamfercutoff && min_iter.Get()<500 /*|| temp_value>chamfercutoff*/) {
 				for(int i=-1;i<=1;i++) {
 					if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
 						for (int j=-1;j<=1;j++) {
@@ -1846,7 +1466,8 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 
 	temp.~SmartPointer();
 
-	ImageType::Pointer curvesFilter_image = levelset_comp(output, chamfer_from_stool_involvement);
+
+	ImageType::Pointer curvesFilter_image = levelset_comp(output);
 	WriteITK(curvesFilter_image, "levelset_output.mhd");
 	std::cerr<<curvesFilter_image->GetLargestPossibleRegion().GetIndex()[0]<<" "<<curvesFilter_image->GetLargestPossibleRegion().GetIndex()[1]<<" "<<curvesFilter_image->GetLargestPossibleRegion().GetIndex()[2]<<std::endl;
 	std::cerr<<output->GetLargestPossibleRegion().GetIndex()[0]<<" "<<output->GetLargestPossibleRegion().GetIndex()[1]<<" "<<output->GetLargestPossibleRegion().GetIndex()[2]<<std::endl;
@@ -1871,9 +1492,16 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 										ImageType::IndexType temp_index={index[0]+i,index[1]+j,index[2]+k};
 										if ((chamfer_from_stool_involvement->GetPixel(temp_index)>0 && chamfer_from_stool_involvement->GetPixel(temp_index)<temp_value) && min->GetPixel(temp_index)<10000) {
 											float pixel_value = curvesFilter_image->GetPixel(temp_index);
-											if ((pixel_value-curvesFilter_iter.Get()>-.1 && curvesFilter_iter.Get()> -1 && pixel_value < 1) ||
-												(pixel_value>-3 && curvesFilter_iter.Get()<=-1 && pixel_value<-1)) {
-												chamfer_from_stool_involvement->SetPixel(temp_index,chamfercutoff-1);
+											//if ((pixel_value-curvesFilter_iter.Get()>-.5 && curvesFilter_iter.Get()> -1 && pixel_value < 1) ||
+											//	(pixel_value>-2 && curvesFilter_iter.Get()<=-1 && pixel_value<-1)) {
+											//	chamfer_from_stool_involvement->SetPixel(temp_index,chamfercutoff-1);
+											//}
+											if (pixel_value-curvesFilter_iter.Get()>-.5 && curvesFilter_image->GetPixel(temp_index)> -1 && pixel_value < 1 ) {
+												chamfer_from_stool_involvement->SetPixel(temp_index, chamfercutoff - 2);
+											}
+
+											if (pixel_value>-2 && curvesFilter_iter.Get()<=-1 && chamfer_from_stool_involvement_iter.Get()>=chamfercutoff-1) {
+												chamfer_from_stool_involvement->SetPixel(temp_index, chamfercutoff-1);
 											}
 										}
 									}
@@ -1904,9 +1532,16 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 										ImageType::IndexType temp_index={index[0]+i,index[1]+j,index[2]+k};
 										if ((chamfer_from_stool_involvement->GetPixel(temp_index)>0) && chamfer_from_stool_involvement->GetPixel(temp_index)<temp_value && min->GetPixel(temp_index)<10000) {
 											float pixel_value = curvesFilter_image->GetPixel(temp_index);
-											if ((pixel_value-curvesFilter_iter.Get()>-0.1  && curvesFilter_iter.Get()> -1 && pixel_value < 1) ||
-												(pixel_value>-3 && curvesFilter_iter.Get()<=-1 && pixel_value<-1)) {
-												chamfer_from_stool_involvement->SetPixel(temp_index,chamfercutoff-1);
+											//if ((pixel_value-curvesFilter_iter.Get()>-0.5  && curvesFilter_iter.Get()> -1 && pixel_value < 1) ||
+											//	(pixel_value>-2 && curvesFilter_iter.Get()<=-1 && pixel_value<-1)) {
+											//	chamfer_from_stool_involvement->SetPixel(temp_index,chamfercutoff-1);
+											//}
+											if (pixel_value-curvesFilter_iter.Get()>-.5 && curvesFilter_image->GetPixel(temp_index)> -1 && pixel_value < 1 ) {
+												chamfer_from_stool_involvement->SetPixel(temp_index, chamfercutoff - 2);
+											}
+
+											if (pixel_value>-2 && curvesFilter_iter.Get()<=-1 && chamfer_from_stool_involvement_iter.Get()>=chamfercutoff-1) {
+												chamfer_from_stool_involvement->SetPixel(temp_index, chamfercutoff - 1);
 											}
 										}
 									}
@@ -1924,8 +1559,8 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 	WriteITK(chamfer_colon,"chamfer_colon.mhd");
 
 
-	ImageType::Pointer chamfer_heterogenous = AllocateNewImage(fullRegion);
-	IteratorTypeFloat4WithIndex chamfer_heterogenous_iter(chamfer_heterogenous,fullRegion);
+	ByteImageType::Pointer chamfer_heterogenous = AllocateNewByteImage(fullRegion);
+	IteratorTypeByteWithIndex chamfer_heterogenous_iter(chamfer_heterogenous,fullRegion);
 	for(chamfer_heterogenous_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), curvesFilter_iter.GoToBegin(), min_iter.GoToBegin(); 
 		!chamfer_heterogenous_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd() && !curvesFilter_iter.IsAtEnd() && !min_iter.IsAtEnd(); 
 		++chamfer_heterogenous_iter, ++chamfer_from_stool_involvement_iter, ++chamfer_colon_iter, ++curvesFilter_iter, ++min_iter){
@@ -1946,7 +1581,7 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 	chamfer_filter->Update();
 
     chamfer_heterogenous=chamfer_filter->GetOutput();
-	chamfer_heterogenous_iter=IteratorTypeFloat4WithIndex(chamfer_heterogenous,fullRegion);
+	chamfer_heterogenous_iter=IteratorTypeByteWithIndex(chamfer_heterogenous,fullRegion);
 	chamfer_filter.~SmartPointer();
 
 	for(chamfer_heterogenous_iter.GoToBegin(); 
@@ -1957,8 +1592,6 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 		}
 	}
 	WriteITK(chamfer_heterogenous,"chamfer hetero.mhd");
-
-
 	WriteITK(chamfer_colon,"chamfer_colon_1.mhd");
 
 	int heterogeneous_cuttoff = 5;
@@ -1979,37 +1612,19 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 										ImageType::IndexType temp_index={index[0]+i,index[1]+j,index[2]+k};
 
 										float pixel_value = curvesFilter_image->GetPixel(temp_index);
-										if (chamfer_from_stool_involvement->GetPixel(temp_index)==19) {
-											if (pixel_value-curvesFilter_iter.Get()>-.5 && curvesFilter_iter.Get()> 0) {
+										if (chamfer_from_stool_involvement->GetPixel(temp_index)==19 || chamfer_from_stool_involvement->GetPixel(temp_index)==18) {
+											if (pixel_value-curvesFilter_iter.Get()>-.1 && curvesFilter_image->GetPixel(temp_index)> -1) {
 												chamfer_heterogenous->SetPixel(temp_index, heterogeneous_cuttoff);
 												chamfer_from_stool_involvement->SetPixel(temp_index, 10);
 												chamfer_colon->SetPixel(temp_index, 1);
 											}
-
-											/*if (pixel_value>-2 && curvesFilter_iter.Get()<-1 && pixel_value<-1 && chamfer_heterogenous_iter.Get()<heterogeneous_cuttoff) {
-												chamfer_heterogenous->SetPixel(temp_index, chamfer_heterogenous_iter.Get());
-												chamfer_from_stool_involvement->SetPixel(temp_index, 10);
-												chamfer_colon->SetPixel(temp_index, 1);
-											}*/
-
-											if (curvesFilter_iter.Get()<-1 && chamfer_heterogenous_iter.Get()<heterogeneous_cuttoff) {
-												chamfer_heterogenous->SetPixel(temp_index, chamfer_heterogenous_iter.Get());
+											if (curvesFilter_iter.Get()<0.1 && chamfer_heterogenous_iter.Get()<heterogeneous_cuttoff && min->GetPixel(index)<5000) {
+												chamfer_heterogenous->SetPixel(temp_index, heterogeneous_cuttoff-1);
 												chamfer_from_stool_involvement->SetPixel(temp_index, 10);
 												chamfer_colon->SetPixel(temp_index, 1);
 											}
 
 										}
-
-
-										//if (chamfer_from_stool_involvement->GetPixel(temp_index)==19 && 
-										//	((pixel_value-curvesFilter_iter.Get()>-.1 && curvesFilter_iter.Get()> -1) /*||
-										//	 (curvesFilter_iter.Get()<-.1)) && pixel_value < 1)*/ /*||
-										//	 (pixel_value>-2 && curvesFilter_iter.Get()<-1 && pixel_value<-1)*/)
-										//	/*(pixel_value>-2 && curvesFilter_iter.Get()<=-1 && pixel_value<-0.1*/) {
-										//	chamfer_heterogenous->SetPixel(temp_index, heterogeneous_cuttoff);
-										//	chamfer_from_stool_involvement->SetPixel(temp_index, 10);
-										//	chamfer_colon->SetPixel(temp_index, 1);
-										//}
 									}
 								}
 							}
@@ -2037,20 +1652,14 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 									if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
 										ImageType::IndexType temp_index={index[0]+i,index[1]+j,index[2]+k};
 										float pixel_value = curvesFilter_image->GetPixel(temp_index);
-										if (chamfer_from_stool_involvement->GetPixel(temp_index)==19) {
-											if (pixel_value-curvesFilter_iter.Get()>-.5 && curvesFilter_iter.Get()> 0) {
+										if (chamfer_from_stool_involvement->GetPixel(temp_index)==19 || chamfer_from_stool_involvement->GetPixel(temp_index)==18) {
+											if (pixel_value-curvesFilter_iter.Get()>-.1 && curvesFilter_image->GetPixel(temp_index)> -1) {
 												chamfer_heterogenous->SetPixel(temp_index, heterogeneous_cuttoff);
 												chamfer_from_stool_involvement->SetPixel(temp_index, 10);
 												chamfer_colon->SetPixel(temp_index, 1);
 											}
-											/*if (pixel_value>-2 && curvesFilter_iter.Get()<-1 && pixel_value<-1 && chamfer_heterogenous_iter.Get()<heterogeneous_cuttoff) {
-												chamfer_heterogenous->SetPixel(temp_index, chamfer_heterogenous_iter.Get());
-												chamfer_from_stool_involvement->SetPixel(temp_index, 10);
-												chamfer_colon->SetPixel(temp_index, 1);
-											}*/
-
-											if (curvesFilter_iter.Get()<-1 && chamfer_heterogenous_iter.Get()<heterogeneous_cuttoff) {
-												chamfer_heterogenous->SetPixel(temp_index, chamfer_heterogenous_iter.Get());
+											if (curvesFilter_iter.Get()<0.1 && chamfer_heterogenous_iter.Get()<heterogeneous_cuttoff && min->GetPixel(index)<5000) {
+												chamfer_heterogenous->SetPixel(temp_index, heterogeneous_cuttoff-1);
 												chamfer_from_stool_involvement->SetPixel(temp_index, 10);
 												chamfer_colon->SetPixel(temp_index, 1);
 											}
@@ -2066,8 +1675,6 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 		//write the modified chamfer map
 		WriteITK(chamfer_heterogenous,"chamfer from heterogenous back.mhd");
 	}
-
-
 	
 	//NOTE: the following two execution seems collapsible into the previous loop.
 
@@ -2075,15 +1682,16 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 		!chamfer_heterogenous_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd() && !partialVolume_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd(); 
 		++chamfer_heterogenous_iter, ++chamfer_from_stool_involvement_iter, ++partialVolume_iter, ++chamfer_colon_iter)
 	{
-		if (chamfer_heterogenous_iter.Get()<=heterogeneous_cuttoff && chamfer_from_stool_involvement_iter.Get()==19) {
+		if (chamfer_heterogenous_iter.Get()<=heterogeneous_cuttoff) {
 			chamfer_from_stool_involvement_iter.Set(0);
 			chamfer_colon_iter.Set(1);
+			partialVolume_iter.Set(0);
 		} else if (chamfer_from_stool_involvement_iter.Get()<chamfercutoff-2) {
 			chamfer_from_stool_involvement_iter.Set(0);
 			chamfer_colon_iter.Set(1);
 		}
 	}
-
+	std::cerr<<chamfercutoff<<std::endl;
 	WriteITK(chamfer_from_stool_involvement,"chamfer updated.mhd");
 
 	for (int i=0;i<2;i++) {
@@ -2102,7 +1710,7 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 									if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
 										ImageType::IndexType temp_index={index[0]+i,index[1]+j,index[2]+k};
 										if (chamfer_from_stool_involvement->GetPixel(temp_index)>0) {
-											chamfer_from_stool_involvement->SetPixel(temp_index,chamfercutoff);
+											chamfer_from_stool_involvement->SetPixel(temp_index,chamfercutoff+chamfer_from_stool_involvement->GetPixel(temp_index));
 										}
 									}
 								}
@@ -2130,7 +1738,7 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 								for (int k=-1;k<=1;k++) {
 									if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
 										ImageType::IndexType temp_index={index[0]+i,index[1]+j,index[2]+k};
-										if (chamfer_from_stool_involvement->GetPixel(temp_index)>0) {
+										if (chamfer_from_stool_involvement->GetPixel(temp_index)>=chamfercutoff-1) {
 											chamfer_from_stool_involvement->SetPixel(temp_index,chamfercutoff);
 										}
 									}
@@ -2145,17 +1753,17 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 		WriteITK(chamfer_from_stool_involvement,"chamfer from tissue back 3.mhd");
 	}
 
-
 	for(partialVolume_iter.GoToBegin(),  chamfer_from_stool_involvement_iter.GoToBegin() ;
         !partialVolume_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd();
 		++partialVolume_iter, ++chamfer_from_stool_involvement_iter) 
 	{
-		if (chamfer_from_stool_involvement_iter.Get()<chamfercutoff) {
-			partialVolume_iter.Set(0);
-		}
-		//output_iter.Set(output_iter.Get()*chamfer_from_stool_involvement_iter.Get()/chamfercutoff);
+		partialVolume_iter.Set(partialVolume_iter.Get()*(chamfer_from_stool_involvement_iter.Get())/chamfercutoff);	
 	}
 
+	curvesFilter_image.~SmartPointer();
+	min.~SmartPointer();
+	chamfer_from_stool_involvement.~SmartPointer();
+	chamfer_heterogenous.~SmartPointer();
 
 	WriteITK(partialVolume,"partialVolume three.mhd");
 
@@ -2183,6 +1791,7 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 
 	output.~SmartPointer();
 	/*ImageType::Pointer */output = AllocateNewImage( input->GetLargestPossibleRegion());
+	output->SetSpacing(input->GetSpacing());
 	output_iter = IteratorTypeFloat4WithIndex(output, fullRegion);
 
 	IteratorTypeFloat4WithIndex output_iter_2(output, input->GetLargestPossibleRegion());
@@ -2203,27 +1812,40 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 	//std::cerr<<input_iter.GetRegion().GetSize()[0]<<" "<<input_iter.GetRegion().GetSize()[1]<<" "<<input_iter.GetRegion().GetSize()[2]<<" "<<std::endl;
 	//
 	//int count_1=0;
+
+	int ending_z = input->GetLargestPossibleRegion().GetSize()[2];
+
 	for(output_iter.GoToBegin(), input_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), voxel_type_iter.GoToBegin();
         !output_iter.IsAtEnd() && !input_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd() && !voxel_type_iter.IsAtEnd();
 		++output_iter, ++input_iter, ++chamfer_colon_iter, ++voxel_type_iter) 
 	{
 	//	count_1++;
-		if (voxel_type_iter.Get() == Air || voxel_type_iter.Get() == StoolAir) {
-			output_iter.Set(0);
-		}
+		ImageType::IndexType temp_index = output_iter.GetIndex();
 
-		if (chamfer_colon_iter.Get()==1 || voxel_type_iter.Get()==TissueStool  || voxel_type_iter.Get()==Stool) {
+		//this is for the padding (5 on each side)
+		if ((temp_index[2]<5 || temp_index[2] >= z_offset+5) && (temp_index[2]+1>=ending_z-5 || temp_index[2] < z_offset+z_size-5)) {
+			if (voxel_type_iter.Get() == Air || voxel_type_iter.Get() == StoolAir) {
+				output_iter.Set(mean[0]);
+			}
+			if (chamfer_colon_iter.Get()==1 || voxel_type_iter.Get()==TissueStool  || voxel_type_iter.Get()==Stool) {
 
-			float value1 = (input_iter.Get())*gaussianFilter->EvaluateAtIndex(output_iter.GetIndex());
-			if ((input_iter.Get()<400 && value1>input_iter.Get()) || input_iter.Get()>=400) {
-		////colon mask should be used here
-				output_iter.Set(value1);
+				float value1 = (input_iter.Get())*gaussianFilter->EvaluateAtIndex(output_iter.GetIndex());
+				if ((input_iter.Get()<400 && value1>input_iter.Get()) || input_iter.Get()>=400) {
+			////colon mask should be used here
+					output_iter.Set(value1);
+				} else {
+					output_iter.Set(mean[0]);
+				}
 			}
 		}
 		//output_iter.Set(2);
 	}
+	input.~SmartPointer();
+	chamfer_colon.~SmartPointer();
+	voxel_type.~SmartPointer();
+	partialVolume.~SmartPointer();
+	input_temp.~SmartPointer();
 
-	
 	//std::cerr<<count_1<<std::endl;
 
 	gaussianFilter.~SmartPointer();
@@ -2234,496 +1856,511 @@ ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_of
 	return output;
 }
 
+//
+//ImageType::Pointer RemoveStool(ImageType::Pointer input) {
+//	Modified=false;
+//	//Region Setup
+//	ImageType::SizeType size = {512,512,40};
+//	ImageType::IndexType index = {0,0,100};
+//	ImageType::RegionType fullRegion(index,size);
+//	//ImageType::RegionType fullRegion=input->GetLargestPossibleRegion();
+//	ImageType::Pointer input_temp = AllocateNewImage(fullRegion);
+//	IteratorTypeFloat4WithIndex input_temp_iter(input,fullRegion);
+//	IteratorTypeFloat4WithIndex input_iter(input_temp,fullRegion);
+//	//Copy Image
+//	for(input_iter.GoToBegin() , input_temp_iter.GoToBegin() ; !input_iter.IsAtEnd() && !input_temp_iter.IsAtEnd(); 
+//		++input_iter, ++input_temp_iter) {
+//		input_iter.Set(input_temp_iter.Get());
+//	}
+//	//print out unmodified
+//	WriteITK(input_temp,"input_unmodified.mhd");
+//	//Creates an image to store the descriptions
+//	VoxelTypeImage::Pointer voxel_type = VoxelTypeImage::New();
+//    voxel_type->SetRegions(fullRegion);
+//    voxel_type->Allocate();
+//	IteratorTypeVoxelType voxel_type_iter(voxel_type,fullRegion);
+//
+//    //computes the gradient magnitude
+//    GradientMagnitudeFilterType::Pointer gradient_filter = GradientMagnitudeFilterType::New();
+//    gradient_filter->SetInput(input_temp);
+//    gradient_filter->Update();
+//    ImageType::Pointer temp = gradient_filter->GetOutput();
+//	//Shan's Heuristic Gradient
+//	//ImageType::Pointer temp = ComputePseudoGradient(input_temp);
+//	IteratorTypeFloat4WithIndex temp_iter(temp,fullRegion);
+//	gradient_filter.~SmartPointer();										//Deleting Gradient Filter
+//    //Does the Single Material Types Classification (Step1)
+//    for (input_iter.GoToBegin(), temp_iter.GoToBegin(), voxel_type_iter.GoToBegin(); !input_iter.IsAtEnd() && !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  ++voxel_type_iter, ++input_iter, ++temp_iter) {
+//       voxel_type_iter.Set(SingleMaterialClassification(input_iter.Get()-1024,temp_iter.Get()));        //sets the voxel type
+//	}
+//	//Filling in Tissue Holes
+//	for (voxel_type_iter.GoToBegin(), temp_iter.GoToBegin();
+//        !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
+//        ++voxel_type_iter, ++temp_iter)
+//    {
+//        //creates the morphological images to fill holes
+//        switch (voxel_type_iter.Get()) {
+//            case Tissue:
+//                temp_iter.Set(0);
+//                break;
+//            case Stool:
+//                temp_iter.Set(1);
+//                break;
+//            case Unclassified:
+//                temp_iter.Set(0);
+//                break;
+//            case Air:
+//                temp_iter.Set(0);
+//                break;
+//        }
+//    }
+//	//Writing out un filled image
+//	WriteITK(temp,"tissue holes.mhd");
+//	//Shan's One Voxel Closing Filter
+//
+//    //StructuringElementType  structuringElement;
+//    //structuringElement.SetRadius( 1 );  // 1
+//    //structuringElement.CreateStructuringElement();
+//	//ClosingFilterType::Pointer closingFilter = ClosingFilterType::New();
+//	//closingFilter->SetKernel(structuringElement);	 
+//	//closingFilter->SetInput(temp);
+//	//closingFilter->Update();
+//	//temp=closingFilter->GetOutput();
+//	//temp_iter=IteratorTypeFloat4WithIndex(temp,fullRegion);
+//	//closingFilter.~SmartPointer();
+//	//Writing out filled tissue hole image
+//	WriteITK(temp,"tissue holes filled.mhd");
+//    //Updates Information after morphological operations of tissue in stool
+//    //Begins update the unclassified in tissue morphological operation
+//	for (temp_iter.GoToBegin(), voxel_type_iter.GoToBegin();
+//        !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
+//        ++voxel_type_iter, ++temp_iter)
+//    {
+//        switch(voxel_type_iter.Get()) {
+//            case Tissue:
+//                //tissue into stool
+//                if (temp_iter.Get()==1) {
+//                    voxel_type_iter.Set(Stool);			//Modify filled tissue holes
+//                }
+//                temp_iter.Set(1);
+//				break;
+//			case Stool:
+//                temp_iter.Set(0);
+//                break;
+//            case Unclassified:
+//                temp_iter.Set(0);
+//                break;
+//            case Air:
+//                temp_iter.Set(0);
+//                break;
+//        }
+//    }
+//	//Write out unmodified image
+//	WriteITK(temp,"unclassified holes.mhd");
+//
+//	//Shan's Heuristic hole filter
+//	//closingFilter = ClosingFilterType::New();
+//	//closingFilter->SetKernel(structuringElement);
+//	//closingFilter->SetInput(temp);
+//	//closingFilter->Update();
+//	//temp= closingFilter->GetOutput();
+//	//temp_iter=IteratorTypeFloat4WithIndex(temp,fullRegion);
+//	//closingFilter.~SmartPointer();
+//	//Write out unclassified holes filled
+//	WriteITK(temp,"unclassified holes filled.mhd");
+//
+//    //Updates Information after morphological operations
+//    for (temp_iter.GoToBegin(), voxel_type_iter.GoToBegin();
+//        !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
+//        ++voxel_type_iter, ++temp_iter) 
+//    {
+//        switch(voxel_type_iter.Get()) {
+//            case Unclassified:
+//                if (temp_iter.Get()==1) {
+//                    voxel_type_iter.Set(Tissue);			//unclassified into tissue
+//                }
+//                break;
+//        }
+//    }
+//    //get cubic bspline image interpolation
+//    InterpolationType::Pointer input_interpolator = InterpolationType::New();
+//    input_interpolator->SetSplineOrder(3);
+//    input_interpolator->SetInputImage(input);
+//	//Storage for Smax
+//    ImageType::Pointer input_smax = AllocateNewImage(fullRegion);
+//    IteratorTypeFloat4WithIndex input_smax_iter(input_smax,fullRegion);
+//	//Debugging Flags
+//	bool StoolAirbool=false;
+//	bool TissueStoolbool=false;
+//	bool TissueAirbool = false;
+//
+//	//Runs edge classification with 3 different increments
+//    for (voxel_type_iter.GoToBegin(), input_smax_iter.GoToBegin(), temp_iter.GoToBegin(); 
+//		!voxel_type_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !temp_iter.IsAtEnd(); 
+//		++voxel_type_iter, ++input_smax_iter, ++temp_iter) {
+//		if (voxel_type_iter.Get()==Unclassified) {
+//			//Initialization
+//			ImageType::IndexType voxel_index = voxel_type_iter.GetIndex();
+//			float temp_threshold=-1;
+//			VoxelType temp_type = Unclassified;
+//			//+/- 1.5, +/-1.0
+//			VoxelEdgeClassification(&temp_threshold,&temp_type,1.5,1.0,
+//				input_interpolator,input_smax_iter,voxel_index);
+//			//+/- 1.0, +/-0.5
+//			VoxelEdgeClassification(&temp_threshold,&temp_type,1.0,0.5,
+//				input_interpolator,input_smax_iter,voxel_index);
+//			//+/- .6, +/-.3
+//			VoxelEdgeClassification(&temp_threshold,&temp_type,0.6,0.3,
+//				input_interpolator,input_smax_iter,voxel_index);
+//			//std::cerr<<"result: "<<temp_type<<" "<<temp_threshold<<std::endl;
+//			if (StoolAirbool==false) {
+//				StoolAirbool=true;
+//				//std::cerr<<"Stool Air Region Detected"<<std::endl;
+//			}
+//			if (TissueStoolbool==false) {
+//				TissueStoolbool=true;
+//				//std::cerr<<"Tissue Stool Region Detected"<<std::endl;
+//			}
+//			if (TissueAirbool==false) {
+//				TissueAirbool=true;
+//				//std::cerr<<"Tissue Air Region Detected"<<std::endl;
+//			}
+//			voxel_type_iter.Set(temp_type);
+//		}
+//		//Set up data for heterogenous stool
+//        switch(voxel_type_iter.Get()) {
+//			case TissueStool:
+//                temp_iter.Set(0);
+//                break;
+//            case Stool:
+//                temp_iter.Set(1);
+//                break;
+//			case Tissue:
+//				temp_iter.Set(3);
+//				break;
+//			case Air:
+//				temp_iter.Set(-2);
+//				break;
+//			case TissueAir:
+//				temp_iter.Set(2);
+//				break;
+//			case StoolAir:
+//				temp_iter.Set(-1);
+//				break;
+//            default:
+//                temp_iter.Set(-3);
+//                break;
+//        }
+//    }
+//	//Write out unmodified image
+//	WriteITK(temp,"tissue stool.mhd");
+//	//get bspline voxeltype interpolation
+//    InterpolationType::Pointer voxel_type_interpolator = InterpolationType::New();
+//    voxel_type_interpolator->SetSplineOrder(0);
+//    voxel_type_interpolator->SetInputImage(temp);
+//	for (int i=0;i<3;i++) {
+//		bool heteroBool=false;
+//		for(voxel_type_iter.GoToBegin(), input_iter.GoToBegin(), temp_iter.GoToBegin();
+//			!voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd() && !temp_iter.IsAtEnd();
+//			++voxel_type_iter, ++input_iter, ++temp_iter) 
+//		{
+//			if (!heteroBool) {
+//				heteroBool=true;
+//				//std::cerr<<"heteogenuous Reclassification ran"<<std::endl;
+//			}
+//			ImageType::IndexType voxel_index = voxel_type_iter.GetIndex();
+//			switch(voxel_type_iter.Get()) {
+//				case TissueStool:
+//				/*	if (HeterogeneousStoolHeuristic(input_interpolator,voxel_type_interpolator,
+//						voxel_index,input_iter.Get())) 
+//					{
+//						voxel_type_iter.Set(Stool);
+//						temp_iter.Set(1);
+//					}*/
+//					break;
+//			}
+//		}
+//	}
+//	//Deletes the Interpolators
+//	input_interpolator.~SmartPointer();
+//	voxel_type_interpolator.~SmartPointer();
+//	//std::cerr<<"set partial volume "<<std::endl;
+//    //0: ps
+//    //1: pt
+//    //2: pa
+//    ImageType::Pointer partialVolume = AllocateNewImage(fullRegion);
+//    IteratorTypeFloat4WithIndex partialVolume_iter(partialVolume,fullRegion);
+//
+//
+//    ByteImageType::Pointer chamfer_from_stool_involvement=AllocateNewByteImage(fullRegion);
+//	IteratorTypeByteWithIndex chamfer_from_stool_involvement_iter(chamfer_from_stool_involvement,fullRegion);
+//	//bool random=true;
+//	//Sets the partial volumes
+//    for(voxel_type_iter.GoToBegin(), input_iter.GoToBegin(), partialVolume_iter.GoToBegin(), input_smax_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin();
+//        !voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd() && !partialVolume_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd();
+//        ++voxel_type_iter, ++input_iter, ++partialVolume_iter, ++input_smax_iter, ++chamfer_from_stool_involvement_iter) 
+//    {
+//		//prepares information for chamfer stool calculation
+//		if (voxel_type_iter.Get()==Stool || voxel_type_iter.Get()==TissueStool || voxel_type_iter.Get()==StoolAir) {
+//			chamfer_from_stool_involvement_iter.Set(1);     //stool
+//		} else {
+//			chamfer_from_stool_involvement_iter.Set(0);     //non stool is the object
+//		}
+//		partialVolume_iter.Set(0);
+//		float value=0;
+//        switch(voxel_type_iter.Get()) {
+//			case Tissue:
+//				partialVolume_iter.Set(1.0);
+//				break;
+//			case Stool:
+//			case Air:
+//				partialVolume_iter.Set(0.0);
+//				break;
+//            case TissueAir:
+//				//std::cerr<<"TA reached"<<std::endl;
+//				value = 1.0+(input_iter.Get()-1024)/1000;
+//				if (value<=1 && value>=0) {
+//					partialVolume_iter.Set(value);	
+//				} else {
+//					partialVolume_iter.Set(0);	
+//				}
+//                break;
+//            case TissueStool:
+//				//std::cerr<<"TS reached"<<std::endl;
+//				value=1.0-(input_iter.Get()-1024)/1000;
+//				if (value<=1 && value>=0) {
+//					partialVolume_iter.Set(value);
+//				} else {
+//					partialVolume_iter.Set(0);	
+//				}
+//                break;
+//            case StoolAir:
+//                partialVolume_iter.Set(0);
+//                break;
+//        }
+//		if (-partialVolume_iter.Get()==std::numeric_limits<float>::infinity()) {
+//			//std::cerr<<partialVolume_iter.GetIndex()[0]<<" "<<partialVolume_iter.GetIndex()[1]<<" "<<partialVolume_iter.GetIndex()[2]<<std::endl;
+//		}
+//    }
+//	//Write out partial volume
+//	WriteITK(partialVolume,"tissue partial one.mhd");
+//	//Write out unmodified image
+//	WriteITK(temp,"chamfer from stool input.mhd");
+//	ChamferDistanceFilterType::Pointer chamfer_filter = ChamferDistanceFilterType::New();
+//	chamfer_filter->SetInput(chamfer_from_stool_involvement);
+//	int weights[3]={3,4,5};	//3d distance weight recommended by julian
+//	chamfer_filter->SetWeights(weights, weights+3);
+//	chamfer_filter->SetDistanceFromObject(false);
+//	chamfer_filter->Update();
+//
+//    chamfer_from_stool_involvement=chamfer_filter->GetOutput();
+//	chamfer_from_stool_involvement_iter= IteratorTypeByteWithIndex(chamfer_from_stool_involvement,fullRegion);
+//
+//	chamfer_filter.~SmartPointer();
+//	//Write out chamfer thickness of stool
+//	WriteITK(chamfer_from_stool_involvement,"chamfer from stool.mhd");
+//
+//	//Updates chamfer by setting all stool attached to an 8+ chamfer stool to also 8 chamfer units
+//	ImageType::IndexType endIndex = fullRegion.GetIndex();
+//	ImageType::IndexType startIndex = fullRegion.GetIndex();	
+//	endIndex[0]+=(fullRegion.GetSize()[0]-1);
+//	endIndex[1]+=(fullRegion.GetSize()[1]-1);
+//	endIndex[2]+=(fullRegion.GetSize()[2]-1);
+//	//Forward
+//	for(chamfer_from_stool_involvement_iter.GoToBegin(); !chamfer_from_stool_involvement_iter.IsAtEnd(); ++chamfer_from_stool_involvement_iter){
+//		ImageType::IndexType index = chamfer_from_stool_involvement_iter.GetIndex();
+//		float temp_value=chamfer_from_stool_involvement_iter.Get();
+//		if (temp_value>=8) {
+//			for(int i=-1;i<=1;i++) {
+//				if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
+//					for (int j=-1;j<=1;j++) {
+//						if (index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
+//							for (int k=-1;k<=1;k++) {
+//								if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
+//									ImageType::IndexType temp_index={index[0]+i,index[1]+j,index[2]+k};
+//									//std::cerr<<temp_index[0]<<" "<<temp_index[1]<<" "<<temp_index[2]<<" "<<std::endl;
+//									if (chamfer_from_stool_involvement->GetPixel(temp_index)>0) {
+//										chamfer_from_stool_involvement->SetPixel(temp_index,8);
+//									}
+//								}
+//							}
+//						}
+//					}
+//				}
+//			}
+//		}
+//	}
+//	//Write the modified chamfer map
+//	WriteITK(chamfer_from_stool_involvement,"chamfer from stool forward.mhd");
+//	//Backward
+//	for(chamfer_from_stool_involvement_iter.GoToReverseBegin(); !chamfer_from_stool_involvement_iter.IsAtReverseEnd(); --chamfer_from_stool_involvement_iter){
+//		ImageType::IndexType index = chamfer_from_stool_involvement_iter.GetIndex();
+//		float temp_value=chamfer_from_stool_involvement_iter.Get();
+//		if (temp_value>=8) {
+//			for(int i=-1;i<=1;i++) {
+//				if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
+//					for (int j=-1;j<=1;j++) {
+//						if (index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
+//							for (int k=-1;k<=1;k++) {
+//								if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
+//									ImageType::IndexType temp_index={index[0]+i,index[1]+j,index[2]+k};
+//									//std::cerr<<temp_index[0]<<" "<<temp_index[1]<<" "<<temp_index[2]<<" "<<std::endl;
+//									if (chamfer_from_stool_involvement->GetPixel(temp_index)>0) {
+//										chamfer_from_stool_involvement->SetPixel(temp_index,8);
+//									}
+//								}
+//							}
+//						}
+//					}
+//				}
+//			}
+//		}
+//	}
+//	//write the modified chamfer map
+//	WriteITK(chamfer_from_stool_involvement,"chamfer from stool back.mhd");
+//
+//	ByteImageType::Pointer chamfer_air=chamfer_filter->GetOutput();
+//    IteratorTypeByteWithIndex chamfer_air_iter(chamfer_air,fullRegion);
+//
+//	for(voxel_type_iter.GoToBegin(), chamfer_air_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin(), input_iter.GoToBegin(), partialVolume_iter.GoToBegin();
+//        !voxel_type_iter.IsAtEnd() && !chamfer_air_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd() && !input_iter.IsAtEnd() && !partialVolume_iter.IsAtEnd();
+//        ++voxel_type_iter, ++chamfer_air_iter, ++chamfer_from_stool_involvement_iter, ++input_iter, ++partialVolume_iter)
+//    {
+//		//prepare for computation of chamfer to air
+//		if (voxel_type_iter.Get()==Air) {
+//            chamfer_air_iter.Set(0);					//distance to AIR
+//        } else {
+//            chamfer_air_iter.Set(1);					//non important locations
+//        }
+//
+//		float temp_value=chamfer_from_stool_involvement_iter.Get();
+//		if (temp_value>=8) {
+//			partialVolume_iter.Set(0);
+//		} else if (temp_value<8 && temp_value>0) {
+//			voxel_type_iter.Set(ThinStool);		//if the chamfer < 8 then it is set to thin stool
+//		}
+//    }
+//
+//	//compute chamfer for air
+//	chamfer_filter = ChamferDistanceFilterType::New();
+//	chamfer_filter->SetInput(chamfer_air);
+//	chamfer_filter->SetWeights(weights, weights+3);
+//	chamfer_filter->SetDistanceFromObject(false);
+//	chamfer_filter->Update();
+//
+//    chamfer_air=chamfer_filter->GetOutput();
+//    chamfer_air_iter=IteratorTypeByteWithIndex(chamfer_air,fullRegion);
+//	
+//	chamfer_filter.~SmartPointer();
+//	//Writes out the chamfer to air
+//	WriteITK(chamfer_air,"chamfer from air.mhd");
+//	//Normalize the data
+//    for(chamfer_air_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin();
+//        !chamfer_air_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd();
+//        ++chamfer_air_iter, ++chamfer_from_stool_involvement_iter)
+//    {
+//        chamfer_from_stool_involvement_iter.Set(chamfer_from_stool_involvement_iter.Get()/8);
+//        if (chamfer_air_iter.Get()>=8) {
+//            chamfer_air_iter.Set(1);
+//        } else {
+//            chamfer_air_iter.Set(chamfer_air_iter.Get()/8);
+//        }
+//    }
+//
+//    //Calculating partial air
+//    for(voxel_type_iter.GoToBegin(), partialVolume_iter.GoToBegin(), chamfer_air_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin();
+//        !voxel_type_iter.IsAtEnd() && !partialVolume_iter.IsAtEnd() && !chamfer_air_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd();
+//		++voxel_type_iter, ++partialVolume_iter, ++chamfer_air_iter, ++chamfer_from_stool_involvement_iter) 
+//	{
+//        if(voxel_type_iter.Get()==ThinStool) {
+//			float value=0;
+//			float ps=1/2*(1+vnl_erf((chamfer_from_stool_involvement_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2))));
+//			float pa=1/2*(1+vnl_erf((chamfer_air_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2))));
+//			value=1-ps-pa;
+//			partialVolume_iter.Set(value);
+//        }
+//	}
+//
+//	//Write out the partial tissue with thinstool modification done
+//	WriteITK(partialVolume,"tissue partial two.mhd");
+//
+//	//Does the Gaussian Blurring
+//    GaussianFilterType::Pointer gaussianFilter = GaussianFilterType::New();
+//    double gaussian_sigma[3];
+//    ImageType::SpacingType input_spacing=input->GetSpacing();   //Gets the spacing
+//	
+//	//adjusted based on spacing of image
+//    gaussian_sigma[0]=(0.7/input_spacing.GetElement(0));
+//    gaussian_sigma[1]=(0.7/input_spacing.GetElement(1));
+//    gaussian_sigma[2]=(0.7/input_spacing.GetElement(2));
+//	gaussianFilter->SetSigma(gaussian_sigma);      //0.7mm not sure how many voxel this is
+//    gaussianFilter->SetInputImage(partialVolume);
+//	
+//	//Prepares the output image
+//	ImageType::Pointer output = AllocateNewImage(fullRegion);
+//	IteratorTypeFloat4WithIndex output_iter(output,fullRegion);
+//
+//    //Modifies to intensity for output
+//    for(output_iter.GoToBegin(), input_iter.GoToBegin(), temp_iter.GoToBegin(), voxel_type_iter.GoToBegin();
+//		!output_iter.IsAtEnd() && !input_iter.IsAtEnd() && !temp_iter.IsAtEnd() &&  !voxel_type_iter.IsAtEnd();
+//		++output_iter, ++input_iter, ++temp_iter, ++voxel_type_iter) 
+//    {	
+//        ImageType::IndexType index =input_iter.GetIndex();
+//		output_iter.Set(gaussianFilter->EvaluateAtIndex(index)*(input_iter.Get()));
+//		if (-output_iter.Get()== std::numeric_limits<float>::infinity()) {
+//			output_iter.Set(0);
+//		}
+//
+//		//Prepare for last closing of air enclosed voxels
+//		if (voxel_type_iter.Get()==Air) {
+//			temp_iter.Set(1);
+//		} else {
+//			 temp_iter.Set(0);
+//		}
+//    }
+//
+//	//Delete the Gaussian filter
+//	gaussianFilter.~SmartPointer();
+//
+//	//Writes out the output preclosing
+//	WriteITK(output,"output one.mhd");
+//
+//	//Shan's Heuristic closing
+//
+//	//Last Morphological Processing to remove anything contained completely in air
+//	//closingFilter = ClosingFilterType::New();
+//	//closingFilter->SetKernel(structuringElement);
+//	//closingFilter->SetInput(temp);
+//	//closingFilter->Update();
+//	//temp=closingFilter->GetOutput();
+//	//temp_iter=IteratorTypeFloat4WithIndex(temp,fullRegion);
+//	//closingFilter.~SmartPointer();
+//
+//	//Updates the information for final output
+//    for(temp_iter.GoToBegin(), output_iter.GoToBegin();
+//        !temp_iter.IsAtEnd() && !output_iter.IsAtEnd();
+//        ++temp_iter, ++output_iter) 
+//    {
+//        if (temp_iter.Get()==1) {
+//            output_iter.Set(0); //sets for air
+//        }
+//		if (-output_iter.Get()== std::numeric_limits<float>::infinity()) {
+//			output_iter.Set(0);
+//		}
+//    }
+//
+//	//Writes out the final output	
+//	WriteITK(output,"output two.mhd");
+//	//Sets the input to be the output
+//	return output;
+//}
+//
+//
+//
 
-ImageType::Pointer RemoveStool(ImageType::Pointer input) {
-	Modified=false;
-	//Region Setup
-	ImageType::SizeType size = {512,512,40};
-	ImageType::IndexType index = {0,0,100};
-	ImageType::RegionType fullRegion(index,size);
-	//ImageType::RegionType fullRegion=input->GetLargestPossibleRegion();
-	ImageType::Pointer input_temp = AllocateNewImage(fullRegion);
-	IteratorTypeFloat4WithIndex input_temp_iter(input,fullRegion);
-	IteratorTypeFloat4WithIndex input_iter(input_temp,fullRegion);
-	//Copy Image
-	for(input_iter.GoToBegin() , input_temp_iter.GoToBegin() ; !input_iter.IsAtEnd() && !input_temp_iter.IsAtEnd(); 
-		++input_iter, ++input_temp_iter) {
-		input_iter.Set(input_temp_iter.Get());
-	}
-	//print out unmodified
-	WriteITK(input_temp,"input_unmodified.mhd");
-	//Creates an image to store the descriptions
-	VoxelTypeImage::Pointer voxel_type = VoxelTypeImage::New();
-    voxel_type->SetRegions(fullRegion);
-    voxel_type->Allocate();
-	IteratorTypeVoxelType voxel_type_iter(voxel_type,fullRegion);
 
-    //computes the gradient magnitude
-    GradientMagnitudeFilterType::Pointer gradient_filter = GradientMagnitudeFilterType::New();
-    gradient_filter->SetInput(input_temp);
-    gradient_filter->Update();
-    ImageType::Pointer temp = gradient_filter->GetOutput();
-	//Shan's Heuristic Gradient
-	//ImageType::Pointer temp = ComputePseudoGradient(input_temp);
-	IteratorTypeFloat4WithIndex temp_iter(temp,fullRegion);
-	gradient_filter.~SmartPointer();										//Deleting Gradient Filter
-    //Does the Single Material Types Classification (Step1)
-    for (input_iter.GoToBegin(), temp_iter.GoToBegin(), voxel_type_iter.GoToBegin(); !input_iter.IsAtEnd() && !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  ++voxel_type_iter, ++input_iter, ++temp_iter) {
-       voxel_type_iter.Set(SingleMaterialClassification(input_iter.Get()-1024,temp_iter.Get()));        //sets the voxel type
-	}
-	//Filling in Tissue Holes
-	for (voxel_type_iter.GoToBegin(), temp_iter.GoToBegin();
-        !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
-        ++voxel_type_iter, ++temp_iter)
-    {
-        //creates the morphological images to fill holes
-        switch (voxel_type_iter.Get()) {
-            case Tissue:
-                temp_iter.Set(0);
-                break;
-            case Stool:
-                temp_iter.Set(1);
-                break;
-            case Unclassified:
-                temp_iter.Set(0);
-                break;
-            case Air:
-                temp_iter.Set(0);
-                break;
-        }
-    }
-	//Writing out un filled image
-	WriteITK(temp,"tissue holes.mhd");
-	//Shan's One Voxel Closing Filter
 
-    //StructuringElementType  structuringElement;
-    //structuringElement.SetRadius( 1 );  // 1
-    //structuringElement.CreateStructuringElement();
-	//ClosingFilterType::Pointer closingFilter = ClosingFilterType::New();
-	//closingFilter->SetKernel(structuringElement);	 
-	//closingFilter->SetInput(temp);
-	//closingFilter->Update();
-	//temp=closingFilter->GetOutput();
-	//temp_iter=IteratorTypeFloat4WithIndex(temp,fullRegion);
-	//closingFilter.~SmartPointer();
-	//Writing out filled tissue hole image
-	WriteITK(temp,"tissue holes filled.mhd");
-    //Updates Information after morphological operations of tissue in stool
-    //Begins update the unclassified in tissue morphological operation
-	for (temp_iter.GoToBegin(), voxel_type_iter.GoToBegin();
-        !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
-        ++voxel_type_iter, ++temp_iter)
-    {
-        switch(voxel_type_iter.Get()) {
-            case Tissue:
-                //tissue into stool
-                if (temp_iter.Get()==1) {
-                    voxel_type_iter.Set(Stool);			//Modify filled tissue holes
-                }
-                temp_iter.Set(1);
-				break;
-			case Stool:
-                temp_iter.Set(0);
-                break;
-            case Unclassified:
-                temp_iter.Set(0);
-                break;
-            case Air:
-                temp_iter.Set(0);
-                break;
-        }
-    }
-	//Write out unmodified image
-	WriteITK(temp,"unclassified holes.mhd");
 
-	//Shan's Heuristic hole filter
-	//closingFilter = ClosingFilterType::New();
-	//closingFilter->SetKernel(structuringElement);
-	//closingFilter->SetInput(temp);
-	//closingFilter->Update();
-	//temp= closingFilter->GetOutput();
-	//temp_iter=IteratorTypeFloat4WithIndex(temp,fullRegion);
-	//closingFilter.~SmartPointer();
-	//Write out unclassified holes filled
-	WriteITK(temp,"unclassified holes filled.mhd");
-
-    //Updates Information after morphological operations
-    for (temp_iter.GoToBegin(), voxel_type_iter.GoToBegin();
-        !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
-        ++voxel_type_iter, ++temp_iter) 
-    {
-        switch(voxel_type_iter.Get()) {
-            case Unclassified:
-                if (temp_iter.Get()==1) {
-                    voxel_type_iter.Set(Tissue);			//unclassified into tissue
-                }
-                break;
-        }
-    }
-    //get cubic bspline image interpolation
-    InterpolationType::Pointer input_interpolator = InterpolationType::New();
-    input_interpolator->SetSplineOrder(3);
-    input_interpolator->SetInputImage(input);
-	//Storage for Smax
-    ImageType::Pointer input_smax = AllocateNewImage(fullRegion);
-    IteratorTypeFloat4WithIndex input_smax_iter(input_smax,fullRegion);
-	//Debugging Flags
-	bool StoolAirbool=false;
-	bool TissueStoolbool=false;
-	bool TissueAirbool = false;
-
-	//Runs edge classification with 3 different increments
-    for (voxel_type_iter.GoToBegin(), input_smax_iter.GoToBegin(), temp_iter.GoToBegin(); 
-		!voxel_type_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !temp_iter.IsAtEnd(); 
-		++voxel_type_iter, ++input_smax_iter, ++temp_iter) {
-		if (voxel_type_iter.Get()==Unclassified) {
-			//Initialization
-			ImageType::IndexType voxel_index = voxel_type_iter.GetIndex();
-			float temp_threshold=-1;
-			VoxelType temp_type = Unclassified;
-			//+/- 1.5, +/-1.0
-			VoxelEdgeClassification(&temp_threshold,&temp_type,1.5,1.0,
-				input_interpolator,input_smax_iter,voxel_index);
-			//+/- 1.0, +/-0.5
-			VoxelEdgeClassification(&temp_threshold,&temp_type,1.0,0.5,
-				input_interpolator,input_smax_iter,voxel_index);
-			//+/- .6, +/-.3
-			VoxelEdgeClassification(&temp_threshold,&temp_type,0.6,0.3,
-				input_interpolator,input_smax_iter,voxel_index);
-			//std::cerr<<"result: "<<temp_type<<" "<<temp_threshold<<std::endl;
-			if (StoolAirbool==false) {
-				StoolAirbool=true;
-				//std::cerr<<"Stool Air Region Detected"<<std::endl;
-			}
-			if (TissueStoolbool==false) {
-				TissueStoolbool=true;
-				//std::cerr<<"Tissue Stool Region Detected"<<std::endl;
-			}
-			if (TissueAirbool==false) {
-				TissueAirbool=true;
-				//std::cerr<<"Tissue Air Region Detected"<<std::endl;
-			}
-			voxel_type_iter.Set(temp_type);
-		}
-		//Set up data for heterogenous stool
-        switch(voxel_type_iter.Get()) {
-			case TissueStool:
-                temp_iter.Set(0);
-                break;
-            case Stool:
-                temp_iter.Set(1);
-                break;
-			case Tissue:
-				temp_iter.Set(3);
-				break;
-			case Air:
-				temp_iter.Set(-2);
-				break;
-			case TissueAir:
-				temp_iter.Set(2);
-				break;
-			case StoolAir:
-				temp_iter.Set(-1);
-				break;
-            default:
-                temp_iter.Set(-3);
-                break;
-        }
-    }
-	//Write out unmodified image
-	WriteITK(temp,"tissue stool.mhd");
-	//get bspline voxeltype interpolation
-    InterpolationType::Pointer voxel_type_interpolator = InterpolationType::New();
-    voxel_type_interpolator->SetSplineOrder(0);
-    voxel_type_interpolator->SetInputImage(temp);
-	for (int i=0;i<3;i++) {
-		bool heteroBool=false;
-		for(voxel_type_iter.GoToBegin(), input_iter.GoToBegin(), temp_iter.GoToBegin();
-			!voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd() && !temp_iter.IsAtEnd();
-			++voxel_type_iter, ++input_iter, ++temp_iter) 
-		{
-			if (!heteroBool) {
-				heteroBool=true;
-				//std::cerr<<"heteogenuous Reclassification ran"<<std::endl;
-			}
-			ImageType::IndexType voxel_index = voxel_type_iter.GetIndex();
-			switch(voxel_type_iter.Get()) {
-				case TissueStool:
-				/*	if (HeterogeneousStoolHeuristic(input_interpolator,voxel_type_interpolator,
-						voxel_index,input_iter.Get())) 
-					{
-						voxel_type_iter.Set(Stool);
-						temp_iter.Set(1);
-					}*/
-					break;
-			}
-		}
-	}
-	//Deletes the Interpolators
-	input_interpolator.~SmartPointer();
-	voxel_type_interpolator.~SmartPointer();
-	//std::cerr<<"set partial volume "<<std::endl;
-    //0: ps
-    //1: pt
-    //2: pa
-    ImageType::Pointer partialVolume = AllocateNewImage(fullRegion);
-    IteratorTypeFloat4WithIndex partialVolume_iter(partialVolume,fullRegion);
-
-	//bool random=true;
-	//Sets the partial volumes
-    for(voxel_type_iter.GoToBegin(), input_iter.GoToBegin(), partialVolume_iter.GoToBegin(), input_smax_iter.GoToBegin(), temp_iter.GoToBegin();
-        !voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd() && !partialVolume_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !temp_iter.IsAtEnd();
-        ++voxel_type_iter, ++input_iter, ++partialVolume_iter, ++input_smax_iter, ++temp_iter) 
-    {
-		//prepares information for chamfer stool calculation
-		if (voxel_type_iter.Get()==Stool || voxel_type_iter.Get()==TissueStool || voxel_type_iter.Get()==StoolAir) {
-			temp_iter.Set(1);     //stool
-		} else {
-			temp_iter.Set(0);     //non stool is the object
-		}
-		partialVolume_iter.Set(0);
-		float value=0;
-        switch(voxel_type_iter.Get()) {
-			case Tissue:
-				partialVolume_iter.Set(1.0);
-				break;
-			case Stool:
-			case Air:
-				partialVolume_iter.Set(0.0);
-				break;
-            case TissueAir:
-				//std::cerr<<"TA reached"<<std::endl;
-				value = 1.0+(input_iter.Get()-1024)/1000;
-				if (value<=1 && value>=0) {
-					partialVolume_iter.Set(value);	
-				} else {
-					partialVolume_iter.Set(0);	
-				}
-                break;
-            case TissueStool:
-				//std::cerr<<"TS reached"<<std::endl;
-				value=1.0-(input_iter.Get()-1024)/1000;
-				if (value<=1 && value>=0) {
-					partialVolume_iter.Set(value);
-				} else {
-					partialVolume_iter.Set(0);	
-				}
-                break;
-            case StoolAir:
-                partialVolume_iter.Set(0);
-                break;
-        }
-		if (-partialVolume_iter.Get()==std::numeric_limits<float>::infinity()) {
-			//std::cerr<<partialVolume_iter.GetIndex()[0]<<" "<<partialVolume_iter.GetIndex()[1]<<" "<<partialVolume_iter.GetIndex()[2]<<std::endl;
-		}
-    }
-	//Write out partial volume
-	WriteITK(partialVolume,"tissue partial one.mhd");
-	//Write out unmodified image
-	WriteITK(temp,"chamfer from stool input.mhd");
-	ChamferDistanceFilterType::Pointer chamfer_filter = ChamferDistanceFilterType::New();
-	chamfer_filter->SetInput(temp);
-	int weights[3]={3,4,5};	//3d distance weight recommended by julian
-	chamfer_filter->SetWeights(weights, weights+3);
-	chamfer_filter->SetDistanceFromObject(false);
-	chamfer_filter->Update();
-
-    ImageType::Pointer chamfer_from_stool_involvement=chamfer_filter->GetOutput();
-	IteratorTypeFloat4WithIndex chamfer_from_stool_involvement_iter(chamfer_from_stool_involvement,fullRegion);
-	chamfer_filter.~SmartPointer();
-	//Write out chamfer thickness of stool
-	WriteITK(chamfer_from_stool_involvement,"chamfer from stool.mhd");
-
-	//Updates chamfer by setting all stool attached to an 8+ chamfer stool to also 8 chamfer units
-	ImageType::IndexType endIndex = fullRegion.GetIndex();
-	ImageType::IndexType startIndex = fullRegion.GetIndex();	
-	endIndex[0]+=(fullRegion.GetSize()[0]-1);
-	endIndex[1]+=(fullRegion.GetSize()[1]-1);
-	endIndex[2]+=(fullRegion.GetSize()[2]-1);
-	//Forward
-	for(chamfer_from_stool_involvement_iter.GoToBegin(); !chamfer_from_stool_involvement_iter.IsAtEnd(); ++chamfer_from_stool_involvement_iter){
-		ImageType::IndexType index = chamfer_from_stool_involvement_iter.GetIndex();
-		float temp_value=chamfer_from_stool_involvement_iter.Get();
-		if (temp_value>=8) {
-			for(int i=-1;i<=1;i++) {
-				if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
-					for (int j=-1;j<=1;j++) {
-						if (index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
-							for (int k=-1;k<=1;k++) {
-								if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
-									ImageType::IndexType temp_index={index[0]+i,index[1]+j,index[2]+k};
-									//std::cerr<<temp_index[0]<<" "<<temp_index[1]<<" "<<temp_index[2]<<" "<<std::endl;
-									if (chamfer_from_stool_involvement->GetPixel(temp_index)>0) {
-										chamfer_from_stool_involvement->SetPixel(temp_index,8);
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	//Write the modified chamfer map
-	WriteITK(chamfer_from_stool_involvement,"chamfer from stool forward.mhd");
-	//Backward
-	for(chamfer_from_stool_involvement_iter.GoToReverseBegin(); !chamfer_from_stool_involvement_iter.IsAtReverseEnd(); --chamfer_from_stool_involvement_iter){
-		ImageType::IndexType index = chamfer_from_stool_involvement_iter.GetIndex();
-		float temp_value=chamfer_from_stool_involvement_iter.Get();
-		if (temp_value>=8) {
-			for(int i=-1;i<=1;i++) {
-				if (index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
-					for (int j=-1;j<=1;j++) {
-						if (index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
-							for (int k=-1;k<=1;k++) {
-								if (index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
-									ImageType::IndexType temp_index={index[0]+i,index[1]+j,index[2]+k};
-									//std::cerr<<temp_index[0]<<" "<<temp_index[1]<<" "<<temp_index[2]<<" "<<std::endl;
-									if (chamfer_from_stool_involvement->GetPixel(temp_index)>0) {
-										chamfer_from_stool_involvement->SetPixel(temp_index,8);
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	//write the modified chamfer map
-	WriteITK(chamfer_from_stool_involvement,"chamfer from stool back.mhd");
-	for(voxel_type_iter.GoToBegin(), temp_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin(), input_iter.GoToBegin(), partialVolume_iter.GoToBegin();
-        !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd() && !input_iter.IsAtEnd() && !partialVolume_iter.IsAtEnd();
-        ++voxel_type_iter, ++temp_iter, ++chamfer_from_stool_involvement_iter, ++input_iter, ++partialVolume_iter)
-    {
-		//prepare for computation of chamfer to air
-		if (voxel_type_iter.Get()==Air) {
-            temp_iter.Set(0);					//distance to AIR
-        } else {
-            temp_iter.Set(1);					//non important locations
-        }
-
-		float temp_value=chamfer_from_stool_involvement_iter.Get();
-		if (temp_value>=8) {
-			partialVolume_iter.Set(0);
-		} else if (temp_value<8 && temp_value>0) {
-			voxel_type_iter.Set(ThinStool);		//if the chamfer < 8 then it is set to thin stool
-		}
-    }
-
-	//compute chamfer for air
-	chamfer_filter = ChamferDistanceFilterType::New();
-	chamfer_filter->SetInput(temp);
-	chamfer_filter->SetWeights(weights, weights+3);
-	chamfer_filter->SetDistanceFromObject(false);
-	chamfer_filter->Update();
-
-    ImageType::Pointer chamfer_air=chamfer_filter->GetOutput();
-    IteratorTypeFloat4WithIndex chamfer_air_iter(chamfer_air,fullRegion);
-	
-	chamfer_filter.~SmartPointer();
-	//Writes out the chamfer to air
-	WriteITK(chamfer_air,"chamfer from air.mhd");
-	//Normalize the data
-    for(chamfer_air_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin();
-        !chamfer_air_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd();
-        ++chamfer_air_iter, ++chamfer_from_stool_involvement_iter)
-    {
-        chamfer_from_stool_involvement_iter.Set(chamfer_from_stool_involvement_iter.Get()/8);
-        if (chamfer_air_iter.Get()>=8) {
-            chamfer_air_iter.Set(1);
-        } else {
-            chamfer_air_iter.Set(chamfer_air_iter.Get()/8);
-        }
-    }
-
-    //Calculating partial air
-    for(voxel_type_iter.GoToBegin(), partialVolume_iter.GoToBegin(), chamfer_air_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin();
-        !voxel_type_iter.IsAtEnd() && !partialVolume_iter.IsAtEnd() && !chamfer_air_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd();
-		++voxel_type_iter, ++partialVolume_iter, ++chamfer_air_iter, ++chamfer_from_stool_involvement_iter) 
-	{
-        if(voxel_type_iter.Get()==ThinStool) {
-			float value=0;
-			float ps=1/2*(1+vnl_erf((chamfer_from_stool_involvement_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2))));
-			float pa=1/2*(1+vnl_erf((chamfer_air_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2))));
-			value=1-ps-pa;
-			partialVolume_iter.Set(value);
-        }
-	}
-
-	//Write out the partial tissue with thinstool modification done
-	WriteITK(partialVolume,"tissue partial two.mhd");
-
-	//Does the Gaussian Blurring
-    GaussianFilterType::Pointer gaussianFilter = GaussianFilterType::New();
-    double gaussian_sigma[3];
-    ImageType::SpacingType input_spacing=input->GetSpacing();   //Gets the spacing
-	
-	//adjusted based on spacing of image
-    gaussian_sigma[0]=(0.7/input_spacing.GetElement(0));
-    gaussian_sigma[1]=(0.7/input_spacing.GetElement(1));
-    gaussian_sigma[2]=(0.7/input_spacing.GetElement(2));
-	gaussianFilter->SetSigma(gaussian_sigma);      //0.7mm not sure how many voxel this is
-    gaussianFilter->SetInputImage(partialVolume);
-	
-	//Prepares the output image
-	ImageType::Pointer output = AllocateNewImage(fullRegion);
-	IteratorTypeFloat4WithIndex output_iter(output,fullRegion);
-
-    //Modifies to intensity for output
-    for(output_iter.GoToBegin(), input_iter.GoToBegin(), temp_iter.GoToBegin(), voxel_type_iter.GoToBegin();
-		!output_iter.IsAtEnd() && !input_iter.IsAtEnd() && !temp_iter.IsAtEnd() &&  !voxel_type_iter.IsAtEnd();
-		++output_iter, ++input_iter, ++temp_iter, ++voxel_type_iter) 
-    {	
-        ImageType::IndexType index =input_iter.GetIndex();
-		output_iter.Set(gaussianFilter->EvaluateAtIndex(index)*(input_iter.Get()));
-		if (-output_iter.Get()== std::numeric_limits<float>::infinity()) {
-			output_iter.Set(0);
-		}
-
-		//Prepare for last closing of air enclosed voxels
-		if (voxel_type_iter.Get()==Air) {
-			temp_iter.Set(1);
-		} else {
-			 temp_iter.Set(0);
-		}
-    }
-
-	//Delete the Gaussian filter
-	gaussianFilter.~SmartPointer();
-
-	//Writes out the output preclosing
-	WriteITK(output,"output one.mhd");
-
-	//Shan's Heuristic closing
-
-	//Last Morphological Processing to remove anything contained completely in air
-	//closingFilter = ClosingFilterType::New();
-	//closingFilter->SetKernel(structuringElement);
-	//closingFilter->SetInput(temp);
-	//closingFilter->Update();
-	//temp=closingFilter->GetOutput();
-	//temp_iter=IteratorTypeFloat4WithIndex(temp,fullRegion);
-	//closingFilter.~SmartPointer();
-
-	//Updates the information for final output
-    for(temp_iter.GoToBegin(), output_iter.GoToBegin();
-        !temp_iter.IsAtEnd() && !output_iter.IsAtEnd();
-        ++temp_iter, ++output_iter) 
-    {
-        if (temp_iter.Get()==1) {
-            output_iter.Set(0); //sets for air
-        }
-		if (-output_iter.Get()== std::numeric_limits<float>::infinity()) {
-			output_iter.Set(0);
-		}
-    }
-
-	//Writes out the final output	
-	WriteITK(output,"output two.mhd");
-	//Sets the input to be the output
-	return output;
-}
 
 
 void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2, double d1,
@@ -2823,15 +2460,15 @@ void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2,
 		//	voxel_type=TissueStool;
 		//	smax=stool_tissue_Smax;
 		//} else {
-		if (stool_air_Smax>600) {
+		//if (stool_air_Smax>600 || !Modified) {
 			distance=distanceSA;
 			voxel_type=StoolAir;
 			smax=stool_air_Smax;
-		} else {
-			distance=distanceSA;
-			voxel_type=TissueStool;
-			smax=stool_tissue_Smax;
-		}
+		//} else {
+		//	distance=distanceSA;
+		//	voxel_type=TissueStool;
+		//	smax=stool_tissue_Smax;
+		//}
 		//}
 	} else if (distanceTS<=distanceTA && distanceTS<=distanceSA ) {
 		distance=distanceTS;
@@ -2842,7 +2479,8 @@ void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2,
 		distance=distanceTA;
 		voxel_type=TissueAir;
 	}
-	if (smax<50) {
+
+	if (smax<150 && Modified) {
 		smax=stool_air_Smax;
 		distance=distanceTA;
 		voxel_type=TissueAir;
@@ -2957,7 +2595,7 @@ float PolyDist(float X, vnl_real_polynomial poly, float x, float y) {
 }
 VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, ImageType::PixelType input_gradient_pixel) {
 	if (Modified) {
-		if ((input_pixel >=800 && input_gradient_pixel<=0.8*input_pixel) || input_pixel >= 1000) {
+		if ((input_pixel >=400 && input_gradient_pixel<=0.8*input_pixel) || input_pixel >= 1000) {
 			return Stool;
 		} else if (input_pixel<=-800 && input_gradient_pixel<=250) {
 			return Air;
@@ -2981,6 +2619,14 @@ VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, ImageTy
 }
 
 
+ByteImageType::Pointer AllocateNewByteImage(ImageType::RegionType fullRegion) {
+    ByteImageType::Pointer newImage = ByteImageType::New();
+    newImage->SetLargestPossibleRegion( fullRegion );
+    newImage->SetBufferedRegion( fullRegion );
+    newImage->SetRequestedRegion( fullRegion );
+    newImage->Allocate();
+    return newImage;
+}
 
 ImageType::Pointer AllocateNewImage(ImageType::RegionType fullRegion) {
     ImageType::Pointer newImage = ImageType::New();
@@ -2992,13 +2638,23 @@ ImageType::Pointer AllocateNewImage(ImageType::RegionType fullRegion) {
 }
 
 void WriteITK(ImageType::Pointer image, char * name) {
-    typedef itk::ImageFileWriter< ImageType >  WriterType;
-    WriterType::Pointer writer = WriterType::New();
-	writer->SetFileName(name);
-	writer->SetInput(image);
+ //   typedef itk::ImageFileWriter< ImageType >  WriterType;
+ //   WriterType::Pointer writer = WriterType::New();
+	//writer->SetFileName(name);
+	//writer->SetInput(image);
 	std::cerr<<"writing: "<<name<<std::endl;
-	writer->Update();
-	writer.~SmartPointer();
+	//writer->Update();
+	//writer.~SmartPointer();
+}
+
+void WriteITK(ByteImageType::Pointer image, char * name) {
+ //   typedef itk::ImageFileWriter< ByteImageType >  WriterType;
+ //   WriterType::Pointer writer = WriterType::New();
+	//writer->SetFileName(name);
+	//writer->SetInput(image);
+	std::cerr<<"writing: "<<name<<std::endl;
+	//writer->Update();
+	//writer.~SmartPointer();
 }
 
 ImageType::Pointer ComputePseudoGradient(ImageType::Pointer input) {

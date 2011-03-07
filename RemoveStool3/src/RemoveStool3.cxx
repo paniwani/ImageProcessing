@@ -6,7 +6,7 @@ double neighbor_weight[3]={1,1,.5};
 double beta=.7;
 double weight_sum=2.5;
 int writeCount=1;
-std::string note = "SATO";
+std::string note = "ORIGINAL";
 
 const double ALPHA = 0.5;
 const double BETA = 0.3;
@@ -371,7 +371,7 @@ int main(int argc, char * argv[])
 	//RunFuzzy(input_temp,chamfer_colon,voxel_type);
 
 
-	ComputeSatoHessian(input, chamfer_colon);
+	//ComputeSatoHessian(input, chamfer_colon);
 
 
 	// Test region growing
@@ -382,6 +382,8 @@ int main(int argc, char * argv[])
 	//ReadITK(chamfer_colon, "mr10_092_13p.i0344_100-105_chamfer_colon_air_mask.hdr");
 	//chamfer_colon_iter=IteratorTypeByteWithIndex(chamfer_colon,fullRegion);
 	//WriteITK(chamfer_colon,"chamfer_colon.hdr");
+
+	HeuristicClosing(voxel_type,chamfer_colon);
 
 	//-------------------------------------------END SETUP-------------------------------------------------------
 
@@ -398,9 +400,9 @@ int main(int argc, char * argv[])
 	gradient_magnitude_interpolator->SetInputImage(gradient_magnitude);
 
 	// Storage for Smax
-	//ImageType::Pointer input_smax = AllocateNewImage(fullRegion);
-	ImageType::Pointer input_smax = ComputeNeighborhoodSmax(input_temp, voxel_type, chamfer_colon_iter, startIndex, endIndex);
-	WriteITK(input_smax,"smax.hdr");
+	ImageType::Pointer input_smax = AllocateNewImage(fullRegion);
+	input_smax->FillBuffer(0);
+	//ImageType::Pointer input_smax = ComputeNeighborhoodSmax(input_temp, voxel_type, chamfer_colon_iter, startIndex, endIndex);
 
 	// Load smax
 	//ReadITK(input_smax, "C:/ImageData/mr10_092_13p.i0344_100-105_smax2.hdr");
@@ -425,8 +427,8 @@ int main(int argc, char * argv[])
 			float temp_threshold=-1;
 			VoxelType temp_type = Unclassified;
 
-			if (input_smax_iter.Get() > 0)
-			{
+			//if (input_smax_iter.Get() > 0)
+			//{
 
 				VoxelEdgeClassification(&temp_threshold,&temp_type,1.5,1.0,input_interpolator,gradient_magnitude_interpolator,input_smax_iter,voxel_index,grad);
 				
@@ -434,9 +436,9 @@ int main(int argc, char * argv[])
 
 				VoxelEdgeClassification(&temp_threshold,&temp_type,0.6,0.3,input_interpolator,gradient_magnitude_interpolator,input_smax_iter,voxel_index,grad);
 
-			} else {
-				temp_type = TissueAir;
-			}
+			//} else {
+			//	temp_type = TissueAir;
+			//}
 
 			voxel_type_iter.Set(temp_type);
 		}
@@ -444,6 +446,8 @@ int main(int argc, char * argv[])
 		if (++count % 100000 == 0)
 			std::cout << "Voxel edge count: " << count << std::endl;
     }
+
+	WriteITK(input_smax,"smax.hdr");
 
 	// Deletes the Interpolators
 	input_interpolator.~SmartPointer();
@@ -1599,41 +1603,45 @@ void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2,
     temp_gradient_magnitude[0]=gradient_magnitude_interpolator->EvaluateAtContinuousIndex(offset_index);
 	//std::cerr<<"vector created"<<std::endl;
 	float min_distance=*threshold;
-	//float stool_tissue_Smax;
-	//float stool_air_Smax;
+	float stool_tissue_Smax;
+	float stool_air_Smax;
 	
 	//Tissue Stool
 
-	//stool_tissue_Smax=ComputeSmax(temp_intensity,temp_gradient_magnitude, 5);
-	//stool_air_Smax=Stool_Air_ComputeSmax(temp_intensity,temp_gradient_magnitude, 5);
+	stool_tissue_Smax=ComputeSmax(temp_intensity,temp_gradient_magnitude, 5);
+	stool_air_Smax=Stool_Air_ComputeSmax(temp_intensity,temp_gradient_magnitude, 5);
 	
-	float smax = input_smax.Get();
-	//float smax=0;
+	//float smax = input_smax.Get();
+	float smax=0;
 
 	float distance=0;
 	VoxelType voxel_type=Unclassified;
 	
-	//float distanceTS=AverageTissueStoolDist(stool_tissue_Smax, temp_intensity,temp_gradient_magnitude);
-	//float distanceSA=AverageStoolAirDist(stool_air_Smax, temp_intensity,temp_gradient_magnitude); // bias stool air distance to preserve tissue
+	float distanceTS=AverageTissueStoolDist(stool_tissue_Smax, temp_intensity,temp_gradient_magnitude);
+	float distanceSA=AverageStoolAirDist(stool_air_Smax, temp_intensity,temp_gradient_magnitude); // bias stool air distance to preserve tissue
 
-	float distanceTS=AverageTissueStoolDist(smax, temp_intensity,temp_gradient_magnitude);
-	float distanceSA=AverageStoolAirDist(smax, temp_intensity,temp_gradient_magnitude); // bias stool air distance to preserve tissue
+	//float distanceTS=AverageTissueStoolDist(smax, temp_intensity,temp_gradient_magnitude);
+	//float distanceSA=AverageStoolAirDist(smax, temp_intensity,temp_gradient_magnitude); // bias stool air distance to preserve tissue
 	float distanceTA=AverageTissueAirDist(temp_intensity,temp_gradient_magnitude);
 
 	if (distanceSA<=distanceTS && distanceSA<=distanceTA){
 		distance=distanceSA;
 		voxel_type=StoolAir;
+		smax=stool_air_Smax;
 	} else if (distanceTS<=distanceTA && distanceTS<=distanceSA ) {
 		distance=distanceTS;
 		voxel_type=TissueStool;
+		smax=stool_tissue_Smax;
 	} else {
 		distance=distanceTA;
 		voxel_type=TissueAir;
+		smax=0;
 	}
 
     if (min_distance>=distance || min_distance==-1 || *previous==Unclassified) {
 		*threshold=distance;
         *previous=voxel_type;
+		input_smax.Set(smax);
     }
 }
 
@@ -2172,6 +2180,25 @@ void WriteITK(ByteImageType::Pointer image, std::string name) {
 
 void WriteITK(IntImageType::Pointer image, std::string name) {
     typedef itk::ImageFileWriter< IntImageType >  WriterType;
+    WriterType::Pointer writer = WriterType::New();
+	WriterType::SetGlobalWarningDisplay(false);
+
+	std::stringstream ss;
+	if (Modified)
+		ss << "Modified_";
+	if ( !note.empty() )
+		ss << note << "_";
+	ss << writeCount++ << "_" << name;
+	writer->SetFileName(ss.str().c_str());
+
+	writer->SetInput(image);
+	std::cout<<"Writing: "<<ss.str()<<std::endl;
+	writer->Update();
+	writer.~SmartPointer();
+}
+
+void WriteITK(UintImageType::Pointer image, std::string name) {
+    typedef itk::ImageFileWriter< UintImageType >  WriterType;
     WriterType::Pointer writer = WriterType::New();
 	WriterType::SetGlobalWarningDisplay(false);
 
@@ -4311,4 +4338,59 @@ void RunRegionalMinima(ImageType::Pointer input)
 	minimaFilter->SetForegroundValue(1);
 	minimaFilter->Update();
 	WriteITK(minimaFilter->GetOutput(), "minima.hdr");
+}
+
+void HeuristicClosing(VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer chamfer_colon)
+{
+	ImageType::RegionType region = voxel_type->GetLargestPossibleRegion();
+
+	ByteImageType::Pointer mask = AllocateNewByteImage(region);
+
+	IteratorTypeVoxelType voxel_type_iter(voxel_type,region);
+	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,region);
+	IteratorTypeByteWithIndex mask_iter(mask,region);
+
+	// Get non-mask
+	for (voxel_type_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), mask_iter.GoToBegin(); !mask_iter.IsAtEnd(); ++voxel_type_iter, ++chamfer_colon_iter, ++mask_iter)
+	{
+		if (chamfer_colon_iter.Get() == 1 && voxel_type_iter.Get() == Stool)
+		{
+			mask_iter.Set(0);
+		} else {
+			mask_iter.Set(1);
+		}
+	}
+
+	WriteITK(mask,"non_stool_mask.hdr");
+
+	// Run connected component
+	ConnectedComponentFilterType::Pointer ccFilter = ConnectedComponentFilterType::New();
+	ccFilter->SetInput(mask);
+	ccFilter->Update();
+	IntImageType::Pointer cc = ccFilter->GetOutput();
+	IteratorTypeIntWithIndex cc_iter(cc,region);
+	
+	ccFilter.~SmartPointer();
+	WriteITK(cc,"mask_cc.hdr");
+
+	// Convert to Label map
+	LabelImageToShapeLabelMapFilterType::Pointer converter = LabelImageToShapeLabelMapFilterType::New();
+	converter->SetInput(cc);
+	converter->Update();
+	LabelMapType::Pointer labelMap = converter->GetOutput();
+	converter.~SmartPointer();
+
+	// Find largest non-mask component
+	std::vector<LabelObjectType::Pointer> labelVector = labelMap->GetLabelObjects();
+	sort(labelVector.begin(), labelVector.end(), compareSize);
+	
+	for (voxel_type_iter.GoToBegin(), cc_iter.GoToBegin(); !voxel_type_iter.IsAtEnd(); ++voxel_type_iter, ++cc_iter)
+	{
+		if (cc_iter.Get() != 0 && cc_iter.Get() != labelVector[0]->GetLabel())
+		{
+			voxel_type_iter.Set(Stool);
+		}
+	}
+
+	WriteITK(voxel_type, "stool_closed.hdr");
 }

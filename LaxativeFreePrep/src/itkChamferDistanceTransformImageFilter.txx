@@ -272,7 +272,7 @@ ChamferDistanceTransformImageFilter<InputImage, OutputImage>
 
           {
 
-          minimum = std::min(minimum, it.GetPixel(i) + mask[i]);
+          minimum = std::min<typename OutputImageType::PixelType>(minimum, it.GetPixel(i) + mask[i]);
 
           }
 
@@ -320,7 +320,7 @@ ChamferDistanceTransformImageFilter<InputImage, OutputImage>
 
           {
 
-          minimum = std::min(minimum, it.GetPixel(i) + mask[i]);
+			  minimum = std::min<typename OutputImageType::PixelType>(minimum, it.GetPixel(i) + mask[i]);
 
           }
 
@@ -352,7 +352,7 @@ ChamferDistanceTransformImageFilter<InputImage, OutputImage>
 
         {
 
-        minimum = std::min(minimum, it.GetPixel(i) + mask[i]);
+        minimum = std::min<typename OutputImageType::PixelType>(minimum, it.GetPixel(i) + mask[i]);
 
         }
 

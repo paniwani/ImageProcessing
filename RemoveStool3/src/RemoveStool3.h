@@ -112,6 +112,9 @@ typedef itk::ImageRegionIteratorWithIndex<ByteImageType>                    Iter
 typedef itk::Image<int, 3>													IntImageType;
 typedef itk::ImageRegionIteratorWithIndex<IntImageType>						IteratorTypeIntWithIndex;
 
+typedef itk::Image<unsigned int, 3>											UintImageType;
+typedef itk::ImageRegionIteratorWithIndex<UintImageType>					IteratorTypeUintWithIndex;
+
 //typedef itk::Image<unsigned short,3>										UshortImageType;
 //typedef itk::ImageRegionIteratorWithIndex<UshortImageType>					UshortImageTypeWithIndex;
 
@@ -162,7 +165,8 @@ typedef itk::SimpleContourExtractorImageFilter<ImageType, ImageType>		SimpleCont
 
 typedef itk::ConnectedComponentImageFilter<ByteImageType, IntImageType>		ConnectedComponentFilterType;
 //typedef itk::BinaryShapeOpeningImageFilter<ByteImageType>					BinaryShapeOpeningFilterType;
-typedef itk::LabelImageToShapeLabelMapFilter< IntImageType, LabelMapType > 	LabelImageToShapeLabelMapFilterType;
+typedef itk::LabelImageToShapeLabelMapFilter< IntImageType, LabelMapType >  LabelImageToShapeLabelMapFilterType;
+//typedef itk::LabelImageToLabelMapFilter<IntImageType>						LabelImageToLabelMapFilterType;
 typedef itk::BinaryMedianImageFilter< ByteImageType, ByteImageType >		BinaryMedianFilterType;
 typedef itk::VotingBinaryIterativeHoleFillingImageFilter< ImageType >	    HoleFillingFilterType;
 typedef itk::HessianRecursiveGaussianImageFilter<ImageType>					HessianGaussianFilterType;
@@ -218,6 +222,7 @@ void WriteITK(FuzzyFilterType::FuzzySceneType, std::string name);
 void WriteITK(ByteImageType::Pointer image, std::string name);
 void WriteITK(VoxelTypeImage::Pointer vimage, std::string name);
 void WriteITK(IntImageType::Pointer image, std::string name);
+void WriteITK(UintImageType::Pointer image, std::string name);
 void ReadITK(ImageType::Pointer &image, char * fileName);
 void ReadITK(VoxelTypeImage::Pointer &vimage, char * fileName);
 void ReadITK(ByteImageType::Pointer &image, char * fileName);
@@ -282,4 +287,6 @@ float S_blob(float lambda[3], float gamma);
 float S_line(float lambda[3], float alpha, float gamma);
 float S_line_dark(float lambda[3], float alpha, float gamma);
 float S_fold(float lambda[3], float alpha, float gamma);
+
+void HeuristicClosing(VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer chamfer_colon);
 

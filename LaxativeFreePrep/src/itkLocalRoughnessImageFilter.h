@@ -45,7 +45,24 @@ namespace itk
 
 			LocalRoughnessImageFilter();
 		protected :
-			typedef itk::ConstNeighborhoodIterator<InputImageType> InputImageNeighborhoodIteratorType;
+			
+			
+
+
+			
+			typedef itk::ConstNeighborhoodIterator<InputImage> ConstNeighborhoodIteratorType;
+			typedef typename ConstNeighborhoodIteratorType::RadiusType RadiusType;  
+
+
+
+
+
+
+
+
+
+			
+
 			typedef itk::NeighborhoodIterator<OutputImageType> OutputImageNeighborhoodIteratorType;
 
 			typedef itk::NeighborhoodInnerProduct<InputImageType> IP;
@@ -97,10 +114,36 @@ namespace itk
 				typename InputImage::Pointer FilterX, typename InputImage::Pointer FilterY, typename InputImage::Pointer FilterZ,
 				typename InputImage::Pointer FilterXX, typename InputImage::Pointer FilterXY, typename InputImage::Pointer FilterXZ,
 				typename InputImage::Pointer FilterYY, typename InputImage::Pointer FilterYZ, typename InputImage::Pointer FilterZZ);
+
+			/** Directly Set/Get the array of weights used in the gradient calculations.
+			  Note that calling UseImageSpacingOn will clobber these values.*/
+			void SetDerivativeWeights(float data[]);
+			itkGetVectorMacro(DerivativeWeights, const float, itk::GetImageDimension<TInputImage>::ImageDimension);
+			
+			vnl_matrix_fixed< float, 3, 3> EvaluateAtNeighborhood (const vnl_matrix_fixed<float ,3,3> Next, const vnl_matrix_fixed<float ,3,3> Previous) const{
+			
+				unsigned i, j;
+				vnl_matrix_fixed<float ,3,3> J;
+
+				for (i = 0; i < 3; ++i) {
+					for (j = 0; j < 3; ++j) {
+						J[i][j] = m_DerivativeWeights[i]
+							* 0.5 * (Next[i][j] - Previous[i][j]);
+					}
+				}
+
+				return J;
+			}
+
+			/** The weights used to scale partial derivatives during processing */
+			float m_DerivativeWeights[3];
 		private :
 			void WriteITK(typename InputImageType::Pointer image, char * name);
 		    LocalRoughnessImageFilter(Self const &); // not implemented
 		    Self & operator=(Self const &); // not implemented
+
+
+
 	};
 }
 

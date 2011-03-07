@@ -331,22 +331,25 @@ namespace itk {
 	void
 	LocalRoughnessImageFilter<InputImage, OutputImage>
 	::WriteITK(typename InputImageType::Pointer image, char * name) {
-		typedef itk::ImageFileWriter< InputImageType >  WriterType;
-		typename WriterType::Pointer writer = WriterType::New();
-		writer->SetFileName(name);
-		writer->SetInput(image);
-		std::cerr<<"before update"<<std::endl;
-		writer->Update();
-		writer.~SmartPointer();
+		//typedef itk::ImageFileWriter< InputImageType >  WriterType;
+		//typename WriterType::Pointer writer = WriterType::New();
+		//writer->SetFileName(name);
+		//writer->SetInput(image);
+		std::cerr<<"before update "<<name<<std::endl;
+		//writer->Update();
+		//writer.~SmartPointer();
 	}
 	
+
+
 	template<typename InputImage, typename OutputImage>
 	void
 	LocalRoughnessImageFilter<InputImage, OutputImage>
 	::GenerateData()
 	{
 		//InputImage::IndexType index = {-4, -4, -2};
-		//InputImage::SizeType size = {9, 9, 5};
+		typename InputImage::IndexType origin = GetInput()->GetLargestPossibleRegion().GetIndex();
+		typename InputImage::SizeType size = GetInput()->GetLargestPossibleRegion().GetSize();
 		//InputImage::RegionType iteration_region(index, size);
 		//
 		//InputImage::Pointer FilterX= AllocateNewImage(iteration_region);;
@@ -370,52 +373,166 @@ namespace itk {
 		InputImageIteratorType input_iter(GetInput(),GetInput()->GetRequestedRegion());
 		OutputImageIteratorType output_iter(GetOutput(),GetInput()->GetRequestedRegion());
 
-		typename InputImageType::Pointer curvature_image = AllocateNewImage(GetInput()->GetRequestedRegion());
-		TempImageIteratorType curvature_image_iter(curvature_image, GetInput()->GetRequestedRegion());
-		
-		typename HessianImageFilterType::Pointer hessian_image_filter = HessianImageFilterType::New();
-		hessian_image_filter->SetInput(GetInput());
-		hessian_image_filter->SetSigma(1);
-		hessian_image_filter->Update();
+		//typename HessianImageFilterType::Pointer hessian_image_filter = HessianImageFilterType::New();
+		//hessian_image_filter->SetInput(GetInput());
+		//hessian_image_filter->SetSigma(1);
+		//hessian_image_filter->Update();
 
-		typename HessianImageType::Pointer hessian_image = hessian_image_filter->GetOutput();
-		HessianImageIteratorType hessian_image_iter(hessian_image, hessian_image->GetRequestedRegion());
+		//typename HessianImageType::Pointer hessian_image = hessian_image_filter->GetOutput();
+		//HessianImageIteratorType hessian_image_iter(hessian_image, hessian_image->GetRequestedRegion());
 		
+		
+		ConstNeighborhoodIteratorType::RadiusType radius;
+		radius[0] = radius[1] = radius[2] = 1;
+
+		typename DerivativeImageFilterType::Pointer derivative_filter = DerivativeImageFilterType::New();
+		derivative_filter->SetInput(GetInput());
+		derivative_filter->SetOrder(1);
+
+		derivative_filter->SetDirection(0);
+		derivative_filter->SetUseImageSpacing(true);
+		derivative_filter->Update();
+
+		typename InputImageType::Pointer x_partial;
+		x_partial = derivative_filter->GetOutput();
+		TempImageIteratorType x_iter(x_partial,x_partial->GetRequestedRegion());
+		
+
+		derivative_filter.~SmartPointer();
+		derivative_filter = DerivativeImageFilterType::New();
+		derivative_filter->SetInput(GetInput());
+		derivative_filter->SetOrder(1);
+		derivative_filter->SetDirection(1);
+		derivative_filter->SetUseImageSpacing(true);
+		derivative_filter->Update();
+
+		typename InputImageType::Pointer y_partial;
+		y_partial= derivative_filter->GetOutput();
+		TempImageIteratorType y_iter(y_partial,y_partial->GetRequestedRegion());
+
+		derivative_filter.~SmartPointer();
+		derivative_filter = DerivativeImageFilterType::New();
+		derivative_filter->SetInput(GetInput());
+		derivative_filter->SetOrder(1);
+		derivative_filter->SetDirection(2);
+		derivative_filter->SetUseImageSpacing(true);
+		derivative_filter->Update();
+
+		typename InputImageType::Pointer z_partial;
+		z_partial= derivative_filter->GetOutput();
+		TempImageIteratorType z_iter(z_partial,z_partial->GetRequestedRegion());
+
+		derivative_filter.~SmartPointer();
+
+		m_DerivativeWeights[0] = 1/GetInput()->GetSpacing().GetElement(0);
+		m_DerivativeWeights[1] = 1/GetInput()->GetSpacing().GetElement(1);
+		m_DerivativeWeights[2] = 1/GetInput()->GetSpacing().GetElement(2);
+
+		std::cerr<<"Derivative Weight: "<<m_DerivativeWeights[0]<<std::endl;
 		int count=0;
 		float max=0;
-		for (input_iter.GoToBegin(), curvature_image_iter.GoToBegin(), output_iter.GoToBegin(), hessian_image_iter.GoToBegin(); 
-			!input_iter.IsAtEnd() && !curvature_image_iter.IsAtEnd() && !output_iter.IsAtEnd() && !hessian_image_iter.IsAtEnd(); 
-			++input_iter, ++curvature_image_iter, ++output_iter, ++hessian_image_iter)
+
+		bool flag1=true;
+		bool flag2=true;
+		bool flag3=true;
+		bool flag0=true;
+
+		for (input_iter.GoToBegin(), output_iter.GoToBegin(), x_iter.GoToBegin(), y_iter.GoToBegin(), z_iter.GoToBegin()/*, hessian_image_iter.GoToBegin()*/; 
+			!input_iter.IsAtEnd() && !output_iter.IsAtEnd() && !x_iter.IsAtEnd() && !y_iter.IsAtEnd() && !z_iter.IsAtEnd()  /* && !hessian_image_iter.IsAtEnd()*/; 
+			++input_iter, ++output_iter, ++x_iter, ++y_iter, ++z_iter/*, ++hessian_image_iter*/)
 		{
-			//Derivative temp_data;
 
-			//InputImage::IndexType index = input_iter.GetIndex();
+			if (flag0) {
+				std::cerr<<"Flag 0"<<std::endl;
+				flag0=false;
+			}
+			vnl_matrix_fixed<float ,3,3> Next;
+			vnl_matrix_fixed<float ,3,3> Previous;
+			for (int i=0; i<=3; i++) {
+				typename InputImageType::IndexType next_index = input_iter.GetIndex();
+				next_index[i]=next_index[i]+1;
+				if (next_index[i]>size[i]-1+origin[i]) {
+					next_index[i]=size[i]-1+origin[i];
+				}
 
-			//InputImage::Pointer subImage=GetSubImage(size[0],size[1], size[2], index);
+				typename InputImageType::IndexType previous_index = input_iter.GetIndex();
+				previous_index[i]=previous_index[i]-1;
+				if (previous_index[i]<origin[i]){
+					previous_index[i]=origin[i];
+				}
 
-			////temp_data.x=DoKernel(FilterX, subImage);
-			////temp_data.y=DoKernel(FilterY, subImage);
-			////temp_data.z=DoKernel(FilterZ, subImage);
-
-			//temp_data.xx=DoKernel(FilterXX, subImage);
-			//temp_data.xy=DoKernel(FilterXY, subImage);
-			//temp_data.xz=DoKernel(FilterXZ, subImage);
-
-			//temp_data.yy=DoKernel(FilterYY, subImage);
-			//temp_data.yz=DoKernel(FilterYZ, subImage);
-			//temp_data.zz=DoKernel(FilterZZ, subImage);
-			HessianValueType hessian_value = hessian_image_iter.Get();
-			vnl_matrix<float> temp_return(3,3);
-			//std::cerr<<"Got Here"<<std::endl;
-			for (int i=0;i<3;i++) {
-				for (int j=0;j<3;j++) {
-					temp_return.put(i,j,(hessian_value(i,j)+hessian_value(j,i))/2);
+				for (int j=0; j<=3; j++) {
+					if (flag1) {
+						std::cerr<<i<<" "<<j<<std::endl;
+						std::cerr<<next_index[i]<<" "<<previous_index[i]<<std::endl;
+					}
+					float nextvalue=0;
+					float previousvalue=0;
+					switch (j) {
+						case 0:
+							nextvalue = x_partial->GetPixel(next_index);
+							previousvalue = x_partial->GetPixel(previous_index);
+							break;
+						case 1:
+							nextvalue = y_partial->GetPixel(next_index);
+							previousvalue = y_partial->GetPixel(previous_index);
+							break;
+						case 2:
+							nextvalue = z_partial->GetPixel(next_index);
+							previousvalue = z_partial->GetPixel(previous_index);
+							break;
+					}
+					Next[i][j]=nextvalue;
+					Previous[i][j]=previousvalue;
 				}
 			}
+			if (flag1) {
+				std::cerr<<"Here one"<<std::endl;
+				flag1=false;
+			}
 
+			vnl_matrix<float> temp_return = EvaluateAtNeighborhood(Next, Previous);
+			Next.~vnl_matrix_fixed();
+			Previous.~vnl_matrix_fixed();
+
+//			//Derivative temp_data;
+//
+//			//InputImage::IndexType index = input_iter.GetIndex();
+//
+//			//InputImage::Pointer subImage=GetSubImage(size[0],size[1], size[2], index);
+//
+//			////temp_data.x=DoKernel(FilterX, subImage);
+//			////temp_data.y=DoKernel(FilterY, subImage);
+//			////temp_data.z=DoKernel(FilterZ, subImage);
+//
+//			//temp_data.xx=DoKernel(FilterXX, subImage);
+//			//temp_data.xy=DoKernel(FilterXY, subImage);
+//			//temp_data.xz=DoKernel(FilterXZ, subImage);
+//
+//			//temp_data.yy=DoKernel(FilterYY, subImage);
+//			//temp_data.yz=DoKernel(FilterYZ, subImage);
+//			//temp_data.zz=DoKernel(FilterZZ, subImage);
+//			HessianValueType hessian_value = hessian_image_iter.Get();
+//			vnl_matrix<float> temp_return(3,3);
+//			//std::cerr<<"Got Here"<<std::endl;
+//			for (int i=0;i<3;i++) {
+//				for (int j=0;j<3;j++) {
+//					temp_return.put(i,j,(hessian_value(i,j)+hessian_value(j,i))/2);
+//				}
+//			}
+//
 			//std::cerr<<"Got Here"<<std::endl;
+			if (flag2) {
+				std::cerr<<"Here two"<<std::endl;
+				flag2=false;
+			}
 			vnl_symmetric_eigensystem<float> eigensystem(temp_return);
+
+			
 			float lamda[3]={eigensystem.get_eigenvalue(2), eigensystem.get_eigenvalue(1), eigensystem.get_eigenvalue(0)};
+
+			//temp_return.~vnl_matrix();
+			//eigensystem.~vnl_symmetric_eigensystem();
 
 			for (int i=0;i<3;i++) {
 				for (int j=i;j<3;j++) {
@@ -428,9 +545,13 @@ namespace itk {
 			//	std::cerr<<lamda[i]<<" ";
 			}
 
+			if (flag3) {
+				std::cerr<<"Here three"<<std::endl;
+				flag3=false;
+			}
 			float mean =(lamda[0]+lamda[1]+lamda[2])/3;
 			float variance = (vnl_math_sqr(lamda[0]-mean)+vnl_math_sqr(lamda[2]-mean)+vnl_math_sqr(lamda[1]-mean))/3;
-
+			
 
 			//std::cerr<<std::endl;
 			//if (abs(lamda[1]/lamda[2])<.01 && abs(lamda[2])>.1) {
@@ -469,16 +590,16 @@ namespace itk {
 			//curvature_image_iter.Set(sqrtf((vnl_math_sqr(value.max)+vnl_math_sqr(value.min))/2));
 			//curvature_image_iter.Set(value.mean);
 		}
+		std::cerr<<"Flag 4"<<std::endl;
 		WriteITK(output, "eigenvalue scale 1.mhd");
 
-		
-
-		for (output_iter.GoToBegin(); 
-			!output_iter.IsAtEnd(); 
-			++output_iter)
-		{
+		x_partial.~SmartPointer();
+		y_partial.~SmartPointer();
+		z_partial.~SmartPointer();
+		for (output_iter.GoToBegin(); !output_iter.IsAtEnd(); ++output_iter) {
 			output_iter.Set(1-output_iter.Get()/max);
 		}
+		std::cerr<<"Done with level set"<<std::endl;
 
 
 		//InputImageIteratorType input_iter(GetInput(),GetInput()->GetRequestedRegion());

@@ -27,9 +27,9 @@
 #include <itkSimpleContourExtractorImageFilter.h>
 #include <itkCurvesLevelSetImageFilter.h>
 
-//#include "Typedef.h"
+#include "Typedef.h"
+#include "utils.h"
 
-#include "itkCurvatureImageFilter.h"
 #include "itkLocalRoughnessImageFilter.h"
 
 #include <NIH_Algo_TextureAnalysis.h>
@@ -43,6 +43,9 @@
 #include <itkBinaryThresholdImageFilter.h>
 #include <itkSimilarityIndexImageFilter.h>
 
+#include <fstream>
+#include <iostream>
+#include <complex>
 
 
 #define CDF_SIGMA 0.27
@@ -60,10 +63,17 @@ enum VoxelType {
 //Pixel Type
 typedef Float4                                                              PixelType;
 //CovariantVector Type
-typedef itk::CovariantVector<PixelType>                                     CovariantVectorType;
+typedef itk::CovariantVector<PixelType,3>                                     CovariantVectorType;
 typedef itk::Image<PixelType, 3>                                            ImageType;
 typedef itk::ImageRegionIteratorWithIndex<ImageType>                                 IteratorTypeFloat4WithIndex;
 typedef itk::Image<CovariantVectorType, 3>                                  ImageVectorType;
+
+
+
+typedef itk::Image<BYTE, 3>                                            ByteImageType;
+typedef itk::ImageRegionIteratorWithIndex<ByteImageType>                                 IteratorTypeByteWithIndex;
+
+
 typedef itk::ImageRegionIterator<ImageVectorType>                           IteratorImageVectorType;
 typedef itk::Image<VoxelType, 3>                                            VoxelTypeImage;
 typedef itk::ImageRegionIteratorWithIndex<VoxelTypeImage>                            IteratorTypeVoxelType;
@@ -76,9 +86,18 @@ typedef itk::GaussianBlurImageFunction<ImageType>                           Gaus
 typedef itk::GradientMagnitudeImageFilter<ImageType, ImageType>             GradientMagnitudeFilterType;
 typedef itk::GrayscaleMorphologicalClosingImageFilter<ImageType, 
         ImageType, StructuringElementType >									ClosingFilterType;
+
+typedef itk::GrayscaleMorphologicalClosingImageFilter<ByteImageType, 
+        ByteImageType, StructuringElementType >									ByteClosingFilterType;
+
+
 typedef itk::GradientAnisotropicDiffusionImageFilter<
 		ImageType, ImageType >									AnisotropicFilterType;
-typedef itk::ChamferDistanceTransformImageFilter<ImageType, ImageType>				ChamferDistanceFilterType;
+
+
+typedef itk::ChamferDistanceTransformImageFilter<ByteImageType, ByteImageType>				ChamferDistanceFilterType;
+
+
 typedef itk::DiscreteGaussianImageFilter<ImageType, ImageType>			GaussianFilterType2;
 typedef itk::RecursiveGaussianImageFilter<ImageType, ImageType>			GaussianFilterType3;
 // define the fillhole filter
@@ -89,10 +108,8 @@ typedef itk::NeighborhoodIterator<ImageVectorType> NeighborhoodVectorIteratorTyp
 
 typedef itk::SimpleContourExtractorImageFilter<ImageType, ImageType> SimpleContourExtractorImageFilterType;
 
-typedef itk::CurvatureImageFilter<ImageType>			CurvatureFilterType;
 typedef itk::LocalRoughnessImageFilter<ImageType, ImageType>			LocalRoughnessImageFilterType;
 
-ImageType::Pointer ComputePseudoGradient(ImageType::Pointer input);
 //Main Operation Function
 ImageType::Pointer RemoveStool(ImageType::Pointer input);
 VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, 
@@ -112,8 +129,16 @@ float Stool_Air_ComputeSmax(float intensity[], float gradient_magnitude[], int s
 float AverageTissueAirDist(float intensity[], float gradient_magnitude[]);
 float AverageTissueStoolDist(float Smax, float intensity[], float gradient_magnitude[]);
 float AverageStoolAirDist(float Smax, float intensity[], float gradient_magnitude[]);
-ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_offset, int z_offset, int x_size, int y_size, int z_size);
+ImageType::Pointer RemoveStool2(ImageType::Pointer input, int x_offset, int y_offset, int z_offset, int x_size, int y_size, int z_size, SSlice*& DAB);
 void WriteITK(ImageType::Pointer image, char * name);
-ImageType::Pointer RemoveStool3(ImageType::Pointer input);
 vnl_matrix<float> GetNeighbor(ImageVectorType::Pointer partialVector, ImageType::IndexType index);
+ByteImageType::Pointer AllocateNewByteImage(ImageType::RegionType fullRegion) ;
+void WriteITK(ByteImageType::Pointer image, char * name);
+
+
+template <class T> int solveNormalizedCubic (T r, T s, T t, T x[3]);
+template <class T> int solveCubic (T a, T b, T c, T d, T x[3]);
+
+typedef unsigned char SSlice[512][512]; 
+
 #endif  // LAXATIVE_FREE_PREP_H
