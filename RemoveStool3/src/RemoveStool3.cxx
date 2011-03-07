@@ -116,8 +116,8 @@ int main(int argc, char * argv[])
 	WriteITK(gradient_magnitude, "gradient.hdr");
 
 	// Create temporary image and iter
-	//ByteImageType::Pointer temp = AllocateNewByteImage(fullRegion);
-	//IteratorTypeByteWithIndex temp_iter(temp,fullRegion);
+	ImageType::Pointer temp = AllocateNewImage(fullRegion);
+	IteratorTypeFloat4WithIndex temp_iter(temp,fullRegion);
 
 	//stores the largest gradient magnitude, this is purely for reference on the validity of the image
 	float gradient_max=0;
@@ -141,89 +141,90 @@ int main(int argc, char * argv[])
 	std::cerr<<"Gradient max: "<<gradient_max<<std::endl;
 
 
-	//// Fill in Stool Holes
-	//for (voxel_type_iter.GoToBegin(), temp_iter.GoToBegin();
- //       !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
- //       ++voxel_type_iter, ++temp_iter)
- //   {
- //       switch (voxel_type_iter.Get()) {
- //           case Tissue:
- //               temp_iter.Set(0);
- //               break;
- //           case Stool:
- //               temp_iter.Set(1);
- //               break;
- //           case Unclassified:
- //               temp_iter.Set(0);
- //               break;
- //           case Air:
- //               temp_iter.Set(0);
- //               break;
- //       }
- //   }
+	// Fill in Stool Holes
+	for (voxel_type_iter.GoToBegin(), temp_iter.GoToBegin();
+        !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
+        ++voxel_type_iter, ++temp_iter)
+    {
+        switch (voxel_type_iter.Get()) {
+            case Tissue:
+                temp_iter.Set(0);
+                break;
+            case Stool:
+                temp_iter.Set(1);
+                break;
+            case Unclassified:
+                temp_iter.Set(0);
+                break;
+            case Air:
+                temp_iter.Set(0);
+                break;
+        }
+    }
 
-	////WriteITK(temp, "temp_stool.hdr");
+	WriteITK(temp, "temp_stool.hdr");
 
-	///*// Use voting filter to fill in holes
-	//HoleFillingFilterType::Pointer holeFilter = HoleFillingFilterType::New();
-	//holeFilter->SetInput(temp);
-	//ByteImageType::SizeType hole_radius;
-	//hole_radius[0] = 1;
-	//hole_radius[1] = 1;
-	//hole_radius[2] = 1;
-	//holeFilter->SetRadius(hole_radius);
-	//holeFilter->SetBackgroundValue(0);
-	//holeFilter->SetForegroundValue(1);
-	//holeFilter->SetMajorityThreshold( 11 );
-	//holeFilter->SetMaximumNumberOfIterations(1);
-	//holeFilter->Update();
-	//temp=holeFilter->GetOutput();
-	//WriteITK(temp,"stool_voting_hole_filled_11.hdr");
-	//*/
+	/*// Use voting filter to fill in holes
+	HoleFillingFilterType::Pointer holeFilter = HoleFillingFilterType::New();
+	holeFilter->SetInput(temp);
+	ByteImageType::SizeType hole_radius;
+	hole_radius[0] = 1;
+	hole_radius[1] = 1;
+	hole_radius[2] = 1;
+	holeFilter->SetRadius(hole_radius);
+	holeFilter->SetBackgroundValue(0);
+	holeFilter->SetForegroundValue(1);
+	holeFilter->SetMajorityThreshold( 11 );
+	holeFilter->SetMaximumNumberOfIterations(1);
+	holeFilter->Update();
+	temp=holeFilter->GetOutput();
+	WriteITK(temp,"stool_voting_hole_filled_11.hdr");
+	*/
 
- //   StructuringElementType  structuringElement;
- //   structuringElement.SetRadius( 1 );  // .5
- //   structuringElement.CreateStructuringElement();
-	//ClosingFilterType::Pointer closingFilter = ClosingFilterType::New();
-	//closingFilter->SetKernel(structuringElement);	 
-	//closingFilter->SetInput(temp);
-	//closingFilter->Update();
-	//temp=closingFilter->GetOutput();
-	//temp_iter=IteratorTypeFloat4WithIndex(temp,fullRegion);
-	//closingFilter.~SmartPointer();
+    StructuringElementType  structuringElement;
+    structuringElement.SetRadius( 1 );  // .5
+    structuringElement.CreateStructuringElement();
+	ClosingFilterType::Pointer closingFilter = ClosingFilterType::New();
+	closingFilter->SetKernel(structuringElement);	 
+	closingFilter->SetInput(temp);
+	closingFilter->Update();
+	temp=closingFilter->GetOutput();
+	temp_iter=IteratorTypeFloat4WithIndex(temp,fullRegion);
+	closingFilter.~SmartPointer();
 
-	////WriteITK(temp, "temp_stool_closed.hdr");
-	//
+	WriteITK(temp, "temp_stool_closed.hdr");
+	
 
-	//// Apply stool closing and prepare for tissue closing
-	//for (temp_iter.GoToBegin(), voxel_type_iter.GoToBegin();
- //       !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
- //       ++voxel_type_iter, ++temp_iter)
- //   {
- //       switch(voxel_type_iter.Get()) {
- //           case Tissue:         
-	//			if (temp_iter.Get()==1) {
-	//				voxel_type_iter.Set(Stool);			//Modify tissue into stool holes
- //               }
- //               temp_iter.Set(1);
-	//			break;
-	//		case Stool:
- //               temp_iter.Set(-1);
- //               break;
- //           case Unclassified:
-	//			if (temp_iter.Get()==1) {
-	//				voxel_type_iter.Set(Stool);			//Modify unclassified into stool holes
- //               }
-	//			temp_iter.Set(0);
- //               break;
- //           case Air:
- //               temp_iter.Set(-1);
- //               break;
- //       }
- //   }
+	// Apply stool closing and prepare for tissue closing
+	for (temp_iter.GoToBegin(), voxel_type_iter.GoToBegin();
+        !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
+        ++voxel_type_iter, ++temp_iter)
+    {
+        switch(voxel_type_iter.Get()) {
+            case Tissue:         
+				if (temp_iter.Get()==1) {
+					voxel_type_iter.Set(Stool);			//Modify tissue into stool holes
+                }
+                temp_iter.Set(1);
+				break;
+			case Stool:
+                temp_iter.Set(-1);
+                break;
+            case Unclassified:
+				if (temp_iter.Get()==1) {
+					//voxel_type_iter.Set(Stool);			//Modify unclassified into stool holes
+                }
+				temp_iter.Set(0);
+                break;
+            case Air:
+                temp_iter.Set(-1);
+                break;
+        }
+    }
 
-	//WriteITK(voxel_type, "voxel_type_stool_closed.hdr");
-	////WriteITK(temp, "temp_tissue.hdr");
+	WriteITK(voxel_type, "voxel_type_stool_closed.hdr");
+
+	//WriteITK(temp, "temp_tissue.hdr");
 
 	//closingFilter = ClosingFilterType::New();
 	//closingFilter->SetKernel(structuringElement);
@@ -365,7 +366,11 @@ int main(int argc, char * argv[])
 
 	//ImageType::Pointer RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type)
 
-	RunFuzzy(input_temp,chamfer_colon,voxel_type);
+	//RunFuzzy(input_temp,chamfer_colon,voxel_type);
+
+	// Test region growing
+	//RunConnectedThresholdGrowing(input, chamfer_colon, voxel_type);
+
 
 	// Read chamfer colon
 	//ReadITK(chamfer_colon, "mr10_092_13p.i0344_100-105_chamfer_colon_air_mask.hdr");
@@ -1749,11 +1754,25 @@ VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, ImageTy
 		}
 		*/
 
+		/*
+
 		if (input_pixel >=650) {
 			return Stool;
 		} else if (input_pixel<=-600) {
 			return Air;
 		} else if (input_pixel<=300  && input_pixel>=-300 && input_gradient_pixel<=700) {
+			return Tissue;
+		} else {
+			return Unclassified;
+		}
+
+		*/
+
+		if (input_pixel >=650) {
+			return Stool;
+		} else if (input_pixel<=-600) {
+			return Air;
+		} else if (input_pixel<=150  && input_pixel>=-250 && input_gradient_pixel<=400) {
 			return Tissue;
 		} else {
 			return Unclassified;
@@ -2439,7 +2458,7 @@ void SmoothPartialVector(ImageVectorType::Pointer pv, ByteImageType::Pointer cha
 			{
 				CovariantVectorType p = pv_iter.Get();
 
-				if ( p[i] < 1 )	 // only smooth uncertain partials
+				if ( p[i] > 0 && p[i] < 1 )	 // only smooth uncertain partials
 				{
 					p[i] = part_iter.Get();
 					pv_iter.Set(p);
@@ -3791,105 +3810,6 @@ ByteImageType::Pointer FindBinaryEdge(ByteImageType::Pointer im, ImageType::Inde
 	return edge;
 }
 
-void RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type)
-{
-	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,chamfer_colon->GetLargestPossibleRegion());
-	IteratorTypeVoxelType voxel_type_iter(voxel_type,voxel_type->GetLargestPossibleRegion());
-	IteratorTypeFloat4WithIndex input_iter(input,input->GetLargestPossibleRegion());
-
-	// Create smaller input region
-	ImageType::Pointer input_sub = AllocateNewImage(input->GetLargestPossibleRegion());
-	IteratorTypeFloat4WithIndex input_sub_iter(input_sub,input->GetLargestPossibleRegion());
-
-	for (input_sub_iter.GoToBegin(), input_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();
-		!input_sub_iter.IsAtEnd() && !input_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();
-		++input_sub_iter, ++input_iter, ++chamfer_colon_iter)
-	{
-		if ( chamfer_colon_iter.Get() == 1) {
-			input_sub_iter.Set(input_iter.Get());
-		} else {
-			input_sub_iter.Set(-1025);
-		}
-	}
-
-	// Calculate mean and variance of tissue voxels
-	float sum = 0;
-	int count = 0;
-
-	for (voxel_type_iter.GoToBegin(), input_iter.GoToBegin(); !voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd(); ++voxel_type_iter, ++input_iter)
-	{
-		if (voxel_type_iter.Get() == Tissue)
-		{
-			sum += input_iter.Get();
-			count++;
-		}
-	}
-
-	float mean = sum/count;
-
-	float variance = 0;
-
-	for (voxel_type_iter.GoToBegin(), input_iter.GoToBegin(); !voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd(); ++voxel_type_iter, ++input_iter)
-	{
-		if (voxel_type_iter.Get() == Tissue)
-		{
-			variance += vnl_math_sqr(input_iter.Get()-mean);
-		}
-	}
-	
-	variance = variance/count;
-
-	FuzzyFilterType::Pointer fuzzyFilter = FuzzyFilterType::New();
-	fuzzyFilter->SetInput(input_sub);
-	fuzzyFilter->SetOutsideValue(0);
-	fuzzyFilter->SetInsideValue(1);
-	fuzzyFilter->SetThreshold(0.1);
-
-	fuzzyFilter->SetMean(mean);
-	fuzzyFilter->SetVariance(variance);
-
-	input_iter.GoToBegin();
-	chamfer_colon_iter.GoToBegin();
-	voxel_type_iter.GoToBegin();
-
-	while (!input_iter.IsAtEnd())
-	{
-
-		if ( chamfer_colon_iter.Get() == 1 && voxel_type_iter.Get() == Tissue )
-		{
-			fuzzyFilter->SetObjectSeed(input_iter.GetIndex());
-			break;
-		}
-
-		++input_iter;
-		++chamfer_colon_iter;
-		++voxel_type_iter;
-	}
-
-	fuzzyFilter->Update();
-
-	typedef itk::CastImageFilter< FuzzySceneType, ImageType > CastFilterType;
-	CastFilterType::Pointer caster = CastFilterType::New();
-	caster->SetInput(fuzzyFilter->GetFuzzyScene());
-	
-	typedef itk::RescaleIntensityImageFilter<ImageType, ImageType> RescaleFilterType;
-	RescaleFilterType::Pointer rescaler = RescaleFilterType::New();
-	rescaler->SetInput(caster->GetOutput());
-	rescaler->SetOutputMinimum(0);
-	rescaler->SetOutputMaximum(1);
-	rescaler->Update();
-
-	WriteITK(rescaler->GetOutput(),"fuzzy_scene3.hdr");
-	/*
-
-	typedef itk::ImageFileWriter< FuzzySceneType > FuzzyWriterType;
-	FuzzyWriterType::Pointer fwriter = FuzzyWriterType::New();
-	fwriter->SetFileName("fuzzy_scene.hdr");
-	fwriter->SetInput(fuzzyFilter->GetFuzzyScene());
-	fwriter->Update();
-	*/
-}
-
 float weight(float ls, float lt, float alpha, float gamma)
 {
 	if ( (lt <= ls) && (ls <= 0 ) )
@@ -4082,4 +4002,205 @@ void ComputeFrangiHessian(ImageType::Pointer input)
 			WriteITK(ofilter->GetOutput(),ss.str());
 		}
 	}
+}
+
+
+void RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type)
+{
+	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,chamfer_colon->GetLargestPossibleRegion());
+	IteratorTypeVoxelType voxel_type_iter(voxel_type,voxel_type->GetLargestPossibleRegion());
+	IteratorTypeFloat4WithIndex input_iter(input,input->GetLargestPossibleRegion());
+
+	// Create smaller input region
+	ImageType::Pointer input_sub = AllocateNewImage(input->GetLargestPossibleRegion());
+	IteratorTypeFloat4WithIndex input_sub_iter(input_sub,input->GetLargestPossibleRegion());
+
+	for (input_sub_iter.GoToBegin(), input_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();
+		!input_sub_iter.IsAtEnd() && !input_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();
+		++input_sub_iter, ++input_iter, ++chamfer_colon_iter)
+	{
+		if ( chamfer_colon_iter.Get() == 1) {
+			input_sub_iter.Set(input_iter.Get());
+		} else {
+			input_sub_iter.Set(-1025);
+		}
+	}
+
+	// Calculate mean and variance of tissue voxels
+	float mean = 0;
+
+	// Choose variance such that max tissue near stool (TNS) is within +/- 3 std dev
+
+	/*
+	float sum = 0;
+	int count = 0;
+
+	for (voxel_type_iter.GoToBegin(), input_iter.GoToBegin(); !voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd(); ++voxel_type_iter, ++input_iter)
+	{
+		if (voxel_type_iter.Get() == Tissue)
+		{
+			sum += input_iter.Get();
+			count++;
+		}
+	}
+
+	float mean = sum/count;
+
+	float variance = 0;
+
+	for (voxel_type_iter.GoToBegin(), input_iter.GoToBegin(); !voxel_type_iter.IsAtEnd() && !input_iter.IsAtEnd(); ++voxel_type_iter, ++input_iter)
+	{
+		if (voxel_type_iter.Get() == Tissue)
+		{
+			variance += vnl_math_sqr(input_iter.Get()-mean);
+		}
+	}
+	
+	variance = variance/count;
+	*/
+
+	float Tmax[2] = {800,900};
+	float variance[2];
+
+	for (int i=0; i<2; i++)
+	{
+		variance[i] = Tmax[i]*Tmax[i]/9;
+
+		std::cout << "Fuzzy variance: " << variance[i] << std::endl;
+
+		FuzzyFilterType::Pointer fuzzyFilter = FuzzyFilterType::New();
+		fuzzyFilter->SetInput(input_sub);
+		fuzzyFilter->SetOutsideValue(0);
+		fuzzyFilter->SetInsideValue(1);
+		fuzzyFilter->SetThreshold(0.1);
+
+		fuzzyFilter->SetMean(mean);
+		fuzzyFilter->SetVariance(variance[i]);
+
+		input_iter.GoToBegin();
+		chamfer_colon_iter.GoToBegin();
+		voxel_type_iter.GoToBegin();
+
+		ImageType::IndexType idx;
+
+		while (!input_iter.IsAtEnd())
+		{
+
+			if ( chamfer_colon_iter.Get() == 1 && voxel_type_iter.Get() == Tissue )
+			{
+				idx = input_iter.GetIndex();
+				fuzzyFilter->SetObjectSeed(idx);
+				break;
+			}
+
+			++input_iter;
+			++chamfer_colon_iter;
+			++voxel_type_iter;
+		}
+
+		fuzzyFilter->Update();
+
+		typedef itk::CastImageFilter< FuzzySceneType, ImageType > CastFilterType;
+		CastFilterType::Pointer caster = CastFilterType::New();
+		caster->SetInput(fuzzyFilter->GetFuzzyScene());
+		
+		typedef itk::RescaleIntensityImageFilter<ImageType, ImageType> RescaleFilterType;
+		RescaleFilterType::Pointer rescaler = RescaleFilterType::New();
+		rescaler->SetInput(caster->GetOutput());
+		rescaler->SetOutputMinimum(0);
+		rescaler->SetOutputMaximum(1);
+		rescaler->Update();
+
+		std::stringstream ss;
+		ss << "fuzzy_scene_mean" << mean << "_variance_" << variance[i] << "_Tmax_" << Tmax[i] << ".hdr";
+
+		WriteITK(rescaler->GetOutput(), ss.str());
+	}
+
+	/*
+
+	typedef itk::ImageFileWriter< FuzzySceneType > FuzzyWriterType;
+	FuzzyWriterType::Pointer fwriter = FuzzyWriterType::New();
+	fwriter->SetFileName("fuzzy_scene.hdr");
+	fwriter->SetInput(fuzzyFilter->GetFuzzyScene());
+	fwriter->Update();
+	*/
+}
+
+void RunConnectedThresholdGrowing(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type)
+{
+	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,chamfer_colon->GetLargestPossibleRegion());
+	IteratorTypeVoxelType voxel_type_iter(voxel_type,voxel_type->GetLargestPossibleRegion());
+	IteratorTypeFloat4WithIndex input_iter(input,input->GetLargestPossibleRegion());
+
+	// Create smaller input region
+	ImageType::Pointer input_sub = AllocateNewImage(input->GetLargestPossibleRegion());
+	IteratorTypeFloat4WithIndex input_sub_iter(input_sub,input->GetLargestPossibleRegion());
+
+	for (input_sub_iter.GoToBegin(), input_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();
+		!input_sub_iter.IsAtEnd() && !input_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();
+		++input_sub_iter, ++input_iter, ++chamfer_colon_iter)
+	{
+		if ( chamfer_colon_iter.Get() == 1) {
+			input_sub_iter.Set(input_iter.Get());
+		} else {
+			input_sub_iter.Set(-1025);
+		}
+	}
+
+	// Smooth image
+	typedef itk::GradientAnisotropicDiffusionImageFilter<ImageType, ImageType> GradientAnisotropicDiffusionFilterType;
+	GradientAnisotropicDiffusionFilterType::Pointer smoother = GradientAnisotropicDiffusionFilterType::New();
+	smoother->SetNumberOfIterations(5);
+	smoother->SetTimeStep(0.125);
+	smoother->SetInput(input_sub);
+	smoother->Update();
+	WriteITK(smoother->GetOutput(),"input_sub_smoothed.hdr");
+
+	float lower = -300;
+	float upper = 600;
+
+	typedef itk::ConnectedThresholdImageFilter<ImageType,ImageType> ConnectedThresholdFilterType;
+	ConnectedThresholdFilterType::Pointer connecter = ConnectedThresholdFilterType::New();
+	connecter->SetInput(smoother->GetOutput());
+	connecter->SetLower(lower);
+	connecter->SetUpper(upper);
+	connecter->SetReplaceValue(1);
+
+	
+
+	input_iter.GoToBegin();
+	chamfer_colon_iter.GoToBegin();
+	voxel_type_iter.GoToBegin();
+
+	int count = 0;
+
+	while (!input_iter.IsAtEnd())
+	{
+
+		if ( chamfer_colon_iter.Get() == 1 && voxel_type_iter.Get() == Tissue )
+		{
+			ImageType::IndexType idx = input_iter.GetIndex();
+			
+			if (count == 0)
+			{
+				connecter->SetSeed(idx);
+			} else {
+				connecter->AddSeed(idx);
+			}
+
+			count++;
+		}
+
+		++input_iter;
+		++chamfer_colon_iter;
+		++voxel_type_iter;
+	}
+
+	connecter->Update();
+
+	std::stringstream ss;
+	ss << "connected_threshold_lower" << lower << "_upper_" << upper << ".hdr";
+	WriteITK(connecter->GetOutput(),ss.str());
+
 }

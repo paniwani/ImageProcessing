@@ -41,6 +41,7 @@
 #include "itkNearestNeighborInterpolateImageFunction.h"
 #include <itkHessian3DToVesselnessMeasureImageFilter.h>
 #include <itkHessianToObjectnessMeasureImageFilter.h>
+#include <itkConnectedThresholdImageFilter.h>
 
 
 //#include <algorithm>
@@ -236,6 +237,7 @@ void ComputeVesselness(ImageType::Pointer input);
 void ComputeThinness(ImageType::Pointer input);
 void HessianMeasure(ImageType::Pointer input);
 void RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type);
+void RunConnectedThresholdGrowing(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type);
 
 
 void MeasureObjectness(ImageType::Pointer input);
