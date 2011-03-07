@@ -68,6 +68,7 @@
 #include <itkSymmetricEigenAnalysisImageFilter.h>
 #include <itkDerivativeImageFilter.h>
 #include "itkSimpleFuzzyConnectednessScalarImageFilter.h"
+#include <itkRegionalMinimaImageFilter.h>
 
 
 #include <fstream>
@@ -238,6 +239,7 @@ void ComputeThinness(ImageType::Pointer input);
 void HessianMeasure(ImageType::Pointer input);
 void RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type);
 void RunConnectedThresholdGrowing(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type);
+void RunRegionalMinima(ImageType::Pointer input);
 
 
 void MeasureObjectness(ImageType::Pointer input);
@@ -266,14 +268,18 @@ template <class T> int solveCubic (T a, T b, T c, T d, T x[3]);
 
 typedef unsigned char SSlice[512][512]; 
 
-void ComputeSatoHessian(ImageType::Pointer input);
+void ComputeSatoHessian(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon);
 void ComputeFrangiHessian(ImageType::Pointer input);
 
 float omega(float ls, float lt, float gamma);
 float weight(float ls, float lt, float alpha, float gamma);
+float omega_dark(float ls, float lt, float gamma);
+float weight_dark(float ls, float lt, float alpha, float gamma);
 
 float S_sheet(float lambda[3], float alpha, float gamma);
+float S_sheet_dark(float lambda[3], float alpha, float gamma);
 float S_blob(float lambda[3], float gamma);
 float S_line(float lambda[3], float alpha, float gamma);
+float S_line_dark(float lambda[3], float alpha, float gamma);
 float S_fold(float lambda[3], float alpha, float gamma);
 

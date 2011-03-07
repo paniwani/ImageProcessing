@@ -6,7 +6,7 @@ double neighbor_weight[3]={1,1,.5};
 double beta=.7;
 double weight_sum=2.5;
 int writeCount=1;
-std::string note = "";
+std::string note = "SATO";
 
 const double ALPHA = 0.5;
 const double BETA = 0.3;
@@ -57,9 +57,11 @@ int main(int argc, char * argv[])
 	// Print out the sub region of the image, un modified
 	WriteITK(input_temp,"input_temp.hdr");
 
+	//RunRegionalMinima(input_temp);
+
 	//ComputeFrangiHessian(input);
 	//ComputeHessianResponse3(input);
-	//ComputeSatoHessian(input);
+	//ComputeSatoHessian(input, chamfer_colon);
 
 	//HessianMeasure(input);
 
@@ -367,6 +369,10 @@ int main(int argc, char * argv[])
 	//ImageType::Pointer RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type)
 
 	//RunFuzzy(input_temp,chamfer_colon,voxel_type);
+
+
+	ComputeSatoHessian(input, chamfer_colon);
+
 
 	// Test region growing
 	//RunConnectedThresholdGrowing(input, chamfer_colon, voxel_type);
@@ -3001,7 +3007,24 @@ ImageType::Pointer ComputeHessianResponse3(ImageType::Pointer input)
 
 	// Create response image
 	ImageType::Pointer Himage = AllocateNewImage(region);
+
+	IteratorTypeFloat4WithIndex input_iter(input,region);
 	IteratorTypeFloat4WithIndex Himage_iter(Himage,region);
+
+	ByteImageType::Pointer tissue_mask = AllocateNewByteImage(region);
+	IteratorTypeByteWithIndex tissue_mask_iter(tissue_mask,region);
+
+	for (input_iter.GoToBegin(), tissue_mask_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++tissue_mask_iter)
+	{
+		if (input_iter.Get() > -300 && input_iter.Get() < 650)
+		{
+			tissue_mask_iter.Set(1);
+		} else {
+			tissue_mask_iter.Set(0);
+		}
+	}
+
+	WriteITK(tissue_mask,"tissue_mask.hdr");
 
 	// Compute hessian across sigma scales
 	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
@@ -3068,13 +3091,13 @@ ImageType::Pointer ComputeHessianResponse3(ImageType::Pointer input)
 		for (int i=0; i<3; i++)
 		{
 			std::stringstream ss;
-			ss << "sigma_" << sigma[k] << "_lambda_" << i << ".hdr";
+			ss << "ORDER_BY_VALUE_DESC_sigma_" << sigma[k] << "_lambda_" << i << ".hdr";
 			WriteITK(LambdaImageVector[i], ss.str());
 		}
 
 		std::stringstream ss;
 		ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_S_fold.hdr";
-		WriteITK(Himage,ss.str());
+		//WriteITK(Himage,ss.str());
 	}
 
 	return Himage;
@@ -3824,6 +3847,19 @@ float weight(float ls, float lt, float alpha, float gamma)
 	return 0;
 }
 
+float weight_dark(float ls, float lt, float alpha, float gamma)
+{
+	if ( (ls >= lt) && (lt >= 0) )
+	{
+		return pow( 1 - ( lt / abs(ls) ) , gamma );
+	} else if ( ( (-abs(ls)/alpha) < lt) & (lt < 0) )
+	{
+		return pow( 1 + alpha*( lt / abs(ls) ), gamma);
+	}
+
+	return 0;
+}
+
 float omega(float ls, float lt, float gamma)
 {
 	if ( (lt <= ls) && (ls < 0) )
@@ -3834,11 +3870,31 @@ float omega(float ls, float lt, float gamma)
 	return 0;
 }
 
+float omega_dark(float ls, float lt, float gamma)
+{
+	if ( (ls >= lt) && (lt > 0) )
+	{
+		return pow( lt / ls , gamma );
+	}
+
+	return 0;
+}
+
 float S_line(float lambda[3], float alpha, float gamma)
 {
 	if ( (lambda[2] <= lambda[1]) && (lambda[1] < 0) )
 	{
 		return abs(lambda[2])*omega(lambda[1],lambda[2],gamma)*weight(lambda[0],lambda[1],alpha,gamma);
+	}
+
+	return 0;
+}
+
+float S_line_dark(float lambda[3], float alpha, float gamma)
+{
+	if ( (lambda[0] >= lambda[1]) && (lambda[1] > 0) )
+	{
+		return abs(lambda[0])*omega_dark(lambda[0],lambda[1],gamma)*weight_dark(lambda[1],lambda[2],alpha,gamma);
 	}
 
 	return 0;
@@ -3864,6 +3920,16 @@ float S_sheet(float lambda[3], float alpha, float gamma)
 	return 0;
 }
 
+float S_sheet_dark(float lambda[3], float alpha, float gamma)
+{
+	if (lambda[0] > 0)
+	{
+		return abs(lambda[0])*weight_dark(lambda[0], lambda[1], alpha, gamma)*weight_dark(lambda[0], lambda[2], alpha, gamma);
+	}
+
+	return 0;
+}
+
 float S_fold(float lambda[3], float alpha, float gamma)
 {
 	if (lambda[2] < 0)
@@ -3874,24 +3940,42 @@ float S_fold(float lambda[3], float alpha, float gamma)
 	return 0;
 }
 
-void ComputeSatoHessian(ImageType::Pointer input)
+void ComputeSatoHessian(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon)
 {
 	// Get input info
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
 	ImageType::SpacingType spacing = input->GetSpacing();
 	ImageType::SizeType size = region.GetSize();
 
+	// Only look in tagged regions
+	ByteImageType::Pointer tagged = AllocateNewByteImage(region);
+
+	IteratorTypeFloat4WithIndex input_iter(input,region);
+	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,region);
+	IteratorTypeByteWithIndex tagged_iter(tagged,region);
+
+	for (input_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), tagged_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++chamfer_colon_iter, ++tagged_iter)
+	{
+		if (input_iter.Get() > 200 && chamfer_colon_iter.Get() == 1)
+		{
+			tagged_iter.Set(1);
+		} else {
+			tagged_iter.Set(0);
+		}
+	}
+
+	WriteITK(tagged,"tagged_200.hdr");
+
 	// Create response image
 	ImageType::Pointer S = AllocateNewImage(region);
 	
-
 	// Compute hessian across sigma scales
 	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
 
 	float alpha = 0.25;
 	float gamma = 0.5;
 
-	for (int k=1; k<4; k++)
+	for (int k=0; k<1; k++)
 	{
 		
 		// Compute smoothed Hessian
@@ -3902,63 +3986,76 @@ void ComputeSatoHessian(ImageType::Pointer input)
 		hessianFilter->Update();
 		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
 
-		for (int j=0; j<3; j++) // loop over type: line, blob, sheet
-		{
+		//for (int j=0; j<3; j++) // loop over type: line, blob, sheet
+		//{
 			S->FillBuffer(0.0);
 			IteratorTypeFloat4WithIndex S_iter(S,region);
 
 			hessian_iter.GoToBegin();
+			tagged_iter.GoToBegin();
 			S_iter.GoToBegin();
 			
 			int count=0;
 
 			while (!hessian_iter.IsAtEnd()) 
 			{
-				EigenValueArrayType lambda;
-
-				// Get eigenvalues
-				hessian_iter.Get().ComputeEigenValues(lambda);
-				std::sort(lambda.Begin(),lambda.End(),OrderByValueDesc);
-
-				float l[3];
-				l[0] = lambda[0]; l[1] = lambda[1]; l[2] = lambda[2];
-
-				float val = 0;
-
-				switch (j)
+				if (tagged_iter.Get() == 1)	// only tagged regions
 				{
-				case 0:
-					val = S_line(l, alpha, gamma);
-					break;
-				case 1:
-					val = S_blob(l, gamma);
-					break;
-				case 2:
-					val = S_sheet(l, alpha, gamma);
-					break;
-				}
 
-				S_iter.Set(val);
+					EigenValueArrayType lambda;
+
+					// Get eigenvalues
+					hessian_iter.Get().ComputeEigenValues(lambda);
+					std::sort(lambda.Begin(),lambda.End(),OrderByValueDesc);
+
+					float l[3];
+					l[0] = lambda[0]; l[1] = lambda[1]; l[2] = lambda[2];
+
+					float val = 0;
+
+					/*switch (j)
+					{
+					case 0:
+						val = S_line(l, alpha, gamma);
+						break;
+					case 1:
+						val = S_blob(l, gamma);
+						break;
+					case 2:
+						val = S_sheet(l, alpha, gamma);
+						break;
+					}*/
+
+					val = S_sheet_dark(l, alpha, gamma);
+
+					S_iter.Set(val);
+
+				} else {
+					S_iter.Set(0);
+				}
 
 				count++;
 
 				++hessian_iter;
 				++S_iter;
+				++tagged_iter;
 
 			}
 
 			std::string type;
-			switch (j)
-			{
-			case 0: type="line";break;
-			case 1: type="blob";break;
-			case 2: type="sheet";break;
-			}
+			type = "dark_sheet_tagged";
+			//switch (j)
+			//{
+			//case 0: type="line";break;
+			//case 1: type="blob";break;
+			//case 2: type="sheet";break;
+			//}
 
 			std::stringstream ss;
 			ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_type_" << type << ".hdr";
+
 			WriteITK(S,ss.str());
-		}
+		//}
 	}
 }
 
@@ -4203,4 +4300,15 @@ void RunConnectedThresholdGrowing(ImageType::Pointer input, ByteImageType::Point
 	ss << "connected_threshold_lower" << lower << "_upper_" << upper << ".hdr";
 	WriteITK(connecter->GetOutput(),ss.str());
 
+}
+
+void RunRegionalMinima(ImageType::Pointer input)
+{
+	typedef itk::RegionalMinimaImageFilter<ImageType,ImageType> RegionalMinimaImageFilterType;
+	RegionalMinimaImageFilterType::Pointer minimaFilter = RegionalMinimaImageFilterType::New();
+	minimaFilter->SetInput(input);
+	minimaFilter->SetBackgroundValue(0);
+	minimaFilter->SetForegroundValue(1);
+	minimaFilter->Update();
+	WriteITK(minimaFilter->GetOutput(), "minima.hdr");
 }
