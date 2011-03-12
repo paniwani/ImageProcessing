@@ -6,30 +6,67 @@ double neighbor_weight[3]={1,1,.5};
 double beta=.7;
 double weight_sum=2.5;
 int writeCount=1;
-std::string note = "ORIGINAL";
+
+std::string note = "";
+const float N_SVAL = 400;
 
 const double ALPHA = 0.5;
 const double BETA = 0.3;
 const double GAMMA = 0.3;
 const double ETA = 0.2;
 
+bool truncateOn = true;
+unsigned int truncate_ar[2] = {80, 100};
+
 //boost::xpressive::sregex rex = boost::xpressive::sregex::compile( "^2*[5-7]+1+$" );
 
 int main(int argc, char * argv[])
 {
 	//-------------------------------------------BEGIN SETUP-------------------------------------------------------
-
+	
+	if( argc < 3 )
+	{
+		std::cerr << "Usage: " << std::endl;
+		std::cerr << argv[0] << " DicomDirectory intModified";
+		system("pause");
+		return EXIT_FAILURE;
+	}
 	std::cerr<<"Started"<<std::endl;
 
+	std::string dataset = argv[1];
+
+	std::vector<std::string> datasetArr = explode( "/", dataset );
+	std::string dsname = datasetArr[ datasetArr.size() - 2 ];
+	std::cout << "Dataset: " << dsname << std::endl;
+
+	if (truncateOn)
+	{
+		std::cout << "Truncating data" << std::endl;
+		std::cout << "Slices: " << truncate_ar[0] << " to " << truncate_ar[1] << std::endl;
+		std::stringstream ss;
+		ss << dsname << "_" << truncate_ar[0] << "_" << truncate_ar[1];
+		dsname = ss.str();
+	}
+
+	note = dsname;
+
 	// Use parameter changes
-	Modified = true;
+	if (atoi(argv[2]) == 1)
+	{
+		Modified = true;
+	}
+
+	std::cout << "Modified: " << Modified << std::endl;
+
+	// Read and write dicom input
+	ImageType::Pointer input = ReadDicom( dataset );
 
 	// Read input
 	//ImageType::Pointer input = ReadDicom("C:/Documents and Settings/panjwanin/Desktop/Matt_to_Neil/nn1_008_10p.i0373/dcm");	
-	ImageType::Pointer input = ImageType::New();
+	//ImageType::Pointer input = ImageType::New();
 	//ReadITK(input, "C:/ImageData/mr10_092_13p.i0344_86-94.hdr");
 	//ReadITK(input, "C:/ImageData/mr10_092_13p.i0344.hdr");
-	ReadITK(input, "C:/ImageData/mr10_092_13p.i0344_100-105.hdr");
+	//ReadITK(input, "C:/ImageData/mr10_092_13p.i0344_100-105.hdr");
 	//ReadITK(input, "C:/ImageData/mr10_092_13p.i0344_75-125.hdr");
 	
 	// Set region
@@ -57,11 +94,12 @@ int main(int argc, char * argv[])
 	// Print out the sub region of the image, un modified
 	WriteITK(input_temp,"input_temp.hdr");
 
+	//CreateHessianGraph(input);
+
 	//RunRegionalMinima(input_temp);
 
 	//ComputeFrangiHessian(input);
 	//ComputeHessianResponse3(input);
-	//ComputeSatoHessian(input, chamfer_colon);
 
 	//HessianMeasure(input);
 
@@ -111,11 +149,11 @@ int main(int argc, char * argv[])
 			gradient_iter.Set(grad);
 		}
 
-		gradient_magnitude_iter.Set( 2*norm );
+		gradient_magnitude_iter.Set( norm );
 	}
 	
 	//writes out the gradient magnitude for the input image
-	WriteITK(gradient_magnitude, "gradient.hdr");
+	WriteITK(gradient_magnitude, "gradient_1x.hdr");
 
 	// Create temporary image and iter
 	ImageType::Pointer temp = AllocateNewImage(fullRegion);
@@ -137,11 +175,10 @@ int main(int argc, char * argv[])
 		voxel_type_iter.Set(type);		//sets the type in the voxel_type structure
     }
 
-	WriteITK(voxel_type, "voxel_type_start_new.hdr");
+	WriteITK(voxel_type, "voxel_type_start.hdr");
 
 	// outputs the gradient magnitude purely for reference
 	std::cerr<<"Gradient max: "<<gradient_max<<std::endl;
-
 
 	// Fill in Stool Holes
 	for (voxel_type_iter.GoToBegin(), temp_iter.GoToBegin();
@@ -164,7 +201,7 @@ int main(int argc, char * argv[])
         }
     }
 
-	WriteITK(temp, "temp_stool.hdr");
+	//WriteITK(temp, "temp_stool.hdr");
 
 	/*// Use voting filter to fill in holes
 	HoleFillingFilterType::Pointer holeFilter = HoleFillingFilterType::New();
@@ -194,9 +231,8 @@ int main(int argc, char * argv[])
 	temp_iter=IteratorTypeFloat4WithIndex(temp,fullRegion);
 	closingFilter.~SmartPointer();
 
-	WriteITK(temp, "temp_stool_closed.hdr");
+	//WriteITK(temp, "temp_stool_closed.hdr");
 	
-
 	// Apply stool closing and prepare for tissue closing
 	for (temp_iter.GoToBegin(), voxel_type_iter.GoToBegin();
         !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
@@ -224,7 +260,7 @@ int main(int argc, char * argv[])
         }
     }
 
-	WriteITK(voxel_type, "voxel_type_stool_closed.hdr");
+	//WriteITK(voxel_type, "voxel_type_stool_closed.hdr");
 
 	//WriteITK(temp, "temp_tissue.hdr");
 
@@ -278,10 +314,24 @@ int main(int argc, char * argv[])
 				break;
 		}
 	}
-
-	//WriteITK(voxel_type, "voxel_type_closed.hdr");
 	
 	//WriteITK(chamfer_colon, "chamfer_colon_air_pre.hdr");
+
+	// Smooth colon mask using median filter
+	BinaryMedianFilterType::Pointer medianFilter = BinaryMedianFilterType::New();
+	medianFilter->SetInput(chamfer_colon);
+	medianFilter->SetForegroundValue(1);
+	medianFilter->Update();
+	chamfer_colon=medianFilter->GetOutput();
+
+	medianFilter->SetInput(chamfer_colon);
+	medianFilter->Update();
+	chamfer_colon=medianFilter->GetOutput();
+
+	medianFilter.~SmartPointer();
+	chamfer_colon_iter=IteratorTypeByteWithIndex(chamfer_colon,fullRegion);
+
+	//WriteITK(chamfer_colon,"chamfer_colon_median_2x.hdr");
 
 	// Remove external air, find component with largest pixels on border
 	ConnectedComponentFilterType::Pointer ccFilter = ConnectedComponentFilterType::New();
@@ -324,17 +374,6 @@ int main(int argc, char * argv[])
 
 	//WriteITK(chamfer_colon,"chamfer_colon_no_bkg.hdr");
 
-	// Smooth colon mask using median filter
-	BinaryMedianFilterType::Pointer medianFilter = BinaryMedianFilterType::New();
-	medianFilter->SetInput(chamfer_colon);
-	medianFilter->SetForegroundValue(1);
-	medianFilter->Update();
-	chamfer_colon=medianFilter->GetOutput();
-	medianFilter.~SmartPointer();
-	chamfer_colon_iter=IteratorTypeByteWithIndex(chamfer_colon,fullRegion);
-
-	//WriteITK(chamfer_colon,"chamfer_colon_median.hdr");
-
 	ChamferDistanceFilterType::Pointer chamfer_filter = ChamferDistanceFilterType::New();
 	chamfer_filter->SetInput(chamfer_colon);
 	int chamfer_weights[3]={3,4,5};	//3d distance weight recommended by julian
@@ -364,6 +403,8 @@ int main(int argc, char * argv[])
 
 	WriteITK(chamfer_colon, "chamfer_colon_air_mask.hdr");
 
+
+
 	// Test fuzzy
 
 	//ImageType::Pointer RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type)
@@ -371,7 +412,7 @@ int main(int argc, char * argv[])
 	//RunFuzzy(input_temp,chamfer_colon,voxel_type);
 
 
-	//ComputeSatoHessian(input, chamfer_colon);
+	ComputeSatoHessian(input, chamfer_colon);
 
 
 	// Test region growing
@@ -383,7 +424,11 @@ int main(int argc, char * argv[])
 	//chamfer_colon_iter=IteratorTypeByteWithIndex(chamfer_colon,fullRegion);
 	//WriteITK(chamfer_colon,"chamfer_colon.hdr");
 
-	HeuristicClosing(voxel_type,chamfer_colon);
+	if (Modified)
+	{
+		HeuristicClosing(voxel_type,chamfer_colon);
+		WriteITK(voxel_type,"voxel_type_stool_closed_heuristic.hdr");
+	}
 
 	//-------------------------------------------END SETUP-------------------------------------------------------
 
@@ -394,15 +439,26 @@ int main(int argc, char * argv[])
     input_interpolator->SetSplineOrder(3);
     input_interpolator->SetInputImage(input);
 
-	// Interpolate gradient magnitude image
+	// Interpolate gradient magnitude image, NOTE: using 2x image gradient, (See Carston paper)
+	for (gradient_magnitude_iter.GoToBegin(); !gradient_magnitude_iter.IsAtEnd(); ++gradient_magnitude_iter)
+	{
+		gradient_magnitude_iter.Set(2*gradient_magnitude_iter.Get());
+	}
+
 	InterpolationType::Pointer gradient_magnitude_interpolator = InterpolationType::New();
 	gradient_magnitude_interpolator->SetSplineOrder(3);
 	gradient_magnitude_interpolator->SetInputImage(gradient_magnitude);
 
 	// Storage for Smax
-	ImageType::Pointer input_smax = AllocateNewImage(fullRegion);
-	input_smax->FillBuffer(0);
-	//ImageType::Pointer input_smax = ComputeNeighborhoodSmax(input_temp, voxel_type, chamfer_colon_iter, startIndex, endIndex);
+	ImageType::Pointer input_smax;
+
+	if (!Modified)
+	{
+		input_smax = AllocateNewImage(fullRegion);
+		input_smax->FillBuffer(0);
+	} else {
+		input_smax = ComputeNeighborhoodSmax(input_temp, voxel_type, chamfer_colon_iter, startIndex, endIndex);
+	}
 
 	// Load smax
 	//ReadITK(input_smax, "C:/ImageData/mr10_092_13p.i0344_100-105_smax2.hdr");
@@ -422,23 +478,33 @@ int main(int argc, char * argv[])
 		
 		if (chamfer_colon_iter.Get() == 1 && voxel_type_iter.Get()==Unclassified) {
 			ImageType::IndexType voxel_index = voxel_type_iter.GetIndex();
-			CovariantVectorType grad = gradient_iter.Get();	//NOTE: using 2x image gradient, (See Carston paper)
+			CovariantVectorType grad = gradient_iter.Get();	
 
 			float temp_threshold=-1;
 			VoxelType temp_type = Unclassified;
 
-			//if (input_smax_iter.Get() > 0)
-			//{
-
+			if (!Modified)
+			{
 				VoxelEdgeClassification(&temp_threshold,&temp_type,1.5,1.0,input_interpolator,gradient_magnitude_interpolator,input_smax_iter,voxel_index,grad);
 				
 				VoxelEdgeClassification(&temp_threshold,&temp_type,1.0,0.5,input_interpolator,gradient_magnitude_interpolator,input_smax_iter,voxel_index,grad);
 
 				VoxelEdgeClassification(&temp_threshold,&temp_type,0.6,0.3,input_interpolator,gradient_magnitude_interpolator,input_smax_iter,voxel_index,grad);
+			} else {
 
-			//} else {
-			//	temp_type = TissueAir;
-			//}
+				if ( input_smax_iter.Get() > 0 )
+				{
+					VoxelEdgeClassification(&temp_threshold,&temp_type,1.5,1.0,input_interpolator,gradient_magnitude_interpolator,input_smax_iter,voxel_index,grad);
+					
+					VoxelEdgeClassification(&temp_threshold,&temp_type,1.0,0.5,input_interpolator,gradient_magnitude_interpolator,input_smax_iter,voxel_index,grad);
+
+					VoxelEdgeClassification(&temp_threshold,&temp_type,0.6,0.3,input_interpolator,gradient_magnitude_interpolator,input_smax_iter,voxel_index,grad);
+				
+				} else {
+					temp_type = TissueAir;
+				}
+
+			}
 
 			voxel_type_iter.Set(temp_type);
 		}
@@ -455,6 +521,21 @@ int main(int argc, char * argv[])
 	WriteITK(voxel_type,"voxel_edge_class.hdr");
 
  	std::cerr<<"Done Edge"<<std::endl;
+
+	//// Create mask of any tissue involvement
+	//ByteImageType::Pointer tissue_involvement = AllocateNewByteImage(fullRegion);
+	//tissue_involvement->FillBuffer(0);
+	//IteratorTypeByteWithIndex tissue_involvement_iter(tissue_involvement,fullRegion);
+
+	//for (tissue_involvement_iter.GoToBegin(), voxel_type_iter.GoToBegin(); !tissue_involvement_iter.IsAtEnd(); ++tissue_involvement_iter, ++voxel_type_iter)
+	//{
+	//	if (voxel_type_iter.Get() == Tissue || voxel_type_iter.Get() == TissueAir || voxel_type_iter.Get() == TissueStool)
+	//	{
+	//		tissue_involvement_iter.Set(1);
+	//	}
+	//}
+
+	//WriteITK(tissue_involvement, "tissue_involvement.hdr");
 
 	// Optimize SA transitions using gradient information
 	//std::cerr<<"Running voxel edge optimization"<<std::endl;
@@ -500,8 +581,8 @@ int main(int argc, char * argv[])
 		!voxel_type_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd(); 
 		++voxel_type_iter, ++chamfer_from_stool_involvement_iter) 
     {
-		if (voxel_type_iter.Get() != Stool && voxel_type_iter.Get() != TissueStool) // do not turn these into thin stool
-		{
+		//if (voxel_type_iter.Get() != Stool && voxel_type_iter.Get() != TissueStool) // do not turn these into thin stool
+		//{
 			if (chamfer_from_stool_involvement_iter.Get() < chamfercutoff && chamfer_from_stool_involvement_iter.Get() > 0)
 			{
 				ImageType::IndexType index = chamfer_from_stool_involvement_iter.GetIndex();
@@ -534,7 +615,7 @@ int main(int argc, char * argv[])
 					thinStoolCount++;
 				}
 			}
-		}
+		//}
 	}
 
 	std::cout << "Number of thin stool voxels: " << thinStoolCount << std::endl;
@@ -617,9 +698,9 @@ int main(int argc, char * argv[])
 
 	int total_vertices=0;
 
-	std::ofstream file;
-	file.open("pv.txt");
-	file << "Index\tIntensity\tGradient\tClass\tPa\tPt\tPs\n";
+	//std::ofstream file;
+	//file.open("pv.txt");
+	//file << "Index\tIntensity\tGradient\tClass\tPa\tPt\tPs\n";
 
 	for(partialVector_iter.GoToBegin(), input_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), voxel_type_iter.GoToBegin(), input_smax_iter.GoToBegin(), gradient_magnitude_iter.GoToBegin(), da_iter.GoToBegin(), ds_iter.GoToBegin();
 		!partialVector_iter.IsAtEnd() && !input_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd() && !voxel_type_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !gradient_magnitude_iter.IsAtEnd() && !da_iter.IsAtEnd() && !ds_iter.IsAtEnd() ; 
@@ -630,8 +711,8 @@ int main(int argc, char * argv[])
 			total_vertices++;
 
 			ImageType::IndexType idx = input_iter.GetIndex();
-			file << "(" << idx[0] << ", " << 511-idx[1] << ", " << idx[2] << ")\t";
-			file << input_iter.Get() << "\t" << gradient_magnitude_iter.Get() << "\t";
+			//file << "(" << idx[0] << ", " << 511-idx[1] << ", " << idx[2] << ")\t";
+			//file << input_iter.Get() << "\t" << gradient_magnitude_iter.Get() << "\t";
 			
 			float value[3];	// air/tissue/stool
 			
@@ -641,21 +722,21 @@ int main(int argc, char * argv[])
 					value[1]=0;
 					value[2]=0;
 
-					file << "Air";
+					//file << "Air";
 					break;
 				case Tissue:
 					value[0]=0;
 					value[1]=1;					
 					value[2]=0;
 
-					file << "Tissue";
+					//file << "Tissue";
 					break;
 				case Stool:
 					value[0]=0;
 					value[1]=0;
 					value[2]=1;		
 
-					file << "Stool";
+					//file << "Stool";
 					break;
 				case TissueAir:
 					value[1]=1+(input_iter.Get()/1000);
@@ -666,7 +747,7 @@ int main(int argc, char * argv[])
 					value[0]=1-value[1];
 					value[2]=0;
 
-					file << "TissueAir";
+					//file << "TissueAir";
 					break;
 				case TissueStool:
 					value[0]=0;
@@ -677,7 +758,7 @@ int main(int argc, char * argv[])
 
 					value[1]=1-value[2];
 
-					file << "TissueStool";
+					//file << "TissueStool";
 					break; 
 				case StoolAir:
 					value[2]=(input_iter.Get()+1000)/(input_smax_iter.Get()+1000);
@@ -688,7 +769,7 @@ int main(int argc, char * argv[])
 					value[0]=1-value[2];
 					value[1]=0;
 
-					file << "StoolAir";
+					//file << "StoolAir";
 					break;
 				case ThinStool:
 					value[0]=0.5*(1-vnl_erf((da_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2)))); //check eq
@@ -706,11 +787,11 @@ int main(int argc, char * argv[])
 					if (value[1] <= 0) { value[1] = 0; }
 					if (value[1] >= 1) { value[1] = 1; }
 
-					file << "ThinStool";
+					//file << "ThinStool";
 					break;
 			}   
 
-			file << "\t" << value[0] << "\t" << value[1] << "\t" << value[2] << "\n";
+			//file << "\t" << value[0] << "\t" << value[1] << "\t" << value[2] << "\n";
 
 			CovariantVectorType data(value);	//sets the partial to be stored in the actual structure
 			partialVector_iter.Set(data);		//stores the partial in the structure
@@ -721,7 +802,7 @@ int main(int argc, char * argv[])
 
 	partialVector_iter = IteratorImageVectorType(partialVector,fullRegion);
 
-	file.close();
+	//file.close();
 
 	WritePartialImages(partialVector, chamfer_colon, "QR");
 
@@ -740,6 +821,7 @@ int main(int argc, char * argv[])
 	WritePartialImages(partialVector, chamfer_colon, "Threshold");
 	*/
 
+	/*
 	// Remove unconnected pt > 0 voxels
 	ByteImageType::Pointer pt_mask = AllocateNewByteImage(fullRegion);
 	IteratorTypeByteWithIndex pt_mask_iter(pt_mask,fullRegion);
@@ -808,11 +890,12 @@ int main(int argc, char * argv[])
 	cc.~SmartPointer();
 
 	WritePartialImages(partialVector, chamfer_colon, "QR_CC");
+	*/
 
 	// Smooth partial vector
 	SmoothPartialVector(partialVector,chamfer_colon,startIndex,endIndex);
 
-	WritePartialImages(partialVector, chamfer_colon, "QR_Smooth");
+	//WritePartialImages(partialVector, chamfer_colon, "QR_Smooth");
 
 	// Subtract stool via QR
 	ImageType::Pointer output = AllocateNewImage(fullRegion);
@@ -895,146 +978,146 @@ int main(int argc, char * argv[])
 
 	//-------------------------------------------BEGIN EM--------------------------------------------------------
 
-    int counter=0;							//used to total certain values (description given when set)
-    double mean[3]={0, 0, 0};				//stores the mean of the air/tissue/stool classes
-    double sum[3]={0, 0, 0};				//stores the total # of partials of the three classes
-    double variance[3]={0, 0, 0};			//stores the variance of the air/tissue/stool classes
-	float weight[3]={0,0,0};				//stores the weights of the air/tissue/stool classes
+ //   int counter=0;							//used to total certain values (description given when set)
+ //   double mean[3]={0, 0, 0};				//stores the mean of the air/tissue/stool classes
+ //   double sum[3]={0, 0, 0};				//stores the total # of partials of the three classes
+ //   double variance[3]={0, 0, 0};			//stores the variance of the air/tissue/stool classes
+	//float weight[3]={0,0,0};				//stores the weights of the air/tissue/stool classes
 
-	// Computes the mean (expectation) for each class by using sum(partial[i]*value[i])/sum(partial[i])
-	for(input_iter.GoToBegin(), partialVector_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();
-		!input_iter.IsAtEnd() && !partialVector_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();
-		++input_iter, ++partialVector_iter, ++chamfer_colon_iter) 
-	{
-		if (chamfer_colon_iter.Get()==1) {		
-			CovariantVectorType partial = partialVector_iter.Get();
-			for (int i=0; i<3; i++)
-			{
-				sum[i] += partial[i];
-				mean[i] += partial[i]*input_iter.Get();
-			}
-		}
-	}
-	for (int i=0;i<3;i++) { mean[i]=mean[i]/sum[i]; } 
+	//// Computes the mean (expectation) for each class by using sum(partial[i]*value[i])/sum(partial[i])
+	//for(input_iter.GoToBegin(), partialVector_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();
+	//	!input_iter.IsAtEnd() && !partialVector_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();
+	//	++input_iter, ++partialVector_iter, ++chamfer_colon_iter) 
+	//{
+	//	if (chamfer_colon_iter.Get()==1) {		
+	//		CovariantVectorType partial = partialVector_iter.Get();
+	//		for (int i=0; i<3; i++)
+	//		{
+	//			sum[i] += partial[i];
+	//			mean[i] += partial[i]*input_iter.Get();
+	//		}
+	//	}
+	//}
+	//for (int i=0;i<3;i++) { mean[i]=mean[i]/sum[i]; } 
 
-	// Compute variance and weights
-	for(input_iter.GoToBegin(), partialVector_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();
-		!input_iter.IsAtEnd() && !partialVector_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();
-		++input_iter, ++partialVector_iter, ++chamfer_colon_iter) 
-	{
-		if (chamfer_colon_iter.Get()==1) {		
-			CovariantVectorType partial = partialVector_iter.Get();
-			for (int i=0; i<3; i++)
-			{
-				variance[i] += partial[i]*vnl_math_sqr(input_iter.Get()-mean[i]);
-			}
-		}
-	}
+	//// Compute variance and weights
+	//for(input_iter.GoToBegin(), partialVector_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();
+	//	!input_iter.IsAtEnd() && !partialVector_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();
+	//	++input_iter, ++partialVector_iter, ++chamfer_colon_iter) 
+	//{
+	//	if (chamfer_colon_iter.Get()==1) {		
+	//		CovariantVectorType partial = partialVector_iter.Get();
+	//		for (int i=0; i<3; i++)
+	//		{
+	//			variance[i] += partial[i]*vnl_math_sqr(input_iter.Get()-mean[i]);
+	//		}
+	//	}
+	//}
 
-	double sum_all = sum[0]+sum[1]+sum[2];
+	//double sum_all = sum[0]+sum[1]+sum[2];
 
-	for (int i=0;i<3;i++) 
-	{ 
-		variance[i]=variance[i]/sum[i];
-		weight[i]=sum[i]/sum_all;
-	} 
+	//for (int i=0;i<3;i++) 
+	//{ 
+	//	variance[i]=variance[i]/sum[i];
+	//	weight[i]=sum[i]/sum_all;
+	//} 
 
-	//outputs the initial mean and variance of each class
-	std::ofstream em;
-	em.open("em.txt");
-	em<<"EM\tMean0\tMean1\tMean2\tVar0\tVar1\tVar2\tWeight0\tWeight1\tWeight2\n";
+	////outputs the initial mean and variance of each class
+	//std::ofstream em;
+	//em.open("em.txt");
+	//em<<"EM\tMean0\tMean1\tMean2\tVar0\tVar1\tVar2\tWeight0\tWeight1\tWeight2\n";
 
-	std::ostringstream ss;
-	ss<<"0\t"<<mean[0]<<"\t"<<mean[1]<<"\t"<<mean[2]<<"\t"<<variance[0]<<"\t"<<variance[1]<<"\t"<<variance[2]<<"\t"<<weight[0]<<"\t"<<weight[1]<<"\t"<<weight[2]<<"\n";
-	em<<ss.str();
+	//std::ostringstream ss;
+	//ss<<"0\t"<<mean[0]<<"\t"<<mean[1]<<"\t"<<mean[2]<<"\t"<<variance[0]<<"\t"<<variance[1]<<"\t"<<variance[2]<<"\t"<<weight[0]<<"\t"<<weight[1]<<"\t"<<weight[2]<<"\n";
+	//em<<ss.str();
 
-	std::cerr<<std::endl;
-	std::cerr<<"EM0"<<std::endl;
-	std::cerr<<"Mean: "<<mean[0]<<" "<<mean[1]<<" "<<mean[2]<<std::endl;
-	std::cerr<<"Variance: "<<variance[0]<<" "<<variance[1]<<" "<<variance[2]<<std::endl;
-	std::cerr<<"Weight: "<<weight[0]<<" "<<weight[1]<<" "<<weight[2]<<std::endl;
-	
-	// Computes iterations of the Maximization Algorithm
-    for (int emNum=0;emNum<20;emNum++) // used 20 in original test case
-	{
-		//gives the temporary storage of the variables corresponding to sum, variance, and mean for each class on the i+1 iteration
-		double sum_temp[3]={0,0,0};
-        double variance_temp[3]={0,0,0};
-		double mean_temp[3]={0,0,0};
+	//std::cerr<<std::endl;
+	//std::cerr<<"EM0"<<std::endl;
+	//std::cerr<<"Mean: "<<mean[0]<<" "<<mean[1]<<" "<<mean[2]<<std::endl;
+	//std::cerr<<"Variance: "<<variance[0]<<" "<<variance[1]<<" "<<variance[2]<<std::endl;
+	//std::cerr<<"Weight: "<<weight[0]<<" "<<weight[1]<<" "<<weight[2]<<std::endl;
+	//
+	//// Computes iterations of the Maximization Algorithm
+ //   for (int emNum=0;emNum<20;emNum++) // used 20 in original test case
+	//{
+	//	//gives the temporary storage of the variables corresponding to sum, variance, and mean for each class on the i+1 iteration
+	//	double sum_temp[3]={0,0,0};
+ //       double variance_temp[3]={0,0,0};
+	//	double mean_temp[3]={0,0,0};
 
-		for (input_iter.GoToBegin(), partialVector_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();
-			!input_iter.IsAtEnd() && !partialVector_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();
-			++input_iter, ++partialVector_iter, ++chamfer_colon_iter) 
-		{
-			if (chamfer_colon_iter.Get()==1) {		
-				CovariantVectorType partial = partialVector_iter.Get();		//retrieves the partial informations
-				float Z[3]={partial[0],partial[1],partial[2]};
+	//	for (input_iter.GoToBegin(), partialVector_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();
+	//		!input_iter.IsAtEnd() && !partialVector_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();
+	//		++input_iter, ++partialVector_iter, ++chamfer_colon_iter) 
+	//	{
+	//		if (chamfer_colon_iter.Get()==1) {		
+	//			CovariantVectorType partial = partialVector_iter.Get();		//retrieves the partial informations
+	//			float Z[3]={partial[0],partial[1],partial[2]};
 
-				// Only update uncertain partials
-				if ( !(partial[0] == 1 || partial[1] == 1 || partial[2] == 1) )
-				{
-					vnl_vector<float> Z_update=expectation(input_iter.Get(),mean, variance, weight, GetNeighbor(partialVector,input_iter.GetIndex()), Z);	//updates the partial values
-					partial[0]=Z_update[0];										
-					partial[1]=Z_update[1];
-					partial[2]=Z_update[2];
-					partialVector_iter.Set(partial);
-				}
+	//			// Only update uncertain partials
+	//			if ( !(partial[0] == 1 || partial[1] == 1 || partial[2] == 1) )
+	//			{
+	//				vnl_vector<float> Z_update=expectation(input_iter.Get(),mean, variance, weight, GetNeighbor(partialVector,input_iter.GetIndex()), Z);	//updates the partial values
+	//				partial[0]=Z_update[0];										
+	//				partial[1]=Z_update[1];
+	//				partial[2]=Z_update[2];
+	//				partialVector_iter.Set(partial);
+	//			}
 
-				//updates the new mean total partial sum for each class accordingly
-				for (int i=0;i<3;i++) 
-				{
-					mean_temp[i]+=partial[i]*input_iter.Get();	
-					sum_temp[i]+=partial[i];
-				}
+	//			//updates the new mean total partial sum for each class accordingly
+	//			for (int i=0;i<3;i++) 
+	//			{
+	//				mean_temp[i]+=partial[i]*input_iter.Get();	
+	//				sum_temp[i]+=partial[i];
+	//			}
 
-			}
-        }
+	//		}
+ //       }
 
-		partialVector_iter = IteratorImageVectorType(partialVector,fullRegion);
+	//	partialVector_iter = IteratorImageVectorType(partialVector,fullRegion);
 
-		for (int i=0;i<3;i++) { mean_temp[i]=mean_temp[i]/sum_temp[i]; } 
+	//	for (int i=0;i<3;i++) { mean_temp[i]=mean_temp[i]/sum_temp[i]; } 
 
-		// Compute variance and weights
-		for(input_iter.GoToBegin(), partialVector_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();
-			!input_iter.IsAtEnd() && !partialVector_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();
-			++input_iter, ++partialVector_iter, ++chamfer_colon_iter) 
-		{
-			if (chamfer_colon_iter.Get()==1) {		
-				CovariantVectorType partial = partialVector_iter.Get();
-				for (int i=0; i<3; i++)
-				{
-					variance_temp[i] += partial[i]*vnl_math_sqr(input_iter.Get()-mean_temp[i]);
-				}
-			}
-		}
+	//	// Compute variance and weights
+	//	for(input_iter.GoToBegin(), partialVector_iter.GoToBegin(), chamfer_colon_iter.GoToBegin();
+	//		!input_iter.IsAtEnd() && !partialVector_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd();
+	//		++input_iter, ++partialVector_iter, ++chamfer_colon_iter) 
+	//	{
+	//		if (chamfer_colon_iter.Get()==1) {		
+	//			CovariantVectorType partial = partialVector_iter.Get();
+	//			for (int i=0; i<3; i++)
+	//			{
+	//				variance_temp[i] += partial[i]*vnl_math_sqr(input_iter.Get()-mean_temp[i]);
+	//			}
+	//		}
+	//	}
 
-		double sum_all_temp = sum_temp[0]+sum_temp[1]+sum_temp[2];
+	//	double sum_all_temp = sum_temp[0]+sum_temp[1]+sum_temp[2];
 
-		for (int i=0;i<3;i++) 
-		{ 
-			mean[i]=mean_temp[i];
-			variance[i]=variance_temp[i]/sum_temp[i];
-			weight[i]=sum_temp[i]/sum_all_temp;
-		}
+	//	for (int i=0;i<3;i++) 
+	//	{ 
+	//		mean[i]=mean_temp[i];
+	//		variance[i]=variance_temp[i]/sum_temp[i];
+	//		weight[i]=sum_temp[i]/sum_all_temp;
+	//	}
 
-		std::cerr<<std::endl;
-		std::cerr<<"EM"<<emNum+1<<std::endl;
-		std::cerr<<"Mean: "<<mean[0]<<" "<<mean[1]<<" "<<mean[2]<<std::endl;
-		std::cerr<<"Variance: "<<variance[0]<<" "<<variance[1]<<" "<<variance[2]<<std::endl;
-		std::cerr<<"Weight: "<<weight[0]<<" "<<weight[1]<<" "<<weight[2]<<std::endl;
+	//	std::cerr<<std::endl;
+	//	std::cerr<<"EM"<<emNum+1<<std::endl;
+	//	std::cerr<<"Mean: "<<mean[0]<<" "<<mean[1]<<" "<<mean[2]<<std::endl;
+	//	std::cerr<<"Variance: "<<variance[0]<<" "<<variance[1]<<" "<<variance[2]<<std::endl;
+	//	std::cerr<<"Weight: "<<weight[0]<<" "<<weight[1]<<" "<<weight[2]<<std::endl;
 
-		std::stringstream ss;
-		ss<<emNum+1;
-		ss<<"\t"<<mean[0]<<"\t"<<mean[1]<<"\t"<<mean[2]<<"\t"<<variance[0]<<"\t"<<variance[1]<<"\t"<<variance[2]<<"\t"<<weight[0]<<"\t"<<weight[1]<<"\t"<<weight[2]<<"\n";
-		em<<ss.str();
+	//	std::stringstream ss;
+	//	ss<<emNum+1;
+	//	ss<<"\t"<<mean[0]<<"\t"<<mean[1]<<"\t"<<mean[2]<<"\t"<<variance[0]<<"\t"<<variance[1]<<"\t"<<variance[2]<<"\t"<<weight[0]<<"\t"<<weight[1]<<"\t"<<weight[2]<<"\n";
+	//	em<<ss.str();
 
-		std::stringstream ss2;
-		ss2<<"EM"<<emNum+1;
+	//	std::stringstream ss2;
+	//	ss2<<"EM"<<emNum+1;
 
-		WritePartialImages(partialVector,chamfer_colon,ss2.str());
-    }
+	//	WritePartialImages(partialVector,chamfer_colon,ss2.str());
+ //   }
 
-	em.close();
+	//em.close();
 
 	////set modification images type.
 	////Updates the existing voxel type classifications with knowledge found in the EM
@@ -1353,7 +1436,7 @@ int main(int argc, char * argv[])
 	//Write out the final output	
 	std::cerr<<"Ended"<<std::endl;
 	//WriteITK(output, "output.hdr");
-	system("pause");
+	//system("pause");
 	return 0;
 }
 
@@ -1603,45 +1686,62 @@ void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2,
     temp_gradient_magnitude[0]=gradient_magnitude_interpolator->EvaluateAtContinuousIndex(offset_index);
 	//std::cerr<<"vector created"<<std::endl;
 	float min_distance=*threshold;
-	float stool_tissue_Smax;
-	float stool_air_Smax;
-	
-	//Tissue Stool
-
-	stool_tissue_Smax=ComputeSmax(temp_intensity,temp_gradient_magnitude, 5);
-	stool_air_Smax=Stool_Air_ComputeSmax(temp_intensity,temp_gradient_magnitude, 5);
-	
-	//float smax = input_smax.Get();
+	float stool_tissue_Smax=0;
+	float stool_air_Smax=0;
 	float smax=0;
-
 	float distance=0;
 	VoxelType voxel_type=Unclassified;
-	
-	float distanceTS=AverageTissueStoolDist(stool_tissue_Smax, temp_intensity,temp_gradient_magnitude);
-	float distanceSA=AverageStoolAirDist(stool_air_Smax, temp_intensity,temp_gradient_magnitude); // bias stool air distance to preserve tissue
 
-	//float distanceTS=AverageTissueStoolDist(smax, temp_intensity,temp_gradient_magnitude);
-	//float distanceSA=AverageStoolAirDist(smax, temp_intensity,temp_gradient_magnitude); // bias stool air distance to preserve tissue
-	float distanceTA=AverageTissueAirDist(temp_intensity,temp_gradient_magnitude);
+	float distanceTS=0;
+	float distanceSA=0;
+	float distanceTA=0;
+
+
+
+	if (!Modified)
+	{
+		stool_tissue_Smax=ComputeSmax(temp_intensity,temp_gradient_magnitude, 5);
+		stool_air_Smax=Stool_Air_ComputeSmax(temp_intensity,temp_gradient_magnitude, 5);
+		smax = 0;
+
+		distanceTS=AverageTissueStoolDist(stool_tissue_Smax, temp_intensity,temp_gradient_magnitude);
+		distanceSA=AverageStoolAirDist(stool_air_Smax, temp_intensity,temp_gradient_magnitude);
+	} else {
+		smax = input_smax.Get();
+
+		distanceTS=AverageTissueStoolDist(smax, temp_intensity,temp_gradient_magnitude);
+		distanceSA=AverageStoolAirDist(smax, temp_intensity,temp_gradient_magnitude); 
+	}	
+	
+	distanceTA=AverageTissueAirDist(temp_intensity,temp_gradient_magnitude);
 
 	if (distanceSA<=distanceTS && distanceSA<=distanceTA){
 		distance=distanceSA;
 		voxel_type=StoolAir;
-		smax=stool_air_Smax;
+
+		if (!Modified)
+			smax=stool_air_Smax;
+
 	} else if (distanceTS<=distanceTA && distanceTS<=distanceSA ) {
 		distance=distanceTS;
 		voxel_type=TissueStool;
-		smax=stool_tissue_Smax;
+
+		if (!Modified)
+			smax=stool_tissue_Smax;
+
 	} else {
 		distance=distanceTA;
 		voxel_type=TissueAir;
-		smax=0;
+
+		if (!Modified)
+			smax=0;
 	}
 
     if (min_distance>=distance || min_distance==-1 || *previous==Unclassified) {
 		*threshold=distance;
         *previous=voxel_type;
-		input_smax.Set(smax);
+		if (!Modified)
+			input_smax.Set(smax);
     }
 }
 
@@ -1780,9 +1880,20 @@ VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, ImageTy
 			return Unclassified;
 		}
 
-		*/
 
 		if (input_pixel >=650) {
+			return Stool;
+		} else if (input_pixel<=-600) {
+			return Air;
+		} else if (input_pixel<=150  && input_pixel>=-250 && input_gradient_pixel<=400) {
+			return Tissue;
+		} else {
+			return Unclassified;
+		}
+		
+		*/
+
+		if ((input_pixel >=180 && input_gradient_pixel<=0.8*input_pixel) || input_pixel >= 650) {
 			return Stool;
 		} else if (input_pixel<=-600) {
 			return Air;
@@ -2405,8 +2516,11 @@ ImageType::Pointer ReadDicom( std::string path )
 
 	std::vector<std::string> names = fit->GetFileNames();
 	
-	// Truncate data
-	//names.erase( names.begin()+10, names.end() );
+	if (truncateOn)
+	{
+		names.erase( names.begin(), names.begin()+truncate_ar[0] );
+		names.erase( names.begin()+truncate_ar[1]-truncate_ar[0], names.end() );
+	}
 
     reader->SetFileNames( names );
 	try
@@ -3621,16 +3735,16 @@ ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer input, VoxelTypeIm
 
 			for (int i=0; i<n;i++)
 			{
-				if (i != n/2 )
-				{
+				//if (i != n/2 )
+				//{
 					VoxelTypeImage::IndexType idx = nit.GetIndex(i);
 					
 					if (idx[0] >= sidx[0] && idx[0] <= eidx[0] && idx[1] >= sidx[1] && idx[1] <= eidx[1] && idx[2] >= sidx[2] && idx[2] <= eidx[2])
 					{
+						float val = input->GetPixel(idx);
 						
-						if (nit.GetPixel(i) == Stool /*|| val > 400 */)
+						if (nit.GetPixel(i) == Stool /*|| val > N_SVAL*/)
 						{
-							float val = input->GetPixel(idx);
 
 							if ( val > max )
 							{
@@ -3638,7 +3752,7 @@ ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer input, VoxelTypeIm
 							}	
 						}
 						
-					}
+					//}
 
 					
 				}
@@ -3686,7 +3800,10 @@ void WritePartialImages(ImageVectorType::Pointer partialVector, ByteImageType::P
 
 		ss << "partial_" << i << "_" << name << ".hdr";
 		
-		WriteITK(partial_image, ss.str() );
+		if (i==1)
+		{
+			WriteITK(partial_image, ss.str() );
+		}
 	}
 }
 
@@ -4000,9 +4117,9 @@ void ComputeSatoHessian(ImageType::Pointer input, ByteImageType::Pointer chamfer
 	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
 
 	float alpha = 0.25;
-	float gamma = 0.5;
+	float gamma = 1;
 
-	for (int k=0; k<1; k++)
+	for (int k=0; k<2; k++)
 	{
 		
 		// Compute smoothed Hessian
@@ -4057,8 +4174,6 @@ void ComputeSatoHessian(ImageType::Pointer input, ByteImageType::Pointer chamfer
 
 					S_iter.Set(val);
 
-				} else {
-					S_iter.Set(0);
 				}
 
 				count++;
@@ -4070,7 +4185,7 @@ void ComputeSatoHessian(ImageType::Pointer input, ByteImageType::Pointer chamfer
 			}
 
 			std::string type;
-			type = "dark_sheet_tagged";
+			type = "dark_sheet";
 			//switch (j)
 			//{
 			//case 0: type="line";break;
@@ -4361,7 +4476,7 @@ void HeuristicClosing(VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer
 		}
 	}
 
-	WriteITK(mask,"non_stool_mask.hdr");
+	//WriteITK(mask,"non_stool_mask.hdr");
 
 	// Run connected component
 	ConnectedComponentFilterType::Pointer ccFilter = ConnectedComponentFilterType::New();
@@ -4371,7 +4486,7 @@ void HeuristicClosing(VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer
 	IteratorTypeIntWithIndex cc_iter(cc,region);
 	
 	ccFilter.~SmartPointer();
-	WriteITK(cc,"mask_cc.hdr");
+	//WriteITK(cc,"mask_cc.hdr");
 
 	// Convert to Label map
 	LabelImageToShapeLabelMapFilterType::Pointer converter = LabelImageToShapeLabelMapFilterType::New();
@@ -4391,6 +4506,88 @@ void HeuristicClosing(VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer
 			voxel_type_iter.Set(Stool);
 		}
 	}
+}
 
-	WriteITK(voxel_type, "stool_closed.hdr");
+std::vector<std::string> explode( const std::string &delimiter, const std::string &str)
+{
+	std::vector<std::string> arr;
+
+    int strleng = str.length();
+    int delleng = delimiter.length();
+    if (delleng==0)
+        return arr;//no change
+
+    int i=0; 
+    int k=0;
+    while( i<strleng )
+    {
+        int j=0;
+        while (i+j<strleng && j<delleng && str[i+j]==delimiter[j])
+            j++;
+        if (j==delleng)//found delimiter
+        {
+            arr.push_back(  str.substr(k, i-k) );
+            i+=delleng;
+            k=i;
+        }
+        else
+        {
+            i++;
+        }
+    }
+    arr.push_back(  str.substr(k, i-k) );
+    return arr;
+}
+
+void CreateHessianGraph(ImageType::Pointer input)
+{
+	// Get input info
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+	ImageType::SpacingType spacing = input->GetSpacing();
+	ImageType::SizeType size = region.GetSize();
+
+	IteratorTypeFloat4WithIndex input_iter(input,region);
+	
+	// Compute hessian across sigma scales
+	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
+
+	std::ofstream file;
+	file.open("lambda.txt");
+	file << "x,y,z,I,Lambda1\tLambda2\tLambda3\n";
+
+	for (int k=0; k<1; k++)
+	{	
+		// Compute smoothed Hessian
+		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
+		hessianFilter->SetInput(input);
+		hessianFilter->SetNormalizeAcrossScale(true);
+		hessianFilter->SetSigma(sigma[k]);
+		hessianFilter->Update();
+		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
+
+
+		hessian_iter.GoToBegin();
+		input_iter.GoToBegin();
+
+		while (!hessian_iter.IsAtEnd()) 
+		{
+			ImageType::IndexType idx = input_iter.GetIndex();
+
+			if (idx[0] >=216 && idx[0] <=231 && idx[1] == 511-330 & idx[2] == 9)
+			{
+
+				EigenValueArrayType lambda;
+
+				// Get eigenvalues
+				hessian_iter.Get().ComputeEigenValues(lambda);
+				std::sort(lambda.Begin(),lambda.End(),OrderByValueDesc);
+				file << idx[0] << "\t" << idx[1] << "\t" << idx[2] << "\t" << input_iter.Get() << "\t";
+				file << lambda[0] << "\t" << lambda[1] << "\t" << lambda[2] << "\n";
+			}
+
+			++hessian_iter;
+			++input_iter;
+		}
+	}
+	
 }

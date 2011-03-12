@@ -1,262 +1,266 @@
-/*
-Neil Panjwani
-11/15/2010
-Computes Hessian Response across sigma scales
-*/
-#include <stdlib.h>
-#include <stdio.h>
-#include "itkImage.h"
-#include "itkImageFileReader.h"
-#include "itkSymmetricSecondRankTensor.h"
-#include "itkHessianRecursiveGaussianImageFilter.h"
-#include "itkSymmetricEigenAnalysis.h"
-#include "itkImageRegionConstIteratorWithIndex.h"
-#include "itkImageFileWriter.h"
-#include <vector>
-#include "itkOrientImageFilter.h"
-#include "NIH_ITK_Utility.h"
-#include <CIS_Image_Processing_Algo_3D.h>
-#include <CIS_Array_Image3D.h>
-#include <string>
+#include "RemoveStool3.h"
 
-typedef itk::Image< float, 3 > ImageType;
+const double ALPHA = 0.5;
+const double BETA = 0.3;
+const double GAMMA = 0.3;
+const double ETA = 0.2;
 
-double fnA(std::vector<double>& lambda, double alpha);
-double fnB(std::vector<double>& lambda, double beta, double gamma);
-double fnC(double ev1, double ev2, double eta);
-double fnRut(std::vector<double>& lambda, double alpha, double beta, double gamma);
-double fnCup(std::vector<double>& lambda, double eta);
-bool compare (double a, double b);
-void WriteITK(ImageType::Pointer image, const char * name);
-void WriteCIS(ImageType::Pointer image, std::string str);
+int writeCount = 1;
+
+std::vector<std::string> explode( const std::string &delimiter, const std::string &str);
 
 int main(int argc, char * argv[])
 {
-	/****************INPUTS**********************
-	argv[1]: File name of input image
-	argv[2]: File name of output hessian response
-	********************************************/
-	
-	char * in_file_name = argv[1];
 
-	// ITK Pixel Types
-	typedef itk::SymmetricSecondRankTensor< float, 3 > TensorPixelType;
-	typedef itk::Vector< float, 3> VectorPixelType;
-	typedef itk::Vector< VectorPixelType, 3> EigenMatrixPixelType;
-
-
-	// ITK Image Types
-	typedef itk::Image< TensorPixelType,  3 > TensorImageType;
-
-	// Read Input
-	typedef itk::ImageFileReader< ImageType > ReaderType;
-	ReaderType::Pointer reader = ReaderType::New();
-	reader->SetFileName( in_file_name );
-	try
+	if( argc < 2 )
 	{
-		reader->Update();
-	}
-	catch( itk::ExceptionObject & excp )
-	{
-		std::cerr << excp << std::endl;
+		std::cerr << "Usage: " << std::endl;
+		std::cerr << argv[0] << " DicomDirectory\n";
+		system("PAUSE");
+		return EXIT_FAILURE;
 	}
 
-	ImageType::Pointer input = reader->GetOutput();
+	std::string dataset = argv[1];
 
-	typedef itk::ImageRegionIteratorWithIndex< ImageType > IteratorType;
-	/*
-	// Select tagged regions only
-	
-	IteratorType input_it( input, input->GetLargestPossibleRegion() );
+	std::vector<std::string> datasetArr = explode( "/", dataset );
+	std::string ds = datasetArr[ datasetArr.size() - 2 ];
+	std::cout << "Dataset: " << ds << std::endl;
 
-	for ( input_it.GoToBegin(); !input_it.IsAtEnd(); ++input_it)
-	{
-		if (input_it.Get() < 200) { input_it.Set(0); }
-	}
+	// Read and write dicom input
+	ImageType::Pointer input = ReadDicom( dataset );
 
-	WriteITK(input,"tagged.hdr");
-	*/
+	WriteITK(input, ds+".hdr");
 
+	// Get input info
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
 	ImageType::SpacingType spacing = input->GetSpacing();
 
-	// Define parameters
-	//double sigma[2]		= {0.8, 1.6};
-	double sigma;
-	double alpha		= .5;
-	double beta			= .3;
-	double gamma		= .3;
-	double eta			= .2;
+	// Threshold to compute only in tagged regions
+	IteratorTypeFloat4WithIndex input_iter(input,region);
 
-	int count = 1;
-	// Loop through parameters
-	//for (int count_sigma = 0; count_sigma < sizeof(sigma)/sizeof(double); count_sigma++)	{
-	
-	for (double sigmaFactor = .5; sigmaFactor <= 8 ; sigmaFactor+=.5) {
-		std::cout << "Loop " << count << " of 16" << std::endl; 
+	ByteImageType::Pointer tagged = AllocateNewByteImage(region);
+	IteratorTypeByteWithIndex tagged_iter(tagged,region);
 
-		// Set sigma
-		sigma = sigmaFactor*spacing[0];
-
-		// Setup images
-		ImageType::Pointer H = ImageType::New();
-		H->SetRegions(input->GetLargestPossibleRegion() );
-		H->Allocate();
-		H->SetSpacing(input->GetSpacing());
-
-		IteratorType H_it( H, H->GetLargestPossibleRegion() );
-		
-		// Compute Hessian
-		std::cout << "Computing Hessian" << std::endl;
-		typedef itk::HessianRecursiveGaussianImageFilter < ImageType, TensorImageType > HessianFilterType;
-		HessianFilterType::Pointer hessian = HessianFilterType::New();
-		hessian->SetSigma( sigma );
-		hessian->SetInput(input);
-		try 
+	for (input_iter.GoToBegin(), tagged_iter.GoToBegin();
+		 !input_iter.IsAtEnd() && !tagged_iter.IsAtEnd();
+		 ++input_iter, ++tagged_iter)
+	{
+		if (input_iter.Get() > 200) 
 		{
-			hessian->Update();
-		} catch( itk::ExceptionObject & excp ) 
-		{
-			std::cerr << excp << std::endl;
-		}  
-		TensorImageType::Pointer hess_image = hessian->GetOutput();
-		
-		// Get eigenvalues
-		std::cout << "Computing Eigenvalues" << std::endl;
-		typedef itk::SymmetricEigenAnalysis< TensorPixelType, VectorPixelType, EigenMatrixPixelType > EigAnalysisType;
-		EigAnalysisType eig;
-		eig.SetDimension( 3 );
-		eig.SetOrderEigenMagnitudes( true );
-		eig.SetOrderEigenValues( true );
-
-		// Iterators
-		typedef itk::ImageRegionIteratorWithIndex< TensorImageType > TensorIteratorType;
-		TensorIteratorType hess_it( hess_image, hess_image->GetLargestPossibleRegion() );
-		
-		std::cout << "Computing Response" << std::endl;
-
-		for (	hess_it.GoToBegin(), H_it.GoToBegin();
-				!hess_it.IsAtEnd() && !H_it.IsAtEnd();
-				++hess_it, ++H_it )
-		{
-			// Box region
-			ImageType::IndexType index = H_it.GetIndex();
-			if (index[0] > 65 && index[0] < 430 && index[1] < 512-160 && index[1] > 512-380)
-			{
-				//std::cout << index[0] << " " << index[1] << " " << index[2] << std::endl;
-
-				// Compute eigenvalues
-				VectorPixelType eigen_values;
-				eig.ComputeEigenValues( hess_it.Get(), eigen_values );
-
-				// Sort eigenvalues
-				std::vector<double> lambda(eigen_values.Begin(), eigen_values.End());
-				sort(lambda.begin(), lambda.end(), compare);
-
-				// Compute hessian response
-				double frut = fnRut(lambda, alpha, beta, gamma);
-				double fcup = fnCup(lambda, eta);
-		
-				// Set max value across scales
-				double max = frut>fcup ? frut : fcup;
-				//if (max > H_it.Get()) {	H_it.Set(max); }
-				H_it.Set(max);
-			} else {
-				H_it.Set(0);
-			}
+			tagged_iter.Set(1);
+		} else {
+			tagged_iter.Set(0);
 		}
-		/*
-		// Orient all input images into RAS orientation
-		itk::OrientImageFilter<ImageType,ImageType>::Pointer orienter = itk::OrientImageFilter<ImageType,ImageType>::New();
-		orienter->UseImageDirectionOn();
-		orienter->SetDesiredCoordinateOrientation(itk::SpatialOrientation::ITK_COORDINATE_ORIENTATION_PIR);
-		orienter->SetInput(H);
-		try {
-			orienter->Update();
-		} catch( itk::ExceptionObject & excp ) 
-		{
-			std::cerr << excp << std::endl;
-		}*/
-
-		// Write H response
-		std::stringstream ss;
-		ss << "H_sigmaFactor_" << sigmaFactor << ".hdr";
-		WriteCIS(H, ss.str());
-		//WriteITK(H, ss.str().c_str());
-
-		std::cout << "End Loop " << count++ << " of 16" << std::endl << std::endl;
 	}
 
-	system("pause");
+	// Create response image
+	ImageType::Pointer Himage = AllocateNewImage(region);
+	Himage->FillBuffer(0.0);
+	IteratorTypeFloat4WithIndex Himage_iter(Himage,region);
+
+	// Compute hessian across sigma scales
+	double sigma[2] = {0.8*spacing[0], 2*spacing[0]};
+
+	for (int k=0; k<2; k++)
+	{
+		// Compute smoothed Hessian
+		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
+		hessianFilter->SetInput(input);
+		hessianFilter->SetNormalizeAcrossScale(true);
+		hessianFilter->SetSigma(sigma[k]);
+		hessianFilter->Update();
+		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
+
+		hessian_iter.GoToBegin();
+		tagged_iter.GoToBegin();
+		Himage_iter.GoToBegin();
+
+		while (!hessian_iter.IsAtEnd()) 
+		{
+			EigenValueArrayType lambda;
+
+			if (tagged_iter.Get() == 1) { // compute only in tagged region
+				
+				hessian_iter.Get().ComputeEigenValues(lambda);
+				std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
+
+				if ( lambda[2] < 0 )
+				{
+					float val = vnl_math_max( fRut(lambda, ALPHA, BETA, GAMMA), fCup(lambda, ETA) );
+					
+					if ( val > Himage_iter.Get() )
+						Himage_iter.Set(val);
+				}
+			}
+
+			++hessian_iter;
+			++tagged_iter;
+			++Himage_iter;
+		}
+
+		std::stringstream ss;
+		ss << ds << "_H.hdr";
+		WriteITK(Himage, ss.str());
+
+	}
+
 	return 0;
 }
 
-bool compare (double a, double b) {
+void WriteITK(ImageType::Pointer image, std::string name) {
+	typedef itk::ImageFileWriter< ImageType >  WriterType;
+    WriterType::Pointer writer = WriterType::New();
+	WriterType::SetGlobalWarningDisplay(false);
+	writer->SetFileName(name.c_str());
+	writer->SetInput(image);
+	std::cout<<"Writing: "<<name<<std::endl;
+	writer->Update();
+}
+
+void WriteITK(ByteImageType::Pointer image, std::string name) {
+    typedef itk::ImageFileWriter< ByteImageType >  WriterType;
+    WriterType::Pointer writer = WriterType::New();
+	WriterType::SetGlobalWarningDisplay(false);
+	writer->SetFileName(name.c_str());
+	writer->SetInput(image);
+	std::cout<<"Writing: "<<name<<std::endl;
+	writer->Update();
+}
+
+bool OrderByMagnitude (double a, double b) {
 	return ( abs(a) < abs(b) );
 }
 
-double fnA(std::vector<double>& lambda, double alpha) {
+bool OrderByValue (double a, double b) {
+	return ( a < b );
+}
+
+bool OrderByValueDesc (double a, double b) {
+	return ( a > b );
+}
+
+double fA(EigenValueArrayType lambda, double alpha) {
 	double Ra;
-	Ra = abs(lambda[0])/sqrt(abs((lambda[1]*lambda[2])));
+	Ra = abs(lambda[0])/sqrt(abs(lambda[1]*lambda[2]));
 	return exp(-vnl_math_sqr(Ra)/(2*vnl_math_sqr(alpha)));
 }
 
-double fnB(std::vector<double>& lambda, double beta, double gamma) {
+double fB(EigenValueArrayType lambda, double beta, double gamma) {
 	double Rb;
-	Rb = abs(lambda[1])/abs(lambda[2]);
+	Rb = abs(lambda[1]/lambda[2]);
 	return exp(-vnl_math_sqr(Rb - gamma)/(2*vnl_math_sqr(beta)));
 }
 
-double fnC(double ev1, double ev2, double eta) {
+double fC(double ev1, double ev2, double eta) {
 	double Rc;
 	Rc = abs(ev1)/abs(ev2);
 	return 1.0 - exp(-vnl_math_sqr(Rc)/(2*vnl_math_sqr(eta)));
 }
 
-double fnRut(std::vector<double>& lambda, double alpha, double beta, double gamma) {
-	if (lambda[2] > 0)
+double fRut(EigenValueArrayType lambda, double alpha, double beta, double gamma) {
+	return fA(lambda, alpha)*fB(lambda, beta, gamma);
+}
+
+double fCup(EigenValueArrayType lambda, double eta) {
+	return fC(lambda[0], lambda[1], eta)*fC(lambda[1], lambda[2], eta);
+}
+
+void ReadITK(ImageType::Pointer &image, char * fileName) {
+	std::cout << "Reading " <<  fileName << std::endl;
+	typedef itk::ImageFileReader< ImageType > ReaderType;
+	ReaderType::Pointer reader = ReaderType::New();
+	reader->SetFileName( fileName );
+	reader->Update();
+	image = reader->GetOutput();
+}
+
+std::vector<std::string> explode( const std::string &delimiter, const std::string &str)
+{
+	std::vector<std::string> arr;
+
+    int strleng = str.length();
+    int delleng = delimiter.length();
+    if (delleng==0)
+        return arr;//no change
+
+    int i=0; 
+    int k=0;
+    while( i<strleng )
+    {
+        int j=0;
+        while (i+j<strleng && j<delleng && str[i+j]==delimiter[j])
+            j++;
+        if (j==delleng)//found delimiter
+        {
+            arr.push_back(  str.substr(k, i-k) );
+            i+=delleng;
+            k=i;
+        }
+        else
+        {
+            i++;
+        }
+    }
+    arr.push_back(  str.substr(k, i-k) );
+    return arr;
+}
+
+ImageType::Pointer ReadDicom( std::string path )
+{	
+	// Create reader
+	itk::ImageSeriesReader<ImageType>::Pointer reader = itk::ImageSeriesReader<ImageType>::New();
+    itk::GDCMImageIO::Pointer dicomIO = itk::GDCMImageIO::New();
+    reader->SetImageIO( dicomIO );
+
+	// Create regex finder to match file names
+	itk::RegularExpressionSeriesFileNames::Pointer fit = itk::RegularExpressionSeriesFileNames::New();
+	
+	fit->SetDirectory( path );
+	//fit->SetRegularExpression("[^.]*.(.*)");
+	fit->SetRegularExpression("[^.]*i([0-9]+).dcm");
+	fit->SetSubMatch(1);
+
+	std::vector<std::string> names = fit->GetFileNames();
+	
+	// Truncate data
+	//names.erase( names.begin()+10, names.end() );
+
+    reader->SetFileNames( names );
+	try
 	{
-		return fnA(lambda, alpha)*fnB(lambda, beta, gamma);
-	} else {
+		reader->Update();
+	}
+	catch( itk::ExceptionObject & err )
+	{
+		std::cerr << "Exception caught: " << err << std::endl;
 		return 0;
 	}
+
+    // Orient all input images into LAI orientation (spine is at top of image)
+    itk::OrientImageFilter<ImageType,ImageType>::Pointer orienter = itk::OrientImageFilter<ImageType,ImageType>::New();
+    orienter->UseImageDirectionOn();
+    orienter->SetDesiredCoordinateOrientation(itk::SpatialOrientation::ITK_COORDINATE_ORIENTATION_LAI);
+    orienter->SetInput(reader->GetOutput());
+    orienter->Update();
+
+    return orienter->GetOutput();
+
 }
 
-double fnCup(std::vector<double>& lambda, double eta) {
-	if (lambda[2] > 0)
-	{
-		return fnC(lambda[0], lambda[1], eta)*fnC(lambda[1], lambda[2], eta);
-	} else {
-		return 0;
-	}
+ByteImageType::Pointer AllocateNewByteImage(ImageType::RegionType fullRegion) {
+    ByteImageType::Pointer newImage = ByteImageType::New();
+    newImage->SetLargestPossibleRegion( fullRegion );
+    newImage->SetBufferedRegion( fullRegion );
+    newImage->SetRequestedRegion( fullRegion );
+    newImage->Allocate();
+    return newImage;
 }
 
-void WriteITK(ImageType::Pointer image, const char * name) {
-	typedef itk::ImageFileWriter< ImageType > WriterType;
-	WriterType::Pointer writer = WriterType::New();
-	writer->SetFileName(name);
-	writer->SetInput(image);
-
-	try  
-	{
-		writer->Update();
-	} catch( itk::ExceptionObject & excp ) 
-	{
-		std::cerr << excp << std::endl;
-	} 
-}
-
-void WriteCIS(ImageType::Pointer image, std::string str) {
-	//Use CIS to write image
-	CIS_Array_Image3D_short *output_CIS;
-	output_CIS = new CIS_Array_Image3D_short();
-
-	//Convert ITK image back into CIS image
-	std::cout << "Converting ITK to CIS..." << std::endl;
-	Copy_ITKImage_to_CISImage(image, output_CIS);
-
-	char * cstr = new char [str.size()+1];
-	strcpy(cstr, str.c_str());
-
-	Write_Analyze_File(cstr, *output_CIS);
-	std::cout << "Done." << std::endl;
+ImageType::Pointer AllocateNewImage(ImageType::RegionType fullRegion) {
+    ImageType::Pointer newImage = ImageType::New();
+    newImage->SetLargestPossibleRegion( fullRegion );
+    newImage->SetBufferedRegion( fullRegion );
+    newImage->SetRequestedRegion( fullRegion );
+	newImage->Allocate();
+    return newImage;
 }

@@ -289,4 +289,6 @@ float S_line_dark(float lambda[3], float alpha, float gamma);
 float S_fold(float lambda[3], float alpha, float gamma);
 
 void HeuristicClosing(VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer chamfer_colon);
+std::vector<std::string> explode( const std::string &delimiter, const std::string &str);
+void CreateHessianGraph(ImageType::Pointer input);
 
