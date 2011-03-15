@@ -27,7 +27,7 @@
 #include <itkCurvesLevelSetImageFilter.h>
 #include <itkContinuousIndex.h>
 #include <itkConnectedComponentImageFilter.h>
-#include <itkBinaryShapeOpeningImageFilter.h>
+//#include <itkBinaryShapeOpeningImageFilter.h>
 #include <itkLabelImageToShapeLabelMapFilter.h>
 #include <itkBinaryMedianImageFilter.h>
 #include <itkVotingBinaryIterativeHoleFillingImageFilter.h>

@@ -16,7 +16,7 @@ const double GAMMA = 0.3;
 const double ETA = 0.2;
 
 bool truncateOn = true;
-unsigned int truncate_ar[2] = {80, 100};
+unsigned int truncate_ar[2] = {90, 110};
 
 //boost::xpressive::sregex rex = boost::xpressive::sregex::compile( "^2*[5-7]+1+$" );
 
@@ -35,7 +35,7 @@ int main(int argc, char * argv[])
 
 	std::string dataset = argv[1];
 
-	std::vector<std::string> datasetArr = explode( "/", dataset );
+	std::vector<std::string> datasetArr = explode( "\\", dataset );
 	std::string dsname = datasetArr[ datasetArr.size() - 2 ];
 	std::cout << "Dataset: " << dsname << std::endl;
 
@@ -93,6 +93,19 @@ int main(int argc, char * argv[])
 
 	// Print out the sub region of the image, un modified
 	WriteITK(input_temp,"input_temp.hdr");
+
+	/*
+	// Subtract via threshold
+	for (input_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter)
+	{
+		if (input_iter.Get() > 200 || input_iter.Get() < -600)
+		{
+			input_iter.Set(-1024);
+		}
+	}
+
+	WriteITK(input_temp,"simple_threshold_subtract.hdr");
+	*/
 
 	//CreateHessianGraph(input);
 
@@ -439,11 +452,14 @@ int main(int argc, char * argv[])
     input_interpolator->SetSplineOrder(3);
     input_interpolator->SetInputImage(input);
 
-	// Interpolate gradient magnitude image, NOTE: using 2x image gradient, (See Carston paper)
-	for (gradient_magnitude_iter.GoToBegin(); !gradient_magnitude_iter.IsAtEnd(); ++gradient_magnitude_iter)
-	{
-		gradient_magnitude_iter.Set(2*gradient_magnitude_iter.Get());
-	}
+	//if (Modified)
+	//{
+		// Interpolate gradient magnitude image, NOTE: using 2x image gradient, (See Carston paper)
+		for (gradient_magnitude_iter.GoToBegin(); !gradient_magnitude_iter.IsAtEnd(); ++gradient_magnitude_iter)
+		{
+			gradient_magnitude_iter.Set(2*gradient_magnitude_iter.Get());
+		}
+	//}
 
 	InterpolationType::Pointer gradient_magnitude_interpolator = InterpolationType::New();
 	gradient_magnitude_interpolator->SetSplineOrder(3);
@@ -772,7 +788,15 @@ int main(int argc, char * argv[])
 					//file << "StoolAir";
 					break;
 				case ThinStool:
-					value[0]=0.5*(1-vnl_erf((da_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2)))); //check eq
+					value[0]=0.5*(1-vnl_erf((da_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2))));
+					/*
+					if (Modified)
+					{
+						value[0]=0.5*(1-vnl_erf((da_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2)))); //check eq
+					} else {
+						value[0]=0.5*(1+vnl_erf((da_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2))));
+					}
+					*/
 					
 					if (value[0] <= 0) { value[0] = 0; }
 					if (value[0] >= 1) { value[0] = 1; }
@@ -1893,7 +1917,7 @@ VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, ImageTy
 		
 		*/
 
-		if ((input_pixel >=180 && input_gradient_pixel<=0.8*input_pixel) || input_pixel >= 650) {
+		if ((input_pixel >=400 && input_gradient_pixel<=0.8*input_pixel) || input_pixel >= 650) {
 			return Stool;
 		} else if (input_pixel<=-600) {
 			return Air;
