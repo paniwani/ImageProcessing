@@ -16,7 +16,7 @@ const double GAMMA = 0.3;
 const double ETA = 0.2;
 
 bool truncateOn = true;
-unsigned int truncate_ar[2] = {80, 100};
+unsigned int truncate_ar[2] = {90, 110};
 
 //boost::xpressive::sregex rex = boost::xpressive::sregex::compile( "^2*[5-7]+1+$" );
 
@@ -403,6 +403,8 @@ int main(int argc, char * argv[])
 
 	WriteITK(chamfer_colon, "chamfer_colon_air_mask.hdr");
 
+	ImageType::Pointer object_scale = ComputeObjectScale(input, chamfer_colon);
+
 
 
 	// Test fuzzy
@@ -412,7 +414,7 @@ int main(int argc, char * argv[])
 	//RunFuzzy(input_temp,chamfer_colon,voxel_type);
 
 
-	ComputeSatoHessian(input, chamfer_colon);
+	//ComputeSatoHessian(input, chamfer_colon);
 
 
 	// Test region growing
@@ -1891,7 +1893,7 @@ VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, ImageTy
 			return Unclassified;
 		}
 		
-		*/
+		
 
 		if ((input_pixel >=180 && input_gradient_pixel<=0.8*input_pixel) || input_pixel >= 650) {
 			return Stool;
@@ -1903,6 +1905,17 @@ VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, ImageTy
 			return Unclassified;
 		}
 
+		*/
+
+		if ((input_pixel >=400 && input_gradient_pixel<=0.8*input_pixel) || input_pixel >= 800) {
+			return Stool;
+		} else if (input_pixel<=-600) {
+			return Air;
+		} else if (input_pixel<=150  && input_pixel>=-250 && input_gradient_pixel<=400) {
+			return Tissue;
+		} else {
+			return Unclassified;
+		}
 	} else {
 		if ((input_pixel >=180 && input_gradient_pixel<=0.8*input_pixel)) {
 			return Stool;
@@ -4486,7 +4499,7 @@ void HeuristicClosing(VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer
 	IteratorTypeIntWithIndex cc_iter(cc,region);
 	
 	ccFilter.~SmartPointer();
-	//WriteITK(cc,"mask_cc.hdr");
+	WriteITK(cc,"mask_cc.hdr");
 
 	// Convert to Label map
 	LabelImageToShapeLabelMapFilterType::Pointer converter = LabelImageToShapeLabelMapFilterType::New();
@@ -4573,7 +4586,7 @@ void CreateHessianGraph(ImageType::Pointer input)
 		{
 			ImageType::IndexType idx = input_iter.GetIndex();
 
-			if (idx[0] >=216 && idx[0] <=231 && idx[1] == 511-330 & idx[2] == 9)
+			if (idx[0] >=216 && idx[0] <=231 && idx[1] == 511-330 && idx[2] == 9)
 			{
 
 				EigenValueArrayType lambda;
@@ -4590,4 +4603,110 @@ void CreateHessianGraph(ImageType::Pointer input)
 		}
 	}
 	
+}
+
+ImageType::Pointer ComputeObjectScale(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon)
+{
+	// Set parameters
+	float fo_min = 0.5;
+	int radius_max = 4;
+
+	// Get region
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+	ImageType::IndexType endIndex = region.GetIndex();
+	ImageType::IndexType startIndex = region.GetIndex();	
+	endIndex[0]+=(region.GetSize()[0]-1);
+	endIndex[1]+=(region.GetSize()[1]-1);
+	endIndex[2]+=(region.GetSize()[2]-1);
+
+	// Create image to hold scales
+	ImageType::Pointer K = AllocateNewImage(region);
+	K->FillBuffer(1);
+
+	IteratorTypeFloat4WithIndex input_iter(input,region);
+	IteratorTypeFloat4WithIndex K_iter(K,region);
+	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,region);
+
+	for (input_iter.GoToBegin(), K_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++K_iter, ++chamfer_colon_iter)
+	{
+		if (chamfer_colon_iter.Get() == 1 && input_iter.Get() > 200)
+		{
+			float fo = 1;
+			int radius = 1;
+
+			while (fo > fo_min && radius < radius_max)
+			{
+				// Initialize homogeneity function
+				float w = 0;
+				int w_count = 0;
+				int out_count = 0;
+
+				// Create outer ball structuring element
+				StructuringElementType outer_ball;
+				outer_ball.SetRadius( radius );
+				outer_ball.CreateStructuringElement();
+
+				// Create inner ball and store offsets in vector
+				StructuringElementType inner_ball;
+				inner_ball.SetRadius( radius-1 );
+				inner_ball.CreateStructuringElement();
+
+				std::vector<StructuringElementType::OffsetType> inner_ball_offsets ( inner_ball.Size() );
+
+				for (int i=0; i<inner_ball.Size(); i++)
+				{
+					inner_ball_offsets[i] = inner_ball.GetOffset(i);
+				}
+
+				// Find offsets of outer ball not in the inner ball
+				for (int i=0; i<outer_ball.Size(); i++)
+				{
+					StructuringElementType::OffsetType offset = outer_ball.GetOffset(i);
+					bool out = true;
+
+					for (int j=0; j < inner_ball_offsets.size(); j++)
+					{
+						if (offset == inner_ball_offsets[j])
+						{
+ 							out = false;
+							break;
+						}
+					}
+
+					if (out)
+					{
+						out_count++;
+					}
+
+					ImageType::IndexType idx = input_iter.GetIndex();
+
+					idx[0] += offset[0];
+					idx[1] += offset[1];
+					idx[2] += offset[2];
+
+					if (idx[0] >= startIndex[0] && idx[0] <= endIndex[0] && idx[1] >= startIndex[1] && idx[1] <= endIndex[1] && idx[2] >= startIndex[2] && idx[2] <= endIndex[2])
+					{
+						//std::cout << input_iter.Get() << std::endl;
+						//std::cout << input->GetPixel(idx) << std::endl;
+						w += exp(-vnl_math_sqr(input_iter.Get()-input->GetPixel(idx))/3600);
+						w_count++;
+					} else {
+						out_count--;
+					}
+				}
+
+				radius++;
+
+				fo = w / out_count;
+			}
+
+			K_iter.Set(radius);
+		}
+	}
+
+	WriteITK(K,"K.hdr");
+
+	return K;
+
+
 }

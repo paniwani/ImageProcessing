@@ -180,12 +180,17 @@ typedef itk::HessianToObjectnessMeasureImageFilter< HessianGaussianFilterType::O
 typedef itk::SimpleFuzzyConnectednessScalarImageFilter<ImageType,ImageType> FuzzyFilterType;
 typedef FuzzyFilterType::FuzzySceneType										FuzzySceneType;
 
+typedef itk::SymmetricSecondRankTensor<float>								SymmetricSecondRankTensorType;
+typedef itk::Image<SymmetricSecondRankTensorType, 3>						HessianImageType;			
+
 //Main Operation Function
 ImageType::Pointer RemoveStool(ImageType::Pointer input);
 VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, 
                                        ImageType::PixelType input_gradient_pixel);
 ImageType::Pointer AllocateNewImage(ImageType::RegionType fullRegion);
 ImageVectorType::Pointer AllocateNewVectorImage(ImageType::RegionType fullRegion);
+
+
 
 void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2, double d1,
                                       InterpolationType::Pointer &input_interpolator, 
@@ -291,4 +296,6 @@ float S_fold(float lambda[3], float alpha, float gamma);
 void HeuristicClosing(VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer chamfer_colon);
 std::vector<std::string> explode( const std::string &delimiter, const std::string &str);
 void CreateHessianGraph(ImageType::Pointer input);
+
+ImageType::Pointer ComputeObjectScale(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon);
 
