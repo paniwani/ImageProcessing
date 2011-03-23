@@ -44,7 +44,7 @@ MultiScaleHessianSmoothed3DToVesselnessMeasureImageFilter
   m_VesselnessFilter             = VesselnessFilterType::New();
 
   //Turn off vesselness measure scaling
-  m_VesselnessFilter->SetScaleVesselnessMeasure( false );
+  m_VesselnessFilter->SetScaleVesselnessMeasure( true );
 
   //Instantiate Update buffer
   m_UpdateBuffer                 = UpdateBufferType::New();

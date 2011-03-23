@@ -238,21 +238,10 @@ int VoxelTypeToNum(VoxelType type);
 ImageType::Pointer ReadDicom( std::string path );
 void SmoothPartialVector(ImageVectorType::Pointer pv, ByteImageType::Pointer chamfer_colon, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex);
 
-ImageType::Pointer ComputeHessianResponse(ImageType::Pointer input);
-ImageType::Pointer ComputeHessianResponse2(ImageType::Pointer input);
-ImageType::Pointer ComputeHessianResponse3(ImageType::Pointer input);
-
-ImageType::Pointer ComputeHessianTest(ImageType::Pointer input);
-
-void ComputeVesselness(ImageType::Pointer input);
-void ComputeThinness(ImageType::Pointer input);
-void HessianMeasure(ImageType::Pointer input);
 void RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type);
 void RunConnectedThresholdGrowing(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type);
 void RunRegionalMinima(ImageType::Pointer input);
 
-
-void MeasureObjectness(ImageType::Pointer input);
 float vesselness(const float lambda1, const float lambda2, const float lambda3, const float alpha, const float gamma12, const float gamma23);
 float thinness( float l[3] );
 
@@ -266,7 +255,7 @@ double fB(EigenValueArrayType lambda, double beta, double gamma);
 double fC(double ev1, double ev2, double eta);
 double fRut(EigenValueArrayType lambda, double alpha, double beta, double gamma);
 double fCup(EigenValueArrayType lambda, double eta);
-ImageType::Pointer ResampleImage(ImageType::Pointer input);
+ImageType::Pointer ResampleImage(ImageType::Pointer input, ImageType::SpacingType output_spacing);
 bool MatchVoxels(std::string s);
 void VoteVoxels(VoxelTypeImage::Pointer v, ByteImageType::Pointer mask);
 ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer input, VoxelTypeImage::Pointer v, IteratorTypeByteWithIndex &mask_iter, ImageType::IndexType &sidx, ImageType::IndexType &eidx);
@@ -278,7 +267,8 @@ template <class T> int solveCubic (T a, T b, T c, T d, T x[3]);
 
 typedef unsigned char SSlice[512][512]; 
 
-void ComputeSatoHessian(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon);
+void MeasureObjectness(ImageType::Pointer input);
+void ComputeSatoHessian(ImageType::Pointer input);
 void ComputeFrangiHessian(ImageType::Pointer input);
 
 float omega(float ls, float lt, float gamma);
@@ -295,7 +285,6 @@ float S_fold(float lambda[3], float alpha, float gamma);
 
 void HeuristicClosing(VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer chamfer_colon);
 std::vector<std::string> explode( const std::string &delimiter, const std::string &str);
-void CreateHessianGraph(ImageType::Pointer input);
 
-ImageType::Pointer ComputeObjectScale(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon);
-
+std::string VoxelTypeToString(VoxelType type);
+void HessianResponse(ImageType::Pointer input_aniso);

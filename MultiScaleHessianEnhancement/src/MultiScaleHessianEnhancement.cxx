@@ -24,6 +24,23 @@
 #include "itkImageFileWriter.h"
 
 #include "itkRescaleIntensityImageFilter.h"
+#include "itkResampleImageFilter.h"
+
+// Define the dimension of the images
+const unsigned int Dimension = 3;
+typedef short      InputPixelType;
+typedef double     OutputVesselnessPixelType;
+
+// Declare the types of the images
+typedef itk::Image< InputPixelType, Dimension>            InputImageType;
+
+typedef itk::Image< OutputVesselnessPixelType, Dimension> VesselnessOutputImageType;
+
+typedef itk::ImageFileReader< InputImageType  >      ImageReaderType;
+
+
+// Declare functions
+InputImageType::Pointer ResampleImage(InputImageType::Pointer input);
 
 int main(int argc, char* argv [] )
 {
@@ -35,20 +52,6 @@ int main(int argc, char* argv [] )
               << " Vessel_Enhanced_Output_Image [SigmaMin SigmaMax NumberOfScales]" << std::endl; 
     return EXIT_FAILURE;
     }
- 
- 
-  // Define the dimension of the images
-  const unsigned int Dimension = 3;
-  typedef short      InputPixelType;
-  //typedef double     OutputVesselnessPixelType;
-  typedef float     OutputVesselnessPixelType;
-
-  // Declare the types of the images
-  typedef itk::Image< InputPixelType, Dimension>            InputImageType;
-
-  typedef itk::Image< OutputVesselnessPixelType, Dimension> VesselnessOutputImageType;
-
-  typedef itk::ImageFileReader< InputImageType  >      ImageReaderType;
 
   ImageReaderType::Pointer   reader = ImageReaderType::New();
   reader->SetFileName ( argv[1] ); 
@@ -64,6 +67,15 @@ int main(int argc, char* argv [] )
     return EXIT_FAILURE;
     }
 
+  InputImageType::Pointer input_aniso = reader->GetOutput();
+
+  InputImageType::Pointer input = ResampleImage(input_aniso);
+  
+  typedef itk::ImageFileWriter<InputImageType> InputImageWriterType;
+  InputImageWriterType::Pointer inputWriter = InputImageWriterType::New();
+  inputWriter->SetInput(input);
+  inputWriter->SetFileName("input.nii");
+  inputWriter->Update();
 
   // Declare the type of multiscale vesselness filter
   typedef itk::MultiScaleHessianSmoothed3DToVesselnessMeasureImageFilter<
@@ -75,13 +87,22 @@ int main(int argc, char* argv [] )
   MultiScaleVesselnessFilterType::Pointer MultiScaleVesselnessFilter = 
                                       MultiScaleVesselnessFilterType::New();
 
+  MultiScaleVesselnessFilter->SetInput( input );
 
-  double sigma = reader->GetOutput()->GetSpacing()[0];
+  if ( argc >= 4 ) 
+    { 
+    MultiScaleVesselnessFilter->SetSigmaMin( atof(argv[3])  ); 
+    }
+ 
+  if ( argc >= 5 )
+    {
+    MultiScaleVesselnessFilter->SetSigmaMax( atof(argv[4]) ); 
+    }
 
-  MultiScaleVesselnessFilter->SetInput( reader->GetOutput() ); 
-  MultiScaleVesselnessFilter->SetSigmaMin( sigma );
-  MultiScaleVesselnessFilter->SetSigmaMax( 2*sigma );
-  MultiScaleVesselnessFilter->SetNumberOfSigmaSteps( 1 ); 
+  if ( argc >= 6 )
+    {
+    MultiScaleVesselnessFilter->SetNumberOfSigmaSteps( atoi(argv[5]) ); 
+    }
 
   try
     {
@@ -95,23 +116,23 @@ int main(int argc, char* argv [] )
 
   std::cout << "Writing out the enhanced image to " <<  argv[2] << std::endl;
 
-  //Rescale the output of the vesslness image
-  typedef itk::Image<unsigned char, 3>              OutputImageType; 
-  typedef itk::RescaleIntensityImageFilter< VesselnessOutputImageType,
-                                            OutputImageType> 
-                                            RescaleFilterType;
+  ////Rescale the output of the vesslness image
+  //typedef itk::Image<unsigned char, 3>              OutputImageType; 
+  //typedef itk::RescaleIntensityImageFilter< VesselnessOutputImageType,
+  //                                          OutputImageType> 
+  //                                          RescaleFilterType;
 
-  RescaleFilterType::Pointer rescale = RescaleFilterType::New();
-  rescale->SetInput( MultiScaleVesselnessFilter->GetOutput() );
-  rescale->SetOutputMinimum(   0 );
-  rescale->SetOutputMaximum( 255 );
-  rescale->Update();
+  //RescaleFilterType::Pointer rescale = RescaleFilterType::New();
+  //rescale->SetInput( MultiScaleVesselnessFilter->GetOutput() );
+  //rescale->SetOutputMinimum(   0 );
+  //rescale->SetOutputMaximum( 255 );
+  //rescale->Update();
 
-  typedef itk::ImageFileWriter< OutputImageType  >      ImageWriterType;
+  typedef itk::ImageFileWriter< VesselnessOutputImageType  >      ImageWriterType;
   ImageWriterType::Pointer writer = ImageWriterType::New();
 
   writer->SetFileName( argv[2] );
-  writer->SetInput ( rescale->GetOutput() );
+  writer->SetInput ( MultiScaleVesselnessFilter->GetOutput() );
 
   try
     {
@@ -125,5 +146,38 @@ int main(int argc, char* argv [] )
 
   return EXIT_SUCCESS;
 
+}
+
+InputImageType::Pointer ResampleImage(InputImageType::Pointer input)
+{
+	itk::ResampleImageFilter<InputImageType,InputImageType>::Pointer resampleFilter = itk::ResampleImageFilter<InputImageType,InputImageType>::New();
+	
+	typedef itk::AffineTransform< double, 3> TransformType;
+	TransformType::Pointer transform = TransformType::New();
+	resampleFilter->SetTransform(transform);
+	
+	resampleFilter->SetDefaultPixelValue( -1024 );
+
+	// Use isotropic spacing (set all spacing to spacing[0])
+	InputImageType::SpacingType spacing = input->GetSpacing();
+	InputImageType::SizeType size = input->GetLargestPossibleRegion().GetSize();
+	InputImageType::SizeType output_size;
+
+	output_size[0] = size[0] * spacing[0] / spacing[0];
+	output_size[1] = size[1] * spacing[1] / spacing[0];
+	output_size[2] = size[2] * spacing[2] / spacing[0];
+
+	spacing[1] = spacing[0];
+	spacing[2] = spacing[0];
+
+	resampleFilter->SetOutputSpacing( spacing );
+	resampleFilter->SetOutputOrigin( input->GetOrigin() );
+	resampleFilter->SetOutputDirection( input->GetDirection() );
+
+	resampleFilter->SetSize( output_size );
+	resampleFilter->SetInput( input );
+	resampleFilter->Update();
+
+	return resampleFilter->GetOutput();
 }
 

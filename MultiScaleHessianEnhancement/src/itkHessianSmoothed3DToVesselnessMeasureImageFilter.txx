@@ -84,8 +84,15 @@ HessianSmoothed3DToVesselnessMeasureImageFilter< TPixel >
   this->AllocateOutputs();
   oit = ImageRegionIterator<OutputImageType>(output,
                                              output->GetRequestedRegion());
+
+  // Create input iterator
+  ImageRegionConstIterator<InputImageType> input_it;
+  input_it = ImageRegionConstIterator<InputImageType>(
+      this->GetInput(), this->GetInput()->GetRequestedRegion());
+
   oit.GoToBegin();
   it.GoToBegin();
+  input_it.GoToBegin();
 
   typedef Image<float, 3> FloatImageType;
 
@@ -170,29 +177,41 @@ HessianSmoothed3DToVesselnessMeasureImageFilter< TPixel >
 
 	//file << Lambda1 << " " << Lambda2 << " " << Lambda3 << "\n";
 
-    if ( Lambda3 <= 0.0 || 
-         vnl_math_abs( Lambda3 ) < EPSILON )
+    //if ( Lambda3 <= 100.0 || 
+     //    vnl_math_abs( Lambda3 ) < EPSILON )
+
+
+	if ( ( vnl_math_abs( Lambda3 ) >= 100 && input_it.Get() >= 200 ) ||
+		 ( vnl_math_abs( Lambda3 ) <= 100 && input_it.Get() >= -250 && input_it.Get() <= 200 )
+		) 
       {
-      oit.Set( NumericTraits< OutputPixelType >::Zero );
-      } 
-    else
-      {
+      
    
       double Lambda1Abs = vnl_math_abs( Lambda1 );
       double Lambda2Abs = vnl_math_abs( Lambda2 );
       double Lambda3Abs = vnl_math_abs( Lambda3 );
 
 	  double Ra = Lambda1Abs / vcl_sqrt( Lambda2Abs * Lambda3Abs );
+
 	  double Fa = vcl_exp(  - vnl_math_sqr( Ra ) / (2 * vnl_math_sqr( m_Alpha ) ) );
-
+		
 	  double Rb = Lambda2Abs / Lambda3Abs;
-	  double Fb = vcl_exp( - vnl_math_sqr( Rb - m_Gamma ) / (2 * vnl_math_sqr( m_Beta ) ) );
 
-	  double Frut = Fa * Fb;
+	  double Fb = vcl_exp( - vnl_math_sqr( Rb - m_Gamma ) / (2 * vnl_math_sqr( m_Beta ) ) );
 
 	  double Fc1 = (1.0 - vcl_exp( - vnl_math_sqr( Lambda1Abs / Lambda2Abs ) / (2 * vnl_math_sqr( m_Eta ) ) ) );
 
 	  double Fc2 = (1.0 - vcl_exp( - vnl_math_sqr( Lambda2Abs / Lambda3Abs ) / (2 * vnl_math_sqr( m_Eta ) ) ) );
+
+	   if(  m_ScaleVesselnessMeasure ) 
+       {
+			Fa *= Lambda3Abs;
+			Fb *= Lambda3Abs;
+			Fc1 *= Lambda3Abs;
+			Fc2 *= Lambda3Abs;
+       }
+
+	  double Frut = Fa * Fb;
 
 	  double Fcup =  Fc1 * Fc2;
 
@@ -215,9 +234,13 @@ HessianSmoothed3DToVesselnessMeasureImageFilter< TPixel >
         {
         oit.Set( static_cast< OutputPixelType >( H ) );
         }
-      }
+      } else {
+		oit.Set( NumericTraits< OutputPixelType >::Zero );
+	  }
+
     ++it;
     ++oit;
+	++input_it;
 
 	for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
 	for (int i=0; i<6; i++) { ++FIterVector[i]; }
@@ -232,7 +255,7 @@ HessianSmoothed3DToVesselnessMeasureImageFilter< TPixel >
 		WriterType::SetGlobalWarningDisplay(false);
 	   
 		std::stringstream ss;
-		ss << "Lambda_sigma_" << m_Sigma << "_" << i << ".hdr";
+		ss << "Lambda_sigma_" << m_Sigma << "_" << i << ".nii";
 		writer->SetFileName(ss.str().c_str());
 		writer->SetInput( LambdaImageVector[i] );
 		std::cout<<"Writing: "<<ss.str()<<std::endl;
@@ -254,7 +277,7 @@ HessianSmoothed3DToVesselnessMeasureImageFilter< TPixel >
 		WriterType::SetGlobalWarningDisplay(false);
 	   
 		std::stringstream ss;
-		ss << "F_" << fs[i] << "_" << m_Sigma << ".hdr";
+		ss << "F_" << fs[i] << "_" << m_Sigma << ".nii";
 		writer->SetFileName(ss.str().c_str());
 		writer->SetInput( FImageVector[i] );
 		std::cout<<"Writing: "<<ss.str()<<std::endl;
@@ -270,7 +293,7 @@ HessianSmoothed3DToVesselnessMeasureImageFilter< TPixel >
 	WriterType::Pointer writer = WriterType::New();
 	
 	std::stringstream ss;
-	ss << "H_sigma_" << m_Sigma << ".hdr";
+	ss << "H_sigma_" << m_Sigma << ".nii";
 	writer->SetFileName(ss.str().c_str());
 	writer->SetInput( castFilter->GetOutput() );
 	std::cout<<"Writing: "<<ss.str()<<std::endl;

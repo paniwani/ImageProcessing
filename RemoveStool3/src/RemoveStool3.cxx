@@ -16,18 +16,19 @@ const double GAMMA = 0.3;
 const double ETA = 0.2;
 
 bool truncateOn = true;
-unsigned int truncate_ar[2] = {90, 110};
-
-//boost::xpressive::sregex rex = boost::xpressive::sregex::compile( "^2*[5-7]+1+$" );
+unsigned int truncate_ar[2] = {85, 100};
 
 int main(int argc, char * argv[])
 {
 	//-------------------------------------------BEGIN SETUP-------------------------------------------------------
-	
+
+	// Clean up old images
+	//system("del *.hdr; del *.img; del *.nii");
+
 	if( argc < 3 )
 	{
 		std::cerr << "Usage: " << std::endl;
-		std::cerr << argv[0] << " DicomDirectory intModified";
+		std::cerr << argv[0] << " DicomDirectory Modified";
 		system("pause");
 		return EXIT_FAILURE;
 	}
@@ -94,40 +95,7 @@ int main(int argc, char * argv[])
 	// Print out the sub region of the image, un modified
 	WriteITK(input_temp,"input_temp.hdr");
 
-	/*
-	// Subtract via threshold
-	for (input_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter)
-	{
-		if (input_iter.Get() > 200 || input_iter.Get() < -600)
-		{
-			input_iter.Set(-1024);
-		}
-	}
-
-	WriteITK(input_temp,"simple_threshold_subtract.hdr");
-	*/
-
-	//CreateHessianGraph(input);
-
-	//RunRegionalMinima(input_temp);
-
-	//ComputeFrangiHessian(input);
-	//ComputeHessianResponse3(input);
-
-	//HessianMeasure(input);
-
-	// Test resampling
-	//ImageType::Pointer input_resample = AllocateNewImage(fullRegion);
-	//input_resample = ResampleImage(input);
-	//WriteITK(input_resample, "input_resample.hdr");
-
-	// Test hessian response
-
-	//ComputeHessianResponse(input);
-
-	//ImageType::Pointer Himage = AllocateNewImage(fullRegion);
-	//Himage = ComputeHessianResponse(input_temp);
-	//WriteITK(Himage,"H.hdr");
+	HessianResponse(input_temp);
 
 	// Creates an image to store the type of voxel for each voxel in the sub image
 	VoxelTypeImage::Pointer voxel_type = VoxelTypeImage::New();
@@ -193,28 +161,28 @@ int main(int argc, char * argv[])
 	// outputs the gradient magnitude purely for reference
 	std::cerr<<"Gradient max: "<<gradient_max<<std::endl;
 
-	// Fill in Stool Holes
-	for (voxel_type_iter.GoToBegin(), temp_iter.GoToBegin();
-        !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
-        ++voxel_type_iter, ++temp_iter)
-    {
-        switch (voxel_type_iter.Get()) {
-            case Tissue:
-                temp_iter.Set(0);
-                break;
-            case Stool:
-                temp_iter.Set(1);
-                break;
-            case Unclassified:
-                temp_iter.Set(0);
-                break;
-            case Air:
-                temp_iter.Set(0);
-                break;
-        }
-    }
+	//// Fill in Stool Holes
+	//for (voxel_type_iter.GoToBegin(), temp_iter.GoToBegin();
+ //       !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
+ //       ++voxel_type_iter, ++temp_iter)
+ //   {
+ //       switch (voxel_type_iter.Get()) {
+ //           case Tissue:
+ //               temp_iter.Set(0);
+ //               break;
+ //           case Stool:
+ //               temp_iter.Set(1);
+ //               break;
+ //           case Unclassified:
+ //               temp_iter.Set(0);
+ //               break;
+ //           case Air:
+ //               temp_iter.Set(0);
+ //               break;
+ //       }
+ //   }
 
-	//WriteITK(temp, "temp_stool.hdr");
+	////WriteITK(temp, "temp_stool.hdr");
 
 	/*// Use voting filter to fill in holes
 	HoleFillingFilterType::Pointer holeFilter = HoleFillingFilterType::New();
@@ -233,47 +201,47 @@ int main(int argc, char * argv[])
 	WriteITK(temp,"stool_voting_hole_filled_11.hdr");
 	*/
 
-    StructuringElementType  structuringElement;
-    structuringElement.SetRadius( 1 );  // .5
-    structuringElement.CreateStructuringElement();
-	ClosingFilterType::Pointer closingFilter = ClosingFilterType::New();
-	closingFilter->SetKernel(structuringElement);	 
-	closingFilter->SetInput(temp);
-	closingFilter->Update();
-	temp=closingFilter->GetOutput();
-	temp_iter=IteratorTypeFloat4WithIndex(temp,fullRegion);
-	closingFilter.~SmartPointer();
+ //   StructuringElementType  structuringElement;
+ //   structuringElement.SetRadius( 1 );  // .5
+ //   structuringElement.CreateStructuringElement();
+	//ClosingFilterType::Pointer closingFilter = ClosingFilterType::New();
+	//closingFilter->SetKernel(structuringElement);	 
+	//closingFilter->SetInput(temp);
+	//closingFilter->Update();
+	//temp=closingFilter->GetOutput();
+	//temp_iter=IteratorTypeFloat4WithIndex(temp,fullRegion);
+	//closingFilter.~SmartPointer();
 
-	//WriteITK(temp, "temp_stool_closed.hdr");
-	
-	// Apply stool closing and prepare for tissue closing
-	for (temp_iter.GoToBegin(), voxel_type_iter.GoToBegin();
-        !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
-        ++voxel_type_iter, ++temp_iter)
-    {
-        switch(voxel_type_iter.Get()) {
-            case Tissue:         
-				if (temp_iter.Get()==1) {
-					voxel_type_iter.Set(Stool);			//Modify tissue into stool holes
-                }
-                temp_iter.Set(1);
-				break;
-			case Stool:
-                temp_iter.Set(-1);
-                break;
-            case Unclassified:
-				if (temp_iter.Get()==1) {
-					//voxel_type_iter.Set(Stool);			//Modify unclassified into stool holes
-                }
-				temp_iter.Set(0);
-                break;
-            case Air:
-                temp_iter.Set(-1);
-                break;
-        }
-    }
+	////WriteITK(temp, "temp_stool_closed.hdr");
+	//
+	//// Apply stool closing and prepare for tissue closing
+	//for (temp_iter.GoToBegin(), voxel_type_iter.GoToBegin();
+ //       !voxel_type_iter.IsAtEnd() && !temp_iter.IsAtEnd();  
+ //       ++voxel_type_iter, ++temp_iter)
+ //   {
+ //       switch(voxel_type_iter.Get()) {
+ //           case Tissue:         
+	//			if (temp_iter.Get()==1) {
+	//				voxel_type_iter.Set(Stool);			//Modify tissue into stool holes
+ //               }
+ //               temp_iter.Set(1);
+	//			break;
+	//		case Stool:
+ //               temp_iter.Set(-1);
+ //               break;
+ //           case Unclassified:
+	//			if (temp_iter.Get()==1) {
+	//				//voxel_type_iter.Set(Stool);			//Modify unclassified into stool holes
+ //               }
+	//			temp_iter.Set(0);
+ //               break;
+ //           case Air:
+ //               temp_iter.Set(-1);
+ //               break;
+ //       }
+ //   }
 
-	//WriteITK(voxel_type, "voxel_type_stool_closed.hdr");
+	////WriteITK(voxel_type, "voxel_type_stool_closed.hdr");
 
 	//WriteITK(temp, "temp_tissue.hdr");
 
@@ -416,7 +384,7 @@ int main(int argc, char * argv[])
 
 	WriteITK(chamfer_colon, "chamfer_colon_air_mask.hdr");
 
-	ImageType::Pointer object_scale = ComputeObjectScale(input, chamfer_colon);
+	//ImageType::Pointer object_scale = ComputeObjectScale(input, chamfer_colon);
 
 
 
@@ -427,7 +395,7 @@ int main(int argc, char * argv[])
 	//RunFuzzy(input_temp,chamfer_colon,voxel_type);
 
 
-	//ComputeSatoHessian(input, chamfer_colon);
+	//ComputeSatoHessian(input);
 
 
 	// Test region growing
@@ -454,14 +422,13 @@ int main(int argc, char * argv[])
     input_interpolator->SetSplineOrder(3);
     input_interpolator->SetInputImage(input);
 
-	//if (Modified)
-	//{
-		// Interpolate gradient magnitude image, NOTE: using 2x image gradient, (See Carston paper)
-		for (gradient_magnitude_iter.GoToBegin(); !gradient_magnitude_iter.IsAtEnd(); ++gradient_magnitude_iter)
-		{
-			gradient_magnitude_iter.Set(2*gradient_magnitude_iter.Get());
-		}
-	//}
+	for (gradient_magnitude_iter.GoToBegin(); !gradient_magnitude_iter.IsAtEnd(); ++gradient_magnitude_iter)
+	{
+		gradient_magnitude_iter.Set(2*gradient_magnitude_iter.Get());
+	}
+
+	WriteITK(gradient_magnitude, "gradient_magnitude_2x.hdr");
+	
 
 	InterpolationType::Pointer gradient_magnitude_interpolator = InterpolationType::New();
 	gradient_magnitude_interpolator->SetSplineOrder(3);
@@ -485,14 +452,19 @@ int main(int argc, char * argv[])
 
 	std::cerr << "Running voxel edge classification..." << std::endl;
 
+	// Write voxel edge to text file
+	std::ofstream vefile;
+	vefile.open("ve.txt");
+	vefile << "Xindex\tYindex\tZindex\tXgrad\tYgrad\tZgrad\tIntensity\tGradient\tSmax\tType\n";
+
 	//ReadITK(voxel_type, "Modified_6_voxel_edge_class.hdr");
 	voxel_type_iter = IteratorTypeVoxelType(voxel_type,fullRegion);
 
 	int count = 0;
 	//Runs edge classification with 3 different increments inside the colon only
-    for (voxel_type_iter.GoToBegin(), input_smax_iter.GoToBegin(), gradient_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(); 
+    for (voxel_type_iter.GoToBegin(), input_smax_iter.GoToBegin(), gradient_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), input_iter.GoToBegin(), gradient_magnitude_iter.GoToBegin(); 
 		!voxel_type_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !gradient_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd(); 
-		++voxel_type_iter, ++input_smax_iter, ++gradient_iter, ++chamfer_colon_iter) {
+		++voxel_type_iter, ++input_smax_iter, ++gradient_iter, ++chamfer_colon_iter, ++input_iter, ++gradient_magnitude_iter) {
 		
 		if (chamfer_colon_iter.Get() == 1 && voxel_type_iter.Get()==Unclassified) {
 			ImageType::IndexType voxel_index = voxel_type_iter.GetIndex();
@@ -525,6 +497,10 @@ int main(int argc, char * argv[])
 			}
 
 			voxel_type_iter.Set(temp_type);
+
+			vefile << voxel_index[0] << "\t" << 511-voxel_index[1] << "\t" << voxel_index[2] << "\t";
+			vefile << grad[0] << "\t" << grad[1] << "\t" << grad[2] << "\t";
+			vefile << input_iter.Get() << "\t" << gradient_magnitude_iter.Get() << "\t" << input_smax_iter.Get() << "\t" << VoxelTypeToString(temp_type) << "\n";
 		}
 
 		if (++count % 100000 == 0)
@@ -533,6 +509,8 @@ int main(int argc, char * argv[])
 
 	WriteITK(input_smax,"smax.hdr");
 
+	vefile.close();
+
 	// Deletes the Interpolators
 	input_interpolator.~SmartPointer();
 
@@ -540,22 +518,48 @@ int main(int argc, char * argv[])
 
  	std::cerr<<"Done Edge"<<std::endl;
 
-	//// Create mask of any tissue involvement
-	//ByteImageType::Pointer tissue_involvement = AllocateNewByteImage(fullRegion);
-	//tissue_involvement->FillBuffer(0);
-	//IteratorTypeByteWithIndex tissue_involvement_iter(tissue_involvement,fullRegion);
+	// Remove TA and TS that are far from tissue
+	// Create tissue mask
+	ByteImageType::Pointer chamfer_tissue = AllocateNewByteImage(fullRegion);
+	chamfer_tissue->FillBuffer(0);
+	IteratorTypeByteWithIndex chamfer_tissue_iter(chamfer_tissue,fullRegion);
 
-	//for (tissue_involvement_iter.GoToBegin(), voxel_type_iter.GoToBegin(); !tissue_involvement_iter.IsAtEnd(); ++tissue_involvement_iter, ++voxel_type_iter)
-	//{
-	//	if (voxel_type_iter.Get() == Tissue || voxel_type_iter.Get() == TissueAir || voxel_type_iter.Get() == TissueStool)
-	//	{
-	//		tissue_involvement_iter.Set(1);
-	//	}
-	//}
+	for (chamfer_tissue_iter.GoToBegin(), voxel_type_iter.GoToBegin(); !chamfer_tissue_iter.IsAtEnd(); ++chamfer_tissue_iter, ++voxel_type_iter)
+	{
+		if (voxel_type_iter.Get() == Tissue)
+		{
+			chamfer_tissue_iter.Set(1); // distance to tissue
+		}
+	}
 
-	//WriteITK(tissue_involvement, "tissue_involvement.hdr");
+	WriteITK(chamfer_tissue, "tissue_involvement.hdr");
 
-	// Optimize SA transitions using gradient information
+	chamfer_filter = ChamferDistanceFilterType::New();
+	chamfer_filter->SetInput(chamfer_tissue);
+	chamfer_filter->SetWeights(chamfer_weights, chamfer_weights+3);
+	chamfer_filter->SetDistanceFromObject(true);
+	chamfer_filter->Update();
+	chamfer_tissue=chamfer_filter->GetOutput();
+	chamfer_tissue_iter = IteratorTypeByteWithIndex(chamfer_tissue,fullRegion);
+	chamfer_filter.~SmartPointer();
+
+	WriteITK(chamfer_tissue, "chamfer_tissue_distance.hdr");
+
+	for (chamfer_tissue_iter.GoToBegin(), voxel_type_iter.GoToBegin(); !chamfer_tissue_iter.IsAtEnd(); ++chamfer_tissue_iter, ++voxel_type_iter)
+	{
+		if (voxel_type_iter.Get() == TissueAir || voxel_type_iter.Get() == TissueStool)
+		{
+			if (chamfer_tissue_iter.Get() > 5) 
+			{
+				voxel_type_iter.Set(StoolAir);
+			}
+		}
+	}
+
+	WriteITK(voxel_type, "voxel_type_tissue_fix_5.hdr");
+
+
+	//Optimize SA transitions using gradient information
 	//std::cerr<<"Running voxel edge optimization"<<std::endl;
 	
 	//OptimizeVoxelEdge(input, voxel_type, gradient);
@@ -1741,14 +1745,14 @@ void VoxelEdgeClassification(float * threshold, VoxelType * previous, double d2,
 	
 	distanceTA=AverageTissueAirDist(temp_intensity,temp_gradient_magnitude);
 
-	if (distanceSA<=distanceTS && distanceSA<=distanceTA){
+	if (distanceSA<=distanceTS && distanceSA<=distanceTA) {
 		distance=distanceSA;
 		voxel_type=StoolAir;
 
 		if (!Modified)
 			smax=stool_air_Smax;
 
-	} else if (distanceTS<=distanceTA && distanceTS<=distanceSA ) {
+	} else if (distanceTS<=distanceTA && distanceTS<=distanceSA) {
 		distance=distanceTS;
 		voxel_type=TissueStool;
 
@@ -1810,18 +1814,6 @@ float ComputeSmaxFit(float intensity[], float gradient_magnitude[], float Smax) 
 float AverageTissueAirDist(float intensity[], float gradient_magnitude[]) {
 //	std::cerr<<"TissueAir"<<std::endl;
 	double coefficients[3]={-4.0/1000,-4.0,0};
-	
-	/*if (Modified) {
-		coefficients[0]= -6.0/1000;
-		coefficients[1]= -6.0;
-		coefficients[2]=	0;
-	}*/
-
-	if (Modified) {
-		coefficients[0]= -4.0/1000;
-		coefficients[1]= -4.0;
-		coefficients[2]=	0;
-	}
 
 	vnl_real_polynomial poly(coefficients,3);
     double average=0;
@@ -1931,7 +1923,7 @@ VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, ImageTy
 
 		*/
 
-		if ((input_pixel >=400 && input_gradient_pixel<=0.8*input_pixel) || input_pixel >= 800) {
+		if ((input_pixel >=180 && input_gradient_pixel<=0.8*input_pixel) || input_pixel >= 800) {
 			return Stool;
 		} else if (input_pixel<=-600) {
 			return Air;
@@ -2510,6 +2502,29 @@ int VoxelTypeToNum(VoxelType type)
 	return 0;
 }
 
+std::string VoxelTypeToString(VoxelType type)
+{
+	switch(type) {
+		case Stool:
+			return "Stool";
+		case Air:
+			return "Air";
+		case Tissue:
+			return "Tissue";
+		case Unclassified:
+			return "Unclassified";
+		case StoolAir:
+			return "StoolAir";
+		case TissueAir:
+			return "TissueAir";
+		case TissueStool:
+			return "TissueStool";
+		case ThinStool:
+			return "ThinStool";
+	}
+	return "Error";
+}
+
 VoxelType NumToVoxelType(int num)
 {
 	switch(num)
@@ -2577,7 +2592,18 @@ ImageType::Pointer ReadDicom( std::string path )
     orienter->SetInput(reader->GetOutput());
     orienter->Update();
 
-    return orienter->GetOutput();
+	// Set direction cosines to identity matrix
+	ImageType::Pointer output = orienter->GetOutput();
+	
+	ImageType::DirectionType direction;
+	direction.Fill(0);
+	direction[0][0] = 1;
+	direction[1][1] = 1;
+	direction[2][2] = 1;
+	
+	output->SetDirection(direction);
+
+    return output;
 
 }
 
@@ -2652,205 +2678,6 @@ void SmoothPartialVector(ImageVectorType::Pointer pv, ByteImageType::Pointer cha
 	}
 }
 
-ImageType::Pointer ComputeHessianResponse(ImageType::Pointer input)
-{
-
-	// Resample input to make it anisotropic
-	//input = ResampleImage(input);
-	//WriteITK(input, "input_resample.hdr");
-
-	// Get input info
-	ImageType::RegionType region = input->GetLargestPossibleRegion();
-	ImageType::SpacingType spacing = input->GetSpacing();
-
-	// Threshold to compute only in tagged regions
-	IteratorTypeFloat4WithIndex input_iter(input,region);
-
-	ByteImageType::Pointer tagged = AllocateNewByteImage(region);
-	IteratorTypeByteWithIndex tagged_iter(tagged,region);
-
-	for (input_iter.GoToBegin(), tagged_iter.GoToBegin();
-		 !input_iter.IsAtEnd() && !tagged_iter.IsAtEnd();
-		 ++input_iter, ++tagged_iter)
-	{
-		if (input_iter.Get() > 200) 
-		{
-			tagged_iter.Set(1);
-		} else {
-			tagged_iter.Set(0);
-		}
-	}
-
-	// Create response image
-	ImageType::Pointer Himage = AllocateNewImage(region);
-	IteratorTypeFloat4WithIndex Himage_iter(Himage,region);
-
-	// Compute hessian across sigma scales
-	double sigma[7] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0], 6*spacing[0], 7*spacing[0]};
-
-	for (int k=0; k<5; k++)
-	{
-		// Compute smoothed Hessian
-		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
-		hessianFilter->SetInput(input);
-		hessianFilter->SetNormalizeAcrossScale(true);
-		hessianFilter->SetSigma(sigma[k]);
-		hessianFilter->Update();
-		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
-
-		// Create helper images and iters to visualize algorithm
-		std::vector< ImageType::Pointer > LambdaImageVector(3);
-		std::vector< ImageType::Pointer > FImageVector(7); // A, B, C1, C2, Cup, Rut, Ralpha
-
-		std::vector< itk::ImageRegionIterator<ImageType> > LambdaIterVector(3);
-		std::vector< itk::ImageRegionIterator<ImageType> > FIterVector(7);
-
-		for (int i=0; i<3; i++)
-		{
-			LambdaImageVector[i] = AllocateNewImage(region);
-			LambdaIterVector[i] = itk::ImageRegionIterator<ImageType>( LambdaImageVector[i], region);
-			LambdaIterVector[i].GoToBegin();
-		}
-
-		for (int i=0; i<7; i++)
-		{
-			FImageVector[i] = AllocateNewImage(region);
-			FIterVector[i] = itk::ImageRegionIterator<ImageType>( FImageVector[i], region );
-			FIterVector[i].GoToBegin();
-		}
-
-		hessian_iter.GoToBegin();
-		tagged_iter.GoToBegin();
-		Himage_iter.GoToBegin();
-
-		int count=0;
-
-		while (!hessian_iter.IsAtEnd()) 
-		{
-			EigenValueArrayType lambda;
-
-			//if (tagged_iter.Get() == 1) { // compute only in tagged region
-				
-				// Get eigenvalues
-				hessian_iter.Get().ComputeEigenValues(lambda);
-				//std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
-				std::sort(lambda.Begin(),lambda.End(),OrderByValueDesc);
-
-				if (count % 50000 == 0)
-				{
-					std::cout << "what" << std::endl;
-				}	
-
-				for (int i=0; i<3; i++)
-				{
-					LambdaIterVector[i].Set( lambda[i] );
-				}
-
-				if ( lambda[2] < 0 )
-				{
-					// A, B, C1, C2, Cup, Rut
-					FIterVector[0].Set( fA(lambda, ALPHA) );
-					FIterVector[1].Set( fB(lambda, BETA, GAMMA) );
-					FIterVector[2].Set( fC(lambda[0], lambda[1], ETA) );
-					FIterVector[3].Set( fC(lambda[1], lambda[2], ETA) );
-					FIterVector[4].Set( fCup(lambda, ETA) );
-					FIterVector[5].Set( fRut(lambda, ALPHA, BETA, GAMMA) );
-
-
-					FIterVector[6].Set( abs(lambda[0])/sqrt(abs(lambda[1]*lambda[2]) ));
-
-					Himage_iter.Set( vnl_math_max( fRut(lambda, ALPHA, BETA, GAMMA), fCup(lambda, ETA) ) );	
-				} else {
-					Himage_iter.Set(0);
-//
-					for (int i=0; i<6; i++) { FIterVector[i].Set(0); }
-				}
-				
-
-							
-			//} else {
-			//	Himage_iter.Set(0);
-			//	for (int i=0; i<3; i++) { LambdaIterVector[i].Set(0); }
-			//	for (int i=0; i<7; i++) { FIterVector[i].Set(0); }
-			//}
-
-			++hessian_iter;
-			++tagged_iter;
-			++Himage_iter;
-			count++;
-
-			for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
-			for (int i=0; i<7; i++) { ++FIterVector[i]; }
-		}
-
-		std::stringstream ss;
-		ss << "sigma_" << sigma[k] << "H.hdr";
-		WriteITK(Himage, ss.str());
-
-		for (int i=0; i<3; i++)
-		{
-			std::stringstream ss;
-			ss << "sigma_" << sigma[k] << "_lambda_" << i << ".hdr";
-			WriteITK(LambdaImageVector[i], ss.str());
-		}
-	
-		/*
-		for (int i=0; i<3; i++)
-		{
-			RescaleIntensityFilterType::Pointer rescaleFilter = RescaleIntensityFilterType::New();
-			rescaleFilter->SetInput( LambdaImageVector[i] );
-			rescaleFilter->SetOutputMinimum(0);
-			rescaleFilter->SetOutputMaximum(1);
-			rescaleFilter->Update();
-			LambdaImageVector[i]=rescaleFilter->GetOutput();
-			LambdaIterVector[i]=itk::ImageRegionIterator<ImageType>( LambdaImageVector[i], region);
-
-			for (LambdaIterVector[i].GoToBegin(), tagged_iter.GoToBegin();
-				 !LambdaIterVector[i].IsAtEnd() && !tagged_iter.IsAtEnd();
-				 ++LambdaIterVector[i], ++tagged_iter)
-			{
-				if (tagged_iter.Get() != 1)
-				{
-					LambdaIterVector[i].Set(0);
-				}
-			}
-
-			std::stringstream ss;
-			ss << "sigma_" << sigma[k] << "_lambda_rescale_" << i << ".hdr";
-			WriteITK(LambdaImageVector[i], ss.str());
-		}
-		*/
-
-		for (int i=0; i<7; i++)
-		{
-			//if (i==0 || i==6) {
-				std::stringstream ss;
-				ss << "sigma_" << sigma[k] << "_F_";
-				
-				// A, B, C1, C2, Cup, Rut
-				switch (i)
-				{
-					case 0: ss<<"a_alpha_"<<ALPHA; break;
-					case 1: ss<<"b"; break;
-					case 2: ss<<"c1"; break;
-					case 3: ss<<"c2"; break;
-					case 4: ss<<"cup"; break;
-					case 5: ss<<"rut"; break;
-					case 6: ss<<"Ralpha"; break;
-				}
-
-				ss << ".hdr";
-				
-				WriteITK(FImageVector[i], ss.str());
-			//}
-		}
-	}
-
-	
-
-	return Himage;
-}
-
 void MeasureObjectness(ImageType::Pointer input)
 {
 	// test over sigma
@@ -2909,600 +2736,6 @@ void MeasureObjectness(ImageType::Pointer input)
 	}
 }
 
-void ComputeVesselness(ImageType::Pointer input)
-{
-	// Get input info
-	ImageType::RegionType region = input->GetLargestPossibleRegion();
-	ImageType::SpacingType spacing = input->GetSpacing();
-
-	// Create response image
-	ImageType::Pointer Himage = AllocateNewImage(region);
-	IteratorTypeFloat4WithIndex Himage_iter(Himage,region);
-
-	// Compute hessian across sigma scales
-	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
-
-	for (int k=0; k<2; k++)
-	{
-		// Compute smoothed Hessian
-		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
-		hessianFilter->SetInput(input);
-		hessianFilter->SetNormalizeAcrossScale(true);
-		hessianFilter->SetSigma(sigma[k]);
-		hessianFilter->Update();
-		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
-
-		// Create helper images and iters to visualize algorithm
-		std::vector< ImageType::Pointer > LambdaImageVector(3);
-		std::vector< itk::ImageRegionIterator<ImageType> > LambdaIterVector(3);
-
-		for (int i=0; i<3; i++)
-		{
-			LambdaImageVector[i] = AllocateNewImage(region);
-			LambdaIterVector[i] = itk::ImageRegionIterator<ImageType>( LambdaImageVector[i], region);
-			LambdaIterVector[i].GoToBegin();
-		}
-
-		hessian_iter.GoToBegin();
-		Himage_iter.GoToBegin();
-		
-		float max=0;
-		int count=0;
-
-		while (!hessian_iter.IsAtEnd()) 
-		{
-			EigenValueArrayType lambda;
-
-			// Get eigenvalues
-			hessian_iter.Get().ComputeEigenValues(lambda);
-			std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
-			//std::sort(lambda.Begin(),lambda.End(),OrderByValue);
-
-			for (int i=0; i<3; i++)
-			{
-				LambdaIterVector[i].Set( lambda[i] );
-			}
-
-			Himage_iter.Set( vesselness(lambda[0], lambda[1], lambda[2], 0.25, 1, 1) );	
-
-			count++;
-
-			++hessian_iter;
-			++Himage_iter;
-
-			for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
-		}
-
-		std::stringstream ss;
-		ss << "sigma_" << sigma[k] << "_Vesselness.hdr";
-		WriteITK(Himage,ss.str());
-	}
-}
-
-ImageType::Pointer ComputeHessianResponse2(ImageType::Pointer input)
-{
-	ImageType::RegionType fullRegion = input->GetLargestPossibleRegion();
-	ImageType::IndexType origin = fullRegion.GetIndex();
-	ImageType::SizeType size = fullRegion.GetSize();
-	ImageType::SpacingType spacing = input->GetSpacing();
-
-	ImageType::Pointer output = AllocateNewImage(fullRegion);
-	
-	IteratorTypeFloat4WithIndex input_iter(input,fullRegion);
-	IteratorTypeFloat4WithIndex output_iter(output,fullRegion);	
-	
-	NeighborhoodIteratorType::RadiusType radius;
-	radius[0] = radius[1] = radius[2] = 1;
-
-	DerivativeImageFilterType::Pointer derivative_filter = DerivativeImageFilterType::New();
-	derivative_filter->SetInput(input);
-	derivative_filter->SetOrder(1);
-	derivative_filter->SetDirection(0);
-	derivative_filter->SetUseImageSpacing(true);
-	derivative_filter->Update();
-
-	ImageType::Pointer x_partial = derivative_filter->GetOutput();
-	IteratorTypeFloat4WithIndex x_iter(x_partial,fullRegion);
-
-	derivative_filter.~SmartPointer();
-	derivative_filter = DerivativeImageFilterType::New();
-	derivative_filter->SetInput(input);
-	derivative_filter->SetOrder(1);
-	derivative_filter->SetDirection(1);
-	derivative_filter->SetUseImageSpacing(true);
-	derivative_filter->Update();
-
-	ImageType::Pointer y_partial = derivative_filter->GetOutput();
-	IteratorTypeFloat4WithIndex y_iter(y_partial,fullRegion);
-
-	derivative_filter.~SmartPointer();
-	derivative_filter = DerivativeImageFilterType::New();
-	derivative_filter->SetInput(input);
-	derivative_filter->SetOrder(1);
-	derivative_filter->SetDirection(2);
-	derivative_filter->SetUseImageSpacing(true);
-	derivative_filter->Update();
-
-	ImageType::Pointer z_partial = derivative_filter->GetOutput();
-	IteratorTypeFloat4WithIndex z_iter(z_partial,fullRegion);
-
-	derivative_filter.~SmartPointer();
-
-	WriteITK(x_partial,"x_partial.hdr");
-	WriteITK(y_partial,"y_partial.hdr");
-	WriteITK(z_partial,"z_partial.hdr");
-
-	float weights[3];
-	weights[0] = 1/spacing[0];
-	weights[1] = 1/spacing[1];
-	weights[2] = 1/spacing[2];
-
-	ImageType::Pointer lamda1 = AllocateNewImage(fullRegion);
-	ImageType::Pointer lamda2 = AllocateNewImage(fullRegion);
-	ImageType::Pointer lamda3 = AllocateNewImage(fullRegion);
-
-	IteratorTypeFloat4WithIndex lamda1_iter(lamda1,fullRegion);
-	IteratorTypeFloat4WithIndex lamda2_iter(lamda2,fullRegion);
-	IteratorTypeFloat4WithIndex lamda3_iter(lamda3,fullRegion);
-
-	int count=0;
-	float max=0;
-
-	input_iter.GoToBegin();
-	output_iter.GoToBegin();
-	x_iter.GoToBegin();
-	y_iter.GoToBegin();
-	z_iter.GoToBegin();
-	lamda1_iter.GoToBegin(); lamda2_iter.GoToBegin(); lamda3_iter.GoToBegin();
-
-	while (!input_iter.IsAtEnd())
-	{
-		vnl_matrix_fixed<float ,3,3> Next;
-		vnl_matrix_fixed<float ,3,3> Previous;
-		for (int i=0; i<3; i++) {
-			ImageType::IndexType next_index = input_iter.GetIndex();
-			next_index[i]=next_index[i]+1;
-			if (next_index[i]>size[i]-1+origin[i]) {
-				next_index[i]=size[i]-1+origin[i];
-			}
-
-			ImageType::IndexType previous_index = input_iter.GetIndex();
-			previous_index[i]=previous_index[i]-1;
-			if (previous_index[i]<origin[i]){
-				previous_index[i]=origin[i];
-			}
-
-			for (int j=0; j<3; j++) {
-				float nextvalue=0;
-				float previousvalue=0;
-				switch (j) {
-					case 0:
-						nextvalue = x_partial->GetPixel(next_index);
-						previousvalue = x_partial->GetPixel(previous_index);
-						break;
-					case 1:
-						nextvalue = y_partial->GetPixel(next_index);
-						previousvalue = y_partial->GetPixel(previous_index);
-						break;
-					case 2:
-						nextvalue = z_partial->GetPixel(next_index);
-						previousvalue = z_partial->GetPixel(previous_index);
-						break;
-				}
-				Next[i][j]=nextvalue;
-				Previous[i][j]=previousvalue;
-			}
-		}
-		
-		vnl_matrix<float> temp_return = EvaluateAtNeighborhood(Next, Previous, weights);
-		Next.~vnl_matrix_fixed();
-		Previous.~vnl_matrix_fixed();
-
-		vnl_symmetric_eigensystem<float> eigensystem(temp_return);
-
-		float lamda[3]={eigensystem.get_eigenvalue(2), eigensystem.get_eigenvalue(1), eigensystem.get_eigenvalue(0)};
-
-		for (int i=0;i<3;i++) {
-			for (int j=i;j<3;j++) {
-				if (abs(lamda[j])<abs(lamda[i])) {
-					float temp = lamda[j];
-					lamda[j] = lamda[i];
-					lamda[i] = temp;
-				}
-			}
-		}
-
-		lamda1_iter.Set(lamda[0]);
-		lamda2_iter.Set(lamda[1]);
-		lamda3_iter.Set(lamda[2]);
-
-		//float mean =(lamda[0]+lamda[1]+lamda[2])/3;
-		//float variance = (vnl_math_sqr(lamda[0]-mean)+vnl_math_sqr(lamda[2]-mean)+vnl_math_sqr(lamda[1]-mean))/3;
-		
-
-		//std::cerr<<std::endl;
-		//if (abs(lamda[1]/lamda[2])<.01 && abs(lamda[2])>.1) {
-		//	//output_iter.Set(1);
-		//	output_iter.Set(abs(lamda[1]/lamda[2]));
-		//} else 
-		
-		//if (abs(lamda[0]/lamda[1])<.5 && abs(lamda[0])>.05 && lamda[2]<.1) {
-		//	output_iter.Set(abs(lamda[0]/lamda[1]));
-		//}
-		
-		if (abs(lamda[0])>20 && lamda[2]>0) {
-			output_iter.Set(abs(lamda[1]/lamda[2]));		//lamda[0]/lamda[1]?
-		} else {
-			output_iter.Set(0);
-		}
-		
-		if (max<output_iter.Get()) {
-			max = output_iter.Get();
-		}
-		
-			//if ((0.5<lamda_1/lamda_2 && lamda_1/lamda_2<2) && (lamda_1>0 && lamda_3/lamda_1<3)) {
-				
-			//}
-		/*	else if (lamda_1>-0.5 && lamda_1<0.5 && (lamda_3-lamda_2)>100) {
-				curvature_image_iter.Set(0);
-			}*/
-		//}
-
-		count++;
-
-		++input_iter;
-		++output_iter;
-		++x_iter;
-		++y_iter;
-		++z_iter;
-		++lamda1_iter; ++lamda2_iter; ++lamda3_iter;
-	}
-
-	WriteITK(lamda1,"lamda1.hdr");
-	WriteITK(lamda2,"lamda2.hdr");
-	WriteITK(lamda3,"lamda3.hdr");
-
-	WriteITK(output, "eig_test1.hdr");
-
-	x_partial.~SmartPointer();
-	y_partial.~SmartPointer();
-	z_partial.~SmartPointer();
-	for (output_iter.GoToBegin(); !output_iter.IsAtEnd(); ++output_iter) {
-		if (output_iter.Get() > 0)
-		{
-			output_iter.Set(1-output_iter.Get()/max);
-		}
-	}
-
-	return output;
-}
-
-ImageType::Pointer ComputeHessianResponse3(ImageType::Pointer input)
-{
-	// Get input info
-	ImageType::RegionType region = input->GetLargestPossibleRegion();
-	ImageType::SpacingType spacing = input->GetSpacing();
-
-	// Create response image
-	ImageType::Pointer Himage = AllocateNewImage(region);
-
-	IteratorTypeFloat4WithIndex input_iter(input,region);
-	IteratorTypeFloat4WithIndex Himage_iter(Himage,region);
-
-	ByteImageType::Pointer tissue_mask = AllocateNewByteImage(region);
-	IteratorTypeByteWithIndex tissue_mask_iter(tissue_mask,region);
-
-	for (input_iter.GoToBegin(), tissue_mask_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++tissue_mask_iter)
-	{
-		if (input_iter.Get() > -300 && input_iter.Get() < 650)
-		{
-			tissue_mask_iter.Set(1);
-		} else {
-			tissue_mask_iter.Set(0);
-		}
-	}
-
-	WriteITK(tissue_mask,"tissue_mask.hdr");
-
-	// Compute hessian across sigma scales
-	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
-
-	for (int k=0; k<3; k++)
-	{
-		// Compute smoothed Hessian
-		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
-		hessianFilter->SetInput(input);
-		hessianFilter->SetNormalizeAcrossScale(true);
-		hessianFilter->SetSigma(sigma[k]);
-		hessianFilter->Update();
-		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
-
-		// Create helper images and iters to visualize algorithm
-		std::vector< ImageType::Pointer > LambdaImageVector(3);
-		std::vector< itk::ImageRegionIterator<ImageType> > LambdaIterVector(3);
-
-		float alpha = 0.25;
-		float gamma = 0.5;
-
-		for (int i=0; i<3; i++)
-		{
-			LambdaImageVector[i] = AllocateNewImage(region);
-			LambdaIterVector[i] = itk::ImageRegionIterator<ImageType>( LambdaImageVector[i], region);
-			LambdaIterVector[i].GoToBegin();
-		}
-
-		hessian_iter.GoToBegin();
-		Himage_iter.GoToBegin();
-		
-		float max=0;
-		int count=0;
-
-		while (!hessian_iter.IsAtEnd()) 
-		{
-			EigenValueArrayType lambda;
-
-			// Get eigenvalues
-			hessian_iter.Get().ComputeEigenValues(lambda);
-			//std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
-			std::sort(lambda.Begin(),lambda.End(),OrderByValueDesc);
-
-			for (int i=0; i<3; i++)
-			{
-				LambdaIterVector[i].Set( lambda[i] );
-			}
-
-			float l[3];
-			l[0] = lambda[0];
-			l[1] = lambda[1];
-			l[2] = lambda[2];
-
-			Himage_iter.Set(S_fold(l, alpha, gamma));		
-
-			count++;
-
-			++hessian_iter;
-			++Himage_iter;
-
-			for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
-		}
-
-		for (int i=0; i<3; i++)
-		{
-			std::stringstream ss;
-			ss << "ORDER_BY_VALUE_DESC_sigma_" << sigma[k] << "_lambda_" << i << ".hdr";
-			WriteITK(LambdaImageVector[i], ss.str());
-		}
-
-		std::stringstream ss;
-		ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_S_fold.hdr";
-		//WriteITK(Himage,ss.str());
-	}
-
-	return Himage;
-}
-
-void ComputeThinness(ImageType::Pointer input)
-{
-	// Get input info
-	ImageType::RegionType region = input->GetLargestPossibleRegion();
-	ImageType::SpacingType spacing = input->GetSpacing();
-
-	// Create response image
-	ImageType::Pointer Himage = AllocateNewImage(region);
-	IteratorTypeFloat4WithIndex Himage_iter(Himage,region);
-	Himage->FillBuffer(0.0);
-
-	// Compute hessian across sigma scales
-	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
-
-	std::ofstream file;
-	file.open("h.txt");
-
-	for (int k=0; k<1; k++)
-	{
-		// Compute smoothed Hessian
-		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
-		hessianFilter->SetInput(input);
-		hessianFilter->SetNormalizeAcrossScale(true);
-		hessianFilter->SetSigma(sigma[k]);
-		hessianFilter->Update();
-		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
-
-		// Create helper images and iters to visualize algorithm
-		std::vector< ImageType::Pointer > LambdaImageVector(3);
-		std::vector< itk::ImageRegionIterator<ImageType> > LambdaIterVector(3);
-
-		for (int i=0; i<3; i++)
-		{
-			LambdaImageVector[i] = AllocateNewImage(region);
-			LambdaIterVector[i] = itk::ImageRegionIterator<ImageType>( LambdaImageVector[i], region);
-			LambdaIterVector[i].GoToBegin();
-		}
-
-		hessian_iter.GoToBegin();
-		Himage_iter.GoToBegin();
-		
-		float max=0;
-		int count=0;
-
-		while (!hessian_iter.IsAtEnd()) 
-		{
-			EigenValueArrayType lambda;
-
-			// Get eigenvalues
-			hessian_iter.Get().ComputeEigenValues(lambda);
-			std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
-
-			
-			//std::sort(lambda.Begin(),lambda.End(),OrderByValue);
-
-			for (int i=0; i<3; i++)
-			{
-				LambdaIterVector[i].Set( lambda[i] );
-			}
-
-			float l[3];
-			l[0] = lambda[0];
-			l[1] = lambda[1];
-			l[2] = lambda[2];
-			
-			if (l[2] < -100.0)
-			{
-				float t = thinness(l);
-
-				file <<l[0]<<"\t"<<l[1]<<"\t"<<l[2]<<"\t"<<t<<"\n";
-
-				Himage_iter.Set(t);
-
-			}
-
-			if ( count % 50000 == 0) {
-				std::cout << "wait!" << std::endl;
-			}
-
-			count++;
-
-			++hessian_iter;
-			++Himage_iter;
-
-			for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
-		}
-
-		for (int i=0; i<3; i++)
-		{
-			std::stringstream ss;
-			ss << "sigma_" << sigma[k] << "_lambda_" << i << ".hdr";
-			WriteITK(LambdaImageVector[i], ss.str());
-		}
-
-		std::stringstream ss;
-		ss << "sigma_" << sigma[k] << "_Thinness.hdr";
-		WriteITK(Himage,ss.str());
-
-		
-	}
-	file.close();
-}
-
-ImageType::Pointer ComputeHessianTest(ImageType::Pointer input)
-{
-	// Get input info
-	ImageType::RegionType region = input->GetLargestPossibleRegion();
-	ImageType::SpacingType spacing = input->GetSpacing();
-	ImageType::SizeType size = region.GetSize();
-
-	// Create cone
-	ImageType::Pointer cone = AllocateNewImage(region);
-	IteratorTypeFloat4WithIndex cone_iter(cone,region);
-
-	for (cone_iter.GoToBegin(); !cone_iter.IsAtEnd(); ++cone_iter)
-	{
-		ImageType::IndexType idx = cone_iter.GetIndex();
-		float x,y;
-		x = ((float) idx[0]-size[0]/2) / size[0];
-		y = ((float) idx[1]-size[0]/2) / size[1];
-
-		float val = exp( -(vnl_math_sqr(x)+vnl_math_sqr(y)) / (2*0.5*0.5) );
-
-		cone_iter.Set( val );
-	}
-
-	WriteITK(cone,"cone.hdr");
-
-	// Create response image
-	ImageType::Pointer Himage = AllocateNewImage(region);
-	IteratorTypeFloat4WithIndex Himage_iter(Himage,region);
-
-	// Compute hessian across sigma scales
-	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
-
-	for (int k=1; k<2; k++)
-	{
-		// Compute smoothed Hessian
-		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
-		hessianFilter->SetInput(cone);
-		hessianFilter->SetNormalizeAcrossScale(true);
-		hessianFilter->SetSigma(sigma[k]);
-		hessianFilter->Update();
-		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
-
-		// Create helper images and iters to visualize algorithm
-		std::vector< ImageType::Pointer > LambdaImageVector(3);
-
-		std::vector< itk::ImageRegionIterator<ImageType> > LambdaIterVector(3);
-
-		for (int i=0; i<3; i++)
-		{
-			LambdaImageVector[i] = AllocateNewImage(region);
-			LambdaIterVector[i] = itk::ImageRegionIterator<ImageType>( LambdaImageVector[i], region);
-			LambdaIterVector[i].GoToBegin();
-		}
-
-		hessian_iter.GoToBegin();
-		Himage_iter.GoToBegin();
-		
-		float max=0;
-		int count=0;
-
-		while (!hessian_iter.IsAtEnd()) 
-		{
-			EigenValueArrayType lambda;
-
-			// Get eigenvalues
-			hessian_iter.Get().ComputeEigenValues(lambda);
-			//std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
-			std::sort(lambda.Begin(),lambda.End(),OrderByValue);
-
-			for (int i=0; i<3; i++)
-			{
-				LambdaIterVector[i].Set( lambda[i] );
-			}
-
-			float val = abs(lambda[1]/lambda[2]);
-			if ( val > 0 && abs(lambda[0])>20 && lambda[2]>0)
-			{
-				Himage_iter.Set(val);
-
-				if ( count == 0)
-				{
-					max = val;
-				}
-
-				if ( val > max )
-				{
-					max = val;
-				}
-			} else {
-				Himage_iter.Set(0);
-			}			
-
-			count++;
-
-			++hessian_iter;
-			++Himage_iter;
-
-			for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
-		}
-
-		for (int i=0; i<3; i++)
-		{
-			std::stringstream ss;
-			ss << "sigma_" << sigma[k] << "_lambda_" << i << ".hdr";
-			WriteITK(LambdaImageVector[i], ss.str());
-		}
-
-		for (Himage_iter.GoToBegin(); !Himage_iter.IsAtEnd(); ++Himage_iter)
-		{
-			if (Himage_iter.Get() > 0)
-			{
-				Himage_iter.Set( 1 - (Himage_iter.Get()/max) );
-			}
-		}
-	}
-
-	return Himage;
-}
-
 bool OrderByMagnitude (double a, double b) {
 	return ( abs(a) < abs(b) );
 }
@@ -3541,7 +2774,7 @@ double fCup(EigenValueArrayType lambda, double eta) {
 	return fC(lambda[0], lambda[1], eta)*fC(lambda[1], lambda[2], eta);
 }
 
-ImageType::Pointer ResampleImage(ImageType::Pointer input)
+ImageType::Pointer ResampleImage(ImageType::Pointer input, ImageType::SpacingType output_spacing)
 {
 	ResampleImageFilterType::Pointer resampleFilter = ResampleImageFilterType::New();
 	
@@ -3557,15 +2790,21 @@ ImageType::Pointer ResampleImage(ImageType::Pointer input)
 	
 	resampleFilter->SetDefaultPixelValue( -1024 );
 
-	// Use isotropic spacing
-	ImageType::SpacingType spacing = input->GetSpacing();
-	spacing[1] = spacing[0];
-	spacing[2] = spacing[0];
+	ImageType::SpacingType input_spacing = input->GetSpacing();
+	ImageType::SizeType input_size = input->GetLargestPossibleRegion().GetSize();
 
-	resampleFilter->SetOutputSpacing( spacing );
+	// Adjusto 
+	ImageType::SizeType output_size;
+
+	output_size[0] = input_size[0] * input_spacing[0] / output_spacing[0];
+	output_size[1] = input_size[1] * input_spacing[1] / output_spacing[0];
+	output_size[2] = input_size[2] * input_spacing[2] / output_spacing[0];
+
+	resampleFilter->SetOutputSpacing( output_spacing );
 	resampleFilter->SetOutputOrigin( input->GetOrigin() );
 	resampleFilter->SetOutputDirection( input->GetDirection() );
-	resampleFilter->SetSize( input->GetLargestPossibleRegion().GetSize() );
+
+	resampleFilter->SetSize( output_size );
 	resampleFilter->SetInput( input );
 	resampleFilter->Update();
 
@@ -3881,93 +3120,7 @@ float vesselness(const float lambda1, const float lambda2, const float lambda3, 
 
 float thinness( float l[3] )
 {
-	//if ( l[0] < 0 && l[1] < 0 && l[2] < 0 )
-	//{
-		return exp((abs(l[0]/l[1]) - 1)*(abs(l[1])+abs(l[2])))*exp(-l[0]/l[2]);
-	//} else {
-	//	return 0;
-	//}
-}
-
-void HessianMeasure(ImageType::Pointer input)
-{
-	// Get input info
-	ImageType::RegionType region = input->GetLargestPossibleRegion();
-	ImageType::SpacingType spacing = input->GetSpacing();
-	ImageType::SizeType size = region.GetSize();
-
-	// Create response image
-	ImageType::Pointer Himage = AllocateNewImage(region);
-	IteratorTypeFloat4WithIndex Himage_iter(Himage,region);
-
-	// Compute hessian across sigma scales
-	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
-
-	for (int k=0; k<1; k++)
-	{
-		// Compute smoothed Hessian
-		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
-		hessianFilter->SetInput(input);
-		hessianFilter->SetNormalizeAcrossScale(true);
-		hessianFilter->SetSigma(sigma[k]);
-		hessianFilter->Update();
-		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
-
-		// Create helper images and iters to visualize algorithm
-		std::vector< ImageType::Pointer > LambdaImageVector(3);
-
-		std::vector< itk::ImageRegionIterator<ImageType> > LambdaIterVector(3);
-
-		for (int i=0; i<3; i++)
-		{
-			LambdaImageVector[i] = AllocateNewImage(region);
-			LambdaIterVector[i] = itk::ImageRegionIterator<ImageType>( LambdaImageVector[i], region);
-			LambdaIterVector[i].GoToBegin();
-		}
-
-		hessian_iter.GoToBegin();
-		Himage_iter.GoToBegin();
-		
-		float max=0;
-		int count=0;
-
-		while (!hessian_iter.IsAtEnd()) 
-		{
-			EigenValueArrayType lambda;
-
-			// Get eigenvalues
-			hessian_iter.Get().ComputeEigenValues(lambda);
-			std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
-			//std::sort(lambda.Begin(),lambda.End(),OrderByValue);
-
-			for (int i=0; i<3; i++)
-			{
-				LambdaIterVector[i].Set( lambda[i] );
-			}
-
-			float val = abs(lambda[1]/lambda[2]);
-			Himage_iter.Set( exp(-val) );
-
-			count++;
-
-			++hessian_iter;
-			++Himage_iter;
-
-			for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
-		}
-
-		for (int i=0; i<3; i++)
-		{
-			std::stringstream ss;
-			ss << "sigma_" << sigma[k] << "_lambda_" << i << ".hdr";
-			//WriteITK(LambdaImageVector[i], ss.str());
-		}
-		
-		std::stringstream ss;
-		ss << "sigma_" << sigma[k] << "ratio.hdr";
-		WriteITK(Himage,ss.str());
-		
-	}
+	return exp((abs(l[0]/l[1]) - 1)*(abs(l[1])+abs(l[2])))*exp(-l[0]/l[2]);
 }
 
 ByteImageType::Pointer FindBinaryEdge(ByteImageType::Pointer im, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex)
@@ -4120,9 +3273,13 @@ float S_fold(float lambda[3], float alpha, float gamma)
 	
 	return 0;
 }
-
-void ComputeSatoHessian(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon)
+/*
+void ComputeSatoHessian(ImageType::Pointer input_aniso)
 {
+	// Make image isotropic
+	ImageType::Pointer input = ResampleImage(input_aniso);
+	WriteITK(input,"input_isotropic.hdr");
+
 	// Get input info
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
 	ImageType::SpacingType spacing = input->GetSpacing();
@@ -4132,12 +3289,11 @@ void ComputeSatoHessian(ImageType::Pointer input, ByteImageType::Pointer chamfer
 	ByteImageType::Pointer tagged = AllocateNewByteImage(region);
 
 	IteratorTypeFloat4WithIndex input_iter(input,region);
-	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,region);
 	IteratorTypeByteWithIndex tagged_iter(tagged,region);
 
-	for (input_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), tagged_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++chamfer_colon_iter, ++tagged_iter)
+	for (input_iter.GoToBegin(), tagged_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++tagged_iter)
 	{
-		if (input_iter.Get() > 200 && chamfer_colon_iter.Get() == 1)
+		if (input_iter.Get() > 180)
 		{
 			tagged_iter.Set(1);
 		} else {
@@ -4156,8 +3312,21 @@ void ComputeSatoHessian(ImageType::Pointer input, ByteImageType::Pointer chamfer
 	float alpha = 0.25;
 	float gamma = 1;
 
-	for (int k=0; k<2; k++)
+	// Save eigenvals
+	std::vector< ImageType::Pointer > LambdaImageVector(3);
+	std::vector< itk::ImageRegionIterator<ImageType> > LambdaIterVector(3);
+
+	for (int i=0; i<3; i++)
 	{
+		LambdaImageVector[i] = AllocateNewImage(region);
+		LambdaImageVector[i]->FillBuffer(0);
+		LambdaIterVector[i] = itk::ImageRegionIterator<ImageType>( LambdaImageVector[i], region);
+		LambdaIterVector[i].GoToBegin();
+	}
+
+	for (int k=0; k<1; k++)
+	{
+		for (int i=0; i<3; i++) { LambdaIterVector[i].GoToBegin(); }
 		
 		// Compute smoothed Hessian
 		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
@@ -4180,21 +3349,26 @@ void ComputeSatoHessian(ImageType::Pointer input, ByteImageType::Pointer chamfer
 
 			while (!hessian_iter.IsAtEnd()) 
 			{
+
+				EigenValueArrayType lambda;
+
+				// Get eigenvalues
+				hessian_iter.Get().ComputeEigenValues(lambda);
+				std::sort(lambda.Begin(),lambda.End(),OrderByValueDesc);
+
+				for (int i=0; i<3; i++)
+				{
+					LambdaIterVector[i].Set( lambda[i] );
+				}
+
 				if (tagged_iter.Get() == 1)	// only tagged regions
 				{
-
-					EigenValueArrayType lambda;
-
-					// Get eigenvalues
-					hessian_iter.Get().ComputeEigenValues(lambda);
-					std::sort(lambda.Begin(),lambda.End(),OrderByValueDesc);
-
 					float l[3];
 					l[0] = lambda[0]; l[1] = lambda[1]; l[2] = lambda[2];
 
 					float val = 0;
 
-					/*switch (j)
+					switch (j)
 					{
 					case 0:
 						val = S_line(l, alpha, gamma);
@@ -4205,7 +3379,7 @@ void ComputeSatoHessian(ImageType::Pointer input, ByteImageType::Pointer chamfer
 					case 2:
 						val = S_sheet(l, alpha, gamma);
 						break;
-					}*/
+					}
 
 					val = S_sheet_dark(l, alpha, gamma);
 
@@ -4219,6 +3393,8 @@ void ComputeSatoHessian(ImageType::Pointer input, ByteImageType::Pointer chamfer
 				++S_iter;
 				++tagged_iter;
 
+				for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
+
 			}
 
 			std::string type;
@@ -4231,9 +3407,17 @@ void ComputeSatoHessian(ImageType::Pointer input, ByteImageType::Pointer chamfer
 			//}
 
 			std::stringstream ss;
-			ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_type_" << type << ".hdr";
+			ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_type_normalizeTRUE" << type << ".hdr";
 
 			WriteITK(S,ss.str());
+
+			// Write eigenvals
+			for (int i=0; i<3; i++)
+			{		
+				std::stringstream ss;
+				ss << "sigma_" << sigma[k] << "_lambda_" << i << ".hdr";
+				//WriteITK(LambdaImageVector[i], ss.str());
+			}
 		//}
 	}
 }
@@ -4279,6 +3463,7 @@ void ComputeFrangiHessian(ImageType::Pointer input)
 		}
 	}
 }
+*/
 
 
 void RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type)
@@ -4513,7 +3698,7 @@ void HeuristicClosing(VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer
 		}
 	}
 
-	//WriteITK(mask,"non_stool_mask.hdr");
+	WriteITK(mask,"non_stool_mask.hdr");
 
 	// Run connected component
 	ConnectedComponentFilterType::Pointer ccFilter = ConnectedComponentFilterType::New();
@@ -4576,24 +3761,33 @@ std::vector<std::string> explode( const std::string &delimiter, const std::strin
     return arr;
 }
 
-void CreateHessianGraph(ImageType::Pointer input)
-{
+void HessianResponse(ImageType::Pointer input_aniso)
+{	
+	// Make image isotropic
+	ImageType::SpacingType aniso_spacing = input_aniso->GetSpacing();
+	
+	ImageType::SpacingType iso_spacing = aniso_spacing;
+	iso_spacing[1] = iso_spacing[0];
+	iso_spacing[2] = iso_spacing[0];
+
+	ImageType::Pointer input = ResampleImage(input_aniso, iso_spacing);
+	WriteITK(input,"input_isotropic.hdr");
+
 	// Get input info
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
-	ImageType::SpacingType spacing = input->GetSpacing();
-	ImageType::SizeType size = region.GetSize();
+
+	// Create response image
+	ImageType::Pointer output = AllocateNewImage(region);
+	output->SetSpacing(iso_spacing);
 
 	IteratorTypeFloat4WithIndex input_iter(input,region);
-	
+	IteratorTypeFloat4WithIndex output_iter(output,region);
+
 	// Compute hessian across sigma scales
-	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
+	double sigma[2] = {0.56, 1.4};
 
-	std::ofstream file;
-	file.open("lambda.txt");
-	file << "x,y,z,I,Lambda1\tLambda2\tLambda3\n";
-
-	for (int k=0; k<1; k++)
-	{	
+	for (int k=0; k<2; k++)
+	{
 		// Compute smoothed Hessian
 		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
 		hessianFilter->SetInput(input);
@@ -4602,135 +3796,131 @@ void CreateHessianGraph(ImageType::Pointer input)
 		hessianFilter->Update();
 		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
 
+		/*
+		// Create helper images and iters to visualize algorithm
+		std::vector< ImageType::Pointer > LambdaImageVector(3);
+		std::vector< ImageType::Pointer > FImageVector(6); // A, B, C1, C2, Cup, Rut
+
+		std::vector< itk::ImageRegionIterator<ImageType> > LambdaIterVector(3);
+		std::vector< itk::ImageRegionIterator<ImageType> > FIterVector(6);
+
+		for (int i=0; i<3; i++)
+		{
+			LambdaImageVector[i] = AllocateNewImage(region);
+			LambdaImageVector[i]->FillBuffer(0);
+			LambdaIterVector[i] = itk::ImageRegionIterator<ImageType>( LambdaImageVector[i], region);
+			LambdaIterVector[i].GoToBegin();
+		}
+
+		for (int i=0; i<6; i++)
+		{
+			FImageVector[i] = AllocateNewImage(region);
+			FImageVector[i]->FillBuffer(0);
+			FIterVector[i] = itk::ImageRegionIterator<ImageType>( FImageVector[i], region );
+			FIterVector[i].GoToBegin();
+		}*/
 
 		hessian_iter.GoToBegin();
 		input_iter.GoToBegin();
+		output_iter.GoToBegin();
+
+		int count=0;
 
 		while (!hessian_iter.IsAtEnd()) 
 		{
-			ImageType::IndexType idx = input_iter.GetIndex();
+			EigenValueArrayType lambda;
 
-			if (idx[0] >=216 && idx[0] <=231 && idx[1] == 511-330 && idx[2] == 9)
+			// Get eigenvalues
+			hessian_iter.Get().ComputeEigenValues(lambda);
+			std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
+
+			double Lambda1 = lambda[0];
+			double Lambda2 = lambda[1];
+			double Lambda3 = lambda[2];
+
+			double Lambda3Abs = vnl_math_abs( Lambda3 );
+
+			// Set submerged and non-submerged conditions
+
+			if ( ( input_iter.Get() >= 200 && Lambda3 >= 100 ) /*||
+				 ( input_iter.Get() >= -250 && input_iter.Get() <= 200 && Lambda3 <= -100 )*/ ) 
 			{
 
-				EigenValueArrayType lambda;
+				if (count % 50000 == 0)
+				{
+					std::cout << count << std::endl;
+				}	
 
-				// Get eigenvalues
-				hessian_iter.Get().ComputeEigenValues(lambda);
-				std::sort(lambda.Begin(),lambda.End(),OrderByValueDesc);
-				file << idx[0] << "\t" << idx[1] << "\t" << idx[2] << "\t" << input_iter.Get() << "\t";
-				file << lambda[0] << "\t" << lambda[1] << "\t" << lambda[2] << "\n";
+				/*
+				for (int i=0; i<3; i++)
+				{
+					LambdaIterVector[i].Set( lambda[i] );
+				}
+				
+				
+				// A, B, C1, C2, Cup, Rut
+				FIterVector[0].Set( Lambda3Abs * fA(lambda, ALPHA) );
+				FIterVector[1].Set( Lambda3Abs * fB(lambda, BETA, GAMMA) );
+				FIterVector[2].Set( Lambda3Abs * fC(lambda[0], lambda[1], ETA) );
+				FIterVector[3].Set( Lambda3Abs * fC(lambda[1], lambda[2], ETA) );
+				FIterVector[4].Set( Lambda3Abs * fCup(lambda, ETA) );
+				FIterVector[5].Set( Lambda3Abs * fRut(lambda, ALPHA, BETA, GAMMA) );
+
+				*/
+
+				double val = vnl_math_max( Lambda3Abs * fRut(lambda, ALPHA, BETA, GAMMA), Lambda3Abs * fCup(lambda, ETA) );
+
+				if ( val > output_iter.Get() )
+					output_iter.Set( val );		
 			}
 
 			++hessian_iter;
 			++input_iter;
+			++output_iter;
+			count++;
+
+			//for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
+			//for (int i=0; i<6; i++) { ++FIterVector[i]; }
 		}
-	}
-	
-}
 
-ImageType::Pointer ComputeObjectScale(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon)
-{
-	// Set parameters
-	float fo_min = 0.5;
-	int radius_max = 4;
+		/*
 
-	// Get region
-	ImageType::RegionType region = input->GetLargestPossibleRegion();
-	ImageType::IndexType endIndex = region.GetIndex();
-	ImageType::IndexType startIndex = region.GetIndex();	
-	endIndex[0]+=(region.GetSize()[0]-1);
-	endIndex[1]+=(region.GetSize()[1]-1);
-	endIndex[2]+=(region.GetSize()[2]-1);
-
-	// Create image to hold scales
-	ImageType::Pointer K = AllocateNewImage(region);
-	K->FillBuffer(1);
-
-	IteratorTypeFloat4WithIndex input_iter(input,region);
-	IteratorTypeFloat4WithIndex K_iter(K,region);
-	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,region);
-
-	for (input_iter.GoToBegin(), K_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++K_iter, ++chamfer_colon_iter)
-	{
-		if (chamfer_colon_iter.Get() == 1 && input_iter.Get() > 200)
+		for (int i=0; i<3; i++)
 		{
-			float fo = 1;
-			int radius = 1;
+			std::stringstream ss;
+			ss << "sigma_" << sigma[k] << "_lambda_" << i << ".hdr";
+			WriteITK(LambdaImageVector[i], ss.str());
+		}
 
-			while (fo > fo_min && radius < radius_max)
+		for (int i=0; i<6; i++)
+		{
+			std::stringstream ss;
+			ss << "sigma_" << sigma[k] << "_F_";
+			
+			// A, B, C1, C2, Cup, Rut
+			switch (i)
 			{
-				// Initialize homogeneity function
-				float w = 0;
-				int w_count = 0;
-				int out_count = 0;
-
-				// Create outer ball structuring element
-				StructuringElementType outer_ball;
-				outer_ball.SetRadius( radius );
-				outer_ball.CreateStructuringElement();
-
-				// Create inner ball and store offsets in vector
-				StructuringElementType inner_ball;
-				inner_ball.SetRadius( radius-1 );
-				inner_ball.CreateStructuringElement();
-
-				std::vector<StructuringElementType::OffsetType> inner_ball_offsets ( inner_ball.Size() );
-
-				for (int i=0; i<inner_ball.Size(); i++)
-				{
-					inner_ball_offsets[i] = inner_ball.GetOffset(i);
-				}
-
-				// Find offsets of outer ball not in the inner ball
-				for (int i=0; i<outer_ball.Size(); i++)
-				{
-					StructuringElementType::OffsetType offset = outer_ball.GetOffset(i);
-					bool out = true;
-
-					for (int j=0; j < inner_ball_offsets.size(); j++)
-					{
-						if (offset == inner_ball_offsets[j])
-						{
- 							out = false;
-							break;
-						}
-					}
-
-					if (out)
-					{
-						out_count++;
-					}
-
-					ImageType::IndexType idx = input_iter.GetIndex();
-
-					idx[0] += offset[0];
-					idx[1] += offset[1];
-					idx[2] += offset[2];
-
-					if (idx[0] >= startIndex[0] && idx[0] <= endIndex[0] && idx[1] >= startIndex[1] && idx[1] <= endIndex[1] && idx[2] >= startIndex[2] && idx[2] <= endIndex[2])
-					{
-						//std::cout << input_iter.Get() << std::endl;
-						//std::cout << input->GetPixel(idx) << std::endl;
-						w += exp(-vnl_math_sqr(input_iter.Get()-input->GetPixel(idx))/3600);
-						w_count++;
-					} else {
-						out_count--;
-					}
-				}
-
-				radius++;
-
-				fo = w / out_count;
+				case 0: ss<<"a_alpha_"<<ALPHA; break;
+				case 1: ss<<"b"; break;
+				case 2: ss<<"c1"; break;
+				case 3: ss<<"c2"; break;
+				case 4: ss<<"cup"; break;
+				case 5: ss<<"rut"; break;
 			}
 
-			K_iter.Set(radius);
+			ss << ".hdr";
+			
+			WriteITK(FImageVector[i], ss.str());
 		}
+
+		*/
 	}
 
-	WriteITK(K,"K.hdr");
+	WriteITK(output, "Hessian_iso.hdr");
 
-	return K;
+	ImageType::Pointer output_aniso = ResampleImage(output, aniso_spacing);
+	
+	WriteITK(output_aniso, "Hessian_aniso.hdr");
 
-
+	//return output;
 }
