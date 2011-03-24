@@ -287,4 +287,6 @@ void HeuristicClosing(VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer
 std::vector<std::string> explode( const std::string &delimiter, const std::string &str);
 
 std::string VoxelTypeToString(VoxelType type);
-void HessianResponse(ImageType::Pointer input_aniso);
+ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso);
+void EnhanceVoxelType(ImageType::Pointer input, ImageType::Pointer hessian, VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer chamfer_colon);
+ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, double gamma);
