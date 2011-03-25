@@ -62,6 +62,31 @@ int main(int argc, char * argv[])
 	// Read and write dicom input
 	ImageType::Pointer input = ReadDicom( dataset );
 
+	WriteITK(input,"input.hdr");
+
+
+	double alpha = 0.5;
+	double beta = 0.3;
+	double gamma = 0.3;
+	double eta = 0.2;
+
+	
+	ImageType::Pointer hessian = HessianResponse(input, alpha, beta, gamma, eta);
+	
+
+
+	/*
+	// Sato params
+	double alpha = 0.25;
+	double gamma[5] = {0.5,1,2,5,10};
+
+	for (int i=0; i<5; i++)
+	{
+		ImageType::Pointer sato_hessian = SatoResponse(input, alpha, gamma[i]);
+	}
+	*/
+
+
 	// Read input
 	//ImageType::Pointer input = ReadDicom("C:/Documents and Settings/panjwanin/Desktop/Matt_to_Neil/nn1_008_10p.i0373/dcm");	
 	//ImageType::Pointer input = ImageType::New();
@@ -389,33 +414,31 @@ int main(int argc, char * argv[])
 		HeuristicClosing(voxel_type,chamfer_colon);
 		WriteITK(voxel_type,"voxel_type_stool_closed_heuristic.hdr");
 
-		// Sato params
-		//double alpha = 0.25;
-		//double gamma = 1;
+		
 
 		
 		//ImageType::Pointer hessian = SatoResponse(input, alpha, gamma);
 	
 
-		// Run hessian and update voxel classification
-		ImageType::Pointer hessian = HessianResponse(input);
+		//// Run hessian and update voxel classification
+		//ImageType::Pointer hessian = HessianResponse(input);
 	
-		WriteITK(hessian,"hessian.hdr");
+		//WriteITK(hessian,"hessian.hdr");
 
-		// Rescale hessian to [0,1]
-		RescaleIntensityFilterType::Pointer rescaler = RescaleIntensityFilterType::New();
-		rescaler->SetOutputMaximum(1);
-		rescaler->SetOutputMinimum(0);
-		rescaler->SetInput(hessian);
-		rescaler->Update();
-		hessian = rescaler->GetOutput();
+		//// Rescale hessian to [0,1]
+		//RescaleIntensityFilterType::Pointer rescaler = RescaleIntensityFilterType::New();
+		//rescaler->SetOutputMaximum(1);
+		//rescaler->SetOutputMinimum(0);
+		//rescaler->SetInput(hessian);
+		//rescaler->Update();
+		//hessian = rescaler->GetOutput();
 
-		WriteITK(hessian,"hessian_rescaled.hdr");
+		//WriteITK(hessian,"hessian_rescaled.hdr");
 
 
-		EnhanceVoxelType(input,hessian,voxel_type,chamfer_colon);
+		//EnhanceVoxelType(input,hessian,voxel_type,chamfer_colon);
 
-		WriteITK(voxel_type,"voxel_type_hessian_enhanced.hdr");
+		//WriteITK(voxel_type,"voxel_type_hessian_enhanced.hdr");
 	}
 
 	//-------------------------------------------END SETUP-------------------------------------------------------
@@ -2275,7 +2298,8 @@ void WriteITK(ImageType::Pointer image, std::string name) {
 		ss << "Modified_";
 	if ( !note.empty() )
 		ss << note << "_";
-	ss << writeCount++ << "_" << name;
+	//ss << writeCount++ << "_" << name;
+	ss << name;
 	writer->SetFileName(ss.str().c_str());
 
 	writer->SetInput(image);
@@ -2783,16 +2807,24 @@ ImageType::Pointer ResampleImage(ImageType::Pointer input, ImageType::SpacingTyp
 {
 	ResampleImageFilterType::Pointer resampleFilter = ResampleImageFilterType::New();
 	
-	typedef itk::AffineTransform< double, 3> TransformType;
-	TransformType::Pointer transform = TransformType::New();
-	resampleFilter->SetTransform(transform);
+	//typedef itk::AffineTransform< double, 3> TransformType;
+	//TransformType::Pointer transform = TransformType::New();
+	//resampleFilter->SetTransform(transform);
 
-	/*
-	typedef itk::NearestNeighborInterpolateImageFunction<ImageType, double >  InterpolatorType;
-	InterpolatorType::Pointer interpolator = InterpolatorType::New();
-	resampleFilter->SetInterpolator( interpolator );
-	*/
+	//typedef itk::NearestNeighborInterpolateImageFunction<ImageType, double >  InterpolatorType;
+	//InterpolatorType::Pointer interpolator = InterpolatorType::New();
+	//resampleFilter->SetInterpolator( interpolator );
+
+	// Use sinc interpolation
+	//typedef itk::WindowedSincInterpolateImageFunction<ImageType,3> SincInterpolatorType;
+	//SincInterpolatorType::Pointer interpolator = SincInterpolatorType::New();
+	//resampleFilter->SetInterpolator( interpolator );
 	
+	// Uuse B-spline interpolation
+	//InterpolationType::Pointer interpolator = InterpolationType::New();
+	//resampleFilter->SetInterpolator( interpolator );
+
+
 	resampleFilter->SetDefaultPixelValue( -1024 );
 
 	ImageType::SpacingType input_spacing = input->GetSpacing();
@@ -3426,50 +3458,7 @@ void ComputeSatoHessian(ImageType::Pointer input_aniso)
 		//}
 	}
 }
-
-void ComputeFrangiHessian(ImageType::Pointer input)
-{
-	// Get input info
-	ImageType::RegionType region = input->GetLargestPossibleRegion();
-	ImageType::SpacingType spacing = input->GetSpacing();
-	ImageType::SizeType size = region.GetSize();
-
-	// Compute hessian across sigma scales
-	double sigma[5] = {spacing[0], 2*spacing[0], 3*spacing[0], 4*spacing[0], 5*spacing[0]};
-
-	for (int k=0; k<3; k++)
-	{
-		
-		// Compute smoothed Hessian
-		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
-		hessianFilter->SetInput(input);
-		hessianFilter->SetNormalizeAcrossScale(true);
-		hessianFilter->SetSigma(sigma[k]);
-		hessianFilter->Update();
-
-		for (int j=0; j<3; j++) // loop over type: blobs, vessels, plates
-		{
-			ObjectnessFilterType::Pointer ofilter = ObjectnessFilterType::New();
-			ofilter->SetInput(hessianFilter->GetOutput());
-			ofilter->SetBrightObject(false);
-			ofilter->SetObjectDimension(j);
-
-			std::string type;
-			switch (j)
-			{
-				case 0: type="blob";break;
-				case 1: type="vessels";break;
-				case 2: type="plates";break;
-			}
-
-			std::stringstream ss;
-			ss << "sigma_" << sigma[k] << "_type_" << type << ".hdr";
-			WriteITK(ofilter->GetOutput(),ss.str());
-		}
-	}
-}
 */
-
 
 void RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type)
 {
@@ -3766,7 +3755,64 @@ std::vector<std::string> explode( const std::string &delimiter, const std::strin
     return arr;
 }
 
-ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso)
+void ComputeFrangiHessian(ImageType::Pointer input_aniso)
+{
+	// Make image isotropic
+	ImageType::SpacingType aniso_spacing = input_aniso->GetSpacing();
+	
+	ImageType::SpacingType iso_spacing = aniso_spacing;
+	iso_spacing[1] = iso_spacing[0];
+	iso_spacing[2] = iso_spacing[0];
+
+	ImageType::Pointer input = ResampleImage(input_aniso, iso_spacing);
+	WriteITK(input,"input_isotropic.hdr");
+
+	// Get input info
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	// Create response image
+	ImageType::Pointer output = AllocateNewImage(region);
+	output->FillBuffer(0);
+	output->SetSpacing(iso_spacing);
+
+	IteratorTypeFloat4WithIndex input_iter(input,region);
+	IteratorTypeFloat4WithIndex output_iter(output,region);
+	
+	// Compute hessian across sigma scales
+	double sigma[2] = {0.56, 1.4};
+
+	for (int k=0; k<2; k++)
+	{
+		// Compute smoothed Hessian
+		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
+		hessianFilter->SetInput(input);
+		hessianFilter->SetNormalizeAcrossScale(true);
+		hessianFilter->SetSigma(sigma[k]);
+		hessianFilter->Update();
+
+		ObjectnessFilterType::Pointer ofilter = ObjectnessFilterType::New();
+		ofilter->SetInput(hessianFilter->GetOutput());
+		ofilter->SetBrightObject(false);
+		ofilter->SetObjectDimension(2); //plate
+		ofilter->Update();
+
+		IteratorTypeFloat4WithIndex object_iter(ofilter->GetOutput(),region);
+
+		for (input_iter.GoToBegin(), object_iter.GoToBegin(), output_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++object_iter, ++output_iter)
+		{
+			if (input_iter.Get() > 200)
+			{
+				output_iter.Set( object_iter.Get() );
+			}
+		}
+
+		std::stringstream ss;
+		ss << "sigma_" << sigma[k] << "_dark_plate.hdr";
+		WriteITK( ResampleImage( output, aniso_spacing ) ,ss.str());
+	}
+}
+
+ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso, double alpha, double beta, double gamma, double eta)
 {	
 	// Set intensity and lambda3 thresholds
 	float intensity_threshold_lower = 150;
@@ -3796,8 +3842,11 @@ ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso)
 	// Compute hessian across sigma scales
 	double sigma[2] = {0.56, 1.4};
 
-	for (int k=0; k<2; k++)
+	for (int k=1; k<2; k++)
 	{
+		// Reset buffer to see each scale independently
+		output->FillBuffer(0);
+
 		// Compute smoothed Hessian
 		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
 		hessianFilter->SetInput(input);
@@ -3809,10 +3858,15 @@ ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso)
 		
 		//// Create helper images and iters to visualize algorithm
 		std::vector< ImageType::Pointer > LambdaImageVector(3);
-		//std::vector< ImageType::Pointer > FImageVector(6); // A, B, C1, C2, Cup, Rut
+		std::vector< ImageType::Pointer > FImageVector(6); // A, B, C1, C2, Cup, Rut
 
 		std::vector< itk::ImageRegionIterator<ImageType> > LambdaIterVector(3);
-		//std::vector< itk::ImageRegionIterator<ImageType> > FIterVector(6);
+		std::vector< itk::ImageRegionIterator<ImageType> > FIterVector(6);
+
+		ImageType::Pointer eigen_norm = AllocateNewImage(region);
+		eigen_norm->SetSpacing( iso_spacing );
+		eigen_norm->FillBuffer(0);
+		IteratorTypeFloat4WithIndex eigen_norm_iter(eigen_norm,region);
 
 		for (int i=0; i<3; i++)
 		{
@@ -3823,25 +3877,27 @@ ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso)
 			LambdaIterVector[i].GoToBegin();
 		}
 
-		//for (int i=0; i<6; i++)
-		//{
-		//	FImageVector[i] = AllocateNewImage(region);
-		//	FImageVector[i]->FillBuffer(0);
-		//	FIterVector[i] = itk::ImageRegionIterator<ImageType>( FImageVector[i], region );
-		//	FIterVector[i].GoToBegin();
-		//}
+		for (int i=0; i<6; i++)
+		{
+			FImageVector[i] = AllocateNewImage(region);
+			FImageVector[i]->SetSpacing( iso_spacing );
+			FImageVector[i]->FillBuffer(0);
+			FIterVector[i] = itk::ImageRegionIterator<ImageType>( FImageVector[i], region );
+			FIterVector[i].GoToBegin();
+		}
 
 		hessian_iter.GoToBegin();
 		input_iter.GoToBegin();
 		output_iter.GoToBegin();
+		eigen_norm_iter.GoToBegin();
 
 		int count=0;
 
 		while (!hessian_iter.IsAtEnd()) 
 		{
+			// Get eigenvalues
 			EigenValueArrayType lambda;
 
-			// Get eigenvalues
 			hessian_iter.Get().ComputeEigenValues(lambda);
 			std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
 
@@ -3849,30 +3905,29 @@ ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso)
 			double Lambda2 = lambda[1];
 			double Lambda3 = lambda[2];
 
-			double Lambda3Abs = vnl_math_abs( Lambda3 );
-
-			for (int i=0; i<3; i++)
-			{
-				LambdaIterVector[i].Set( lambda[i] );
-			}
-
-			//// A, B, C1, C2, Cup, Rut
-			//FIterVector[0].Set( Lambda3Abs * fA(lambda, ALPHA) );
-			//FIterVector[1].Set( Lambda3Abs * fB(lambda, BETA, GAMMA) );
-			//FIterVector[2].Set( Lambda3Abs * fC(lambda[0], lambda[1], ETA) );
-			//FIterVector[3].Set( Lambda3Abs * fC(lambda[1], lambda[2], ETA) );
-			//FIterVector[4].Set( Lambda3Abs * fCup(lambda, ETA) );
-			//FIterVector[5].Set( Lambda3Abs * fRut(lambda, ALPHA, BETA, GAMMA) );
-
-		
-
 			// Set submerged and non-submerged conditions
-
 			if ( ( input_iter.Get() >= intensity_threshold_lower && input_iter.Get() <= intensity_threshold_upper && Lambda3 >= lambda3_threshold ) /*||
 				 ( input_iter.Get() >= -250 && input_iter.Get() <= 200 && Lambda3 <= -100 )*/ ) 
 			{				
+
+				eigen_norm_iter.Set( sqrt( Lambda1*Lambda1 + Lambda2*Lambda2 + Lambda3*Lambda3 ) );
+
+				double Lambda3Abs = vnl_math_abs( Lambda3 );
+
+				for (int i=0; i<3; i++)
+				{
+					LambdaIterVector[i].Set( vnl_math_abs( lambda[i] ) );
+				}
+
+				// A, B, C1, C2, Cup, Rut
+				FIterVector[0].Set( Lambda3Abs * fA(lambda, alpha) );
+				FIterVector[1].Set( Lambda3Abs * fB(lambda, beta, gamma) );
+				FIterVector[2].Set( Lambda3Abs * fC(lambda[0], lambda[1], eta) );
+				FIterVector[3].Set( Lambda3Abs * fC(lambda[1], lambda[2], eta) );
+				FIterVector[4].Set( Lambda3Abs * fCup(lambda, eta) );
+				FIterVector[5].Set( Lambda3Abs * fRut(lambda, alpha, beta, gamma) );
 				
-				double val = vnl_math_max( Lambda3Abs * fRut(lambda, ALPHA, BETA, GAMMA), Lambda3Abs * fCup(lambda, ETA) );
+				double val = vnl_math_max( Lambda3Abs * fRut(lambda, alpha, beta, gamma), Lambda3Abs * fCup(lambda, eta) );
 
 				if ( val > output_iter.Get() )
 				{
@@ -3888,9 +3943,10 @@ ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso)
 			++hessian_iter;
 			++input_iter;
 			++output_iter;
+			++eigen_norm_iter;
 
 			for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
-			//for (int i=0; i<6; i++) { ++FIterVector[i]; }
+			for (int i=0; i<6; i++) { ++FIterVector[i]; }
 		}
 
 		
@@ -3898,11 +3954,14 @@ ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso)
 		for (int i=0; i<3; i++)
 		{
 			std::stringstream ss;
-			ss << "sigma_" << sigma[k] << "_lambda_" << i << ".hdr";
-			//WriteITK(  ResampleImage( LambdaImageVector[i], aniso_spacing ) , ss.str());
+			ss << "sigma_" << sigma[k] << "_lambda_abs_" << i << ".hdr";
+			WriteITK(  LambdaImageVector[i] , ss.str());
 		}
 
-		/*
+		std::stringstream ss;
+		ss << "sigma_" << sigma[k] << "_eigen_norm.hdr";
+		WriteITK( eigen_norm, ss.str() );
+
 		for (int i=0; i<6; i++)
 		{
 			std::stringstream ss;
@@ -3911,20 +3970,18 @@ ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso)
 			// A, B, C1, C2, Cup, Rut
 			switch (i)
 			{
-				case 0: ss<<"a_alpha_"<<ALPHA; break;
-				case 1: ss<<"b"; break;
-				case 2: ss<<"c1"; break;
-				case 3: ss<<"c2"; break;
-				case 4: ss<<"cup"; break;
-				case 5: ss<<"rut"; break;
+				case 0: ss<<"a_alpha_"<<alpha; break;
+				case 1: ss<<"b_beta_"<<beta<<"_gamma_"<<gamma; break;
+				case 2: ss<<"c1_eta_"<<eta; break;
+				case 3: ss<<"c2_eta_"<<eta; break;
+				case 4: ss<<"cup_eta_"<<eta; break;
+				case 5: ss<<"rut_alpha_"<<alpha<<"_beta_"<<beta; break;
 			}
 
 			ss << ".hdr";
 			
-			WriteITK(FImageVector[i], ss.str());
+			WriteITK( FImageVector[i], ss.str());
 		}
-		*/
-
 	}
 
 	//WriteITK(output, "Hessian_iso.hdr");
@@ -3932,7 +3989,7 @@ ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso)
 	ImageType::Pointer output_aniso = ResampleImage(output, aniso_spacing);
 	
 	std::stringstream ss;
-	ss << "Hessian_aniso_.hdr";
+	ss << "Hessian.hdr";
 	//WriteITK(output_aniso, ss.str());
 
 	return output_aniso;
@@ -3940,8 +3997,9 @@ ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso)
 
 ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, double gamma)
 {	
-	// Set intensity and lambda3 thresholds
-	float intensity_threshold = 150;
+	// Set intensity and lambda thresholds
+	float intensity_threshold_lower = 150;
+	float intensity_threshold_upper = 700;
 	float lambda1_threshold = 0;
 
 	// Make image isotropic
@@ -3970,7 +4028,7 @@ ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, do
 	for (int k=0; k<2; k++)
 	{
 		// Reset buffer
-		//output->FillBuffer(0);
+		output->FillBuffer(0);
 
 		// Keep track of weight functions
 		ImageType::Pointer w1 = AllocateNewImage(region);
@@ -4019,7 +4077,7 @@ ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, do
 		{
 			// Set submerged and non-submerged conditions
 
-			if ( input_iter.Get() >= intensity_threshold )
+			if ( input_iter.Get() >= intensity_threshold_lower && input_iter.Get() <= intensity_threshold_upper )
 			{				
 				EigenValueArrayType lambda;
 
@@ -4066,11 +4124,11 @@ ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, do
 			for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
 		}
 
-		for (int i=0; i<3; i++)
+		for (int i=0; i<1; i++)
 		{
 			std::stringstream ss;
 			ss << "sigma_" << sigma[k] << "_lambda_abs_" << i << ".hdr";
-			//WriteITK(  ResampleImage( LambdaImageVector[i], aniso_spacing ) , ss.str());
+			WriteITK(  LambdaImageVector[i], ss.str());
 		}
 
 		std::stringstream ss;
@@ -4082,8 +4140,8 @@ ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, do
 		//WriteITK( ResampleImage( w2, aniso_spacing ) , ss.str() );
 
 		ss.str("");
-		ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_sata_output.hdr";
-		//WriteITK( ResampleImage( output, aniso_spacing ) , ss.str() );
+		ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_sato_output.hdr";
+		WriteITK( output, ss.str() );
 
 	}
 
@@ -4091,7 +4149,7 @@ ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, do
 	
 	std::stringstream ss;
 	ss << "Sato_Hessian_alpha_" << alpha << "_gamma_" << gamma  << ".hdr";
-	WriteITK(output_aniso, ss.str());
+	//WriteITK(output_aniso, ss.str());
 
 	return output_aniso;
 }

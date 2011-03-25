@@ -69,6 +69,7 @@
 #include <itkDerivativeImageFilter.h>
 #include "itkSimpleFuzzyConnectednessScalarImageFilter.h"
 #include <itkRegionalMinimaImageFilter.h>
+#include <itkWindowedSincInterpolateImageFunction.h>
 
 
 #include <fstream>
@@ -126,7 +127,7 @@ typedef itk::Image<VoxelType, 3>                                            Voxe
 typedef itk::ImageRegionIteratorWithIndex<VoxelTypeImage>                   IteratorTypeVoxelType;
 //Axillary Types
 typedef itk::BinaryBallStructuringElement<PixelType, 3>                     StructuringElementType;
-typedef itk::BSplineInterpolateImageFunction<ImageType, float>				InterpolationType;
+typedef itk::BSplineInterpolateImageFunction<ImageType>						InterpolationType;
 typedef itk::BSplineInterpolateImageFunction<ImageVectorType, float>		InterpolationVectorType;
 
 
@@ -287,6 +288,6 @@ void HeuristicClosing(VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer
 std::vector<std::string> explode( const std::string &delimiter, const std::string &str);
 
 std::string VoxelTypeToString(VoxelType type);
-ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso);
+ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso, double alpha, double beta, double gamma, double eta);
 void EnhanceVoxelType(ImageType::Pointer input, ImageType::Pointer hessian, VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer chamfer_colon);
 ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, double gamma);
