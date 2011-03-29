@@ -70,6 +70,10 @@
 #include "itkSimpleFuzzyConnectednessScalarImageFilter.h"
 #include <itkRegionalMinimaImageFilter.h>
 #include <itkWindowedSincInterpolateImageFunction.h>
+#include <itkLabelShapeOpeningImageFilter.h>
+
+#include <itkAnisotropicEdgeEnhancementDiffusionImageFilter.h>
+#include <itkDiscreteHessianGaussianImageFunction.h>
 
 
 #include <fstream>
@@ -291,3 +295,7 @@ std::string VoxelTypeToString(VoxelType type);
 ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso, double alpha, double beta, double gamma, double eta);
 void EnhanceVoxelType(ImageType::Pointer input, ImageType::Pointer hessian, VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer chamfer_colon);
 ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, double gamma);
+void ProcessHessian(ImageType::Pointer hessian, VoxelTypeImage::Pointer voxel_type);
+
+ImageType::Pointer SatoHessianEdgeEnhancingDiffusion(ImageType::Pointer input);
+void GetHessian(ImageType::Pointer input_aniso);
