@@ -67,13 +67,32 @@ int main(int argc, char * argv[])
 	ImageType::Pointer input = ReadDicom( dataset );
 
 	WriteITK(input,"input.hdr");
-	
+
+	//// Make image isotropic
+	//ImageType::SpacingType aniso_spacing = input->GetSpacing();
+	//
+	//ImageType::SpacingType iso_spacing = aniso_spacing;
+	//iso_spacing[1] = iso_spacing[0];
+	//iso_spacing[2] = iso_spacing[0];
+
+	//input = ResampleImage(input, iso_spacing);
+	//WriteITK(input,"input_isotropic.hdr");
+	//
+
+	UnderstandHessian(input);
+
 	GetHessian(input);
 
+	double alpha = 1;
+	double gamma = 0.5;
+
+	ImageType::Pointer hessian = SatoResponse(input, alpha, gamma);
+	//ProcessHessian(hessian, voxel_type);
 
 
-	ImageType::Pointer sh = SatoHessianEdgeEnhancingDiffusion(input);
-	WriteITK(sh,"sh.hdr");
+
+	//ImageType::Pointer sh = SatoHessianEdgeEnhancingDiffusion(input);
+	//WriteITK(sh,"sh.hdr");
 
 
 	
@@ -420,12 +439,6 @@ int main(int argc, char * argv[])
 		// Close any voxel components surrounded by stool
 		HeuristicClosing(voxel_type,chamfer_colon);
 		WriteITK(voxel_type,"voxel_type_stool_closed_heuristic.hdr");
-
-		double alpha = 0.25;
-		double gamma = 0.5;
-
-		ImageType::Pointer hessian = SatoResponse(input, alpha, gamma);
-		ProcessHessian(hessian, voxel_type);
 		
 		//ImageType::Pointer hessian = SatoResponse(input, alpha, gamma);
 	
@@ -4035,15 +4048,15 @@ ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, do
 	IteratorTypeFloat4WithIndex output_iter(output,region);
 
 	// Compute hessian across 2 sigma scales
-	double sigma[2] = {0.56, 1.4};
+	double sigma[2] = {0.05, 1.4};
 
-	for (int k=0; k<2; k++)
+	for (int k=0; k<1; k++)
 	{
-		// Reset buffer
-		//output->FillBuffer(0);
+		// Reset output buffer
+		output->FillBuffer(0);
 
 		// Keep track of weight functions
-		/*ImageType::Pointer w1 = AllocateNewImage(region);
+		ImageType::Pointer w1 = AllocateNewImage(region);
 		ImageType::Pointer w2 = AllocateNewImage(region);
 
 		w1->SetSpacing( iso_spacing );
@@ -4056,7 +4069,7 @@ ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, do
 		IteratorTypeFloat4WithIndex w2_iter(w2,region);
 
 		w1_iter.GoToBegin();
-		w2_iter.GoToBegin();*/
+		w2_iter.GoToBegin();
 
 		// Compute smoothed Hessian
 		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
@@ -4066,8 +4079,8 @@ ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, do
 		hessianFilter->Update();
 		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
 		
-		////// Create helper images and iters to visualize algorithm
-		/*std::vector< ImageType::Pointer > LambdaImageVector(3);
+		// Create helper images and iters to visualize algorithm
+		std::vector< ImageType::Pointer > LambdaImageVector(3);
 		std::vector< itk::ImageRegionIterator<ImageType> > LambdaIterVector(3);
 
 		for (int i=0; i<3; i++)
@@ -4077,7 +4090,7 @@ ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, do
 			LambdaImageVector[i]->FillBuffer(0);
 			LambdaIterVector[i] = itk::ImageRegionIterator<ImageType>( LambdaImageVector[i], region);
 			LambdaIterVector[i].GoToBegin();
-		}*/
+		}
 
 		hessian_iter.GoToBegin();
 		input_iter.GoToBegin();
@@ -4101,19 +4114,17 @@ ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, do
 				double Lambda2 = lambda[1];
 				double Lambda3 = lambda[2];
 
-				/*for (int i=0; i<3; i++)
-				{
-					LambdaIterVector[i].Set( lambda[i] );
-				}*/
 				
-				/*if (Lambda1 >= 0)
+				
+				if (Lambda1 >= lambda1_threshold)
 				{
+					for (int i=0; i<3; i++)
+					{
+						LambdaIterVector[i].Set( lambda[i] );
+					}
+
 					w1_iter.Set( weight_dark(Lambda1, Lambda2, alpha, gamma) );
 					w2_iter.Set( weight_dark(Lambda1, Lambda3, alpha, gamma) );
-				}*/
-
-				if (Lambda1 >= 100)
-				{
 
 					float eig[3] = {Lambda1, Lambda2, Lambda3};
 
@@ -4123,8 +4134,9 @@ ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, do
 					{
 						output_iter.Set( val );		
 					}
-
 				}
+
+
 			}
 
 			if (++count % 500000 == 0)
@@ -4135,26 +4147,26 @@ ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, do
 			++hessian_iter;
 			++input_iter;
 			++output_iter;
-			//++w1_iter;
-			//++w2_iter;
+			++w1_iter;
+			++w2_iter;
 
-			//for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
+			for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
 		}
 
-		/*for (int i=0; i<1; i++)
+		for (int i=0; i<3; i++)
 		{
 			std::stringstream ss;
 			ss << "sigma_" << sigma[k] << "_lambda_" << i << ".hdr";
 			WriteITK(  LambdaImageVector[i], ss.str());
-		}*/
+		}
 
 		std::stringstream ss;
-		//ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_w1.hdr";
-		////WriteITK( ResampleImage( w1, aniso_spacing ) , ss.str() );
+		ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_w1.hdr";
+		WriteITK( w1, ss.str() );
 
-		//ss.str("");
-		//ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_w2.hdr";
-		////WriteITK( ResampleImage( w2, aniso_spacing ) , ss.str() );
+		ss.str("");
+		ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_w2.hdr";
+		WriteITK( w2, ss.str() );
 
 		ss.str("");
 		ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_sato_output.hdr";
@@ -4425,6 +4437,7 @@ void EnhanceVoxelType(ImageType::Pointer input, ImageType::Pointer hessian, Voxe
 	*/
 }
 
+/*
 ImageType::Pointer SatoHessianEdgeEnhancingDiffusion(ImageType::Pointer input_aniso)
 {
 	float intensity_threshold_lower = 150;
@@ -4512,6 +4525,8 @@ ImageType::Pointer SatoHessianEdgeEnhancingDiffusion(ImageType::Pointer input_an
 	return output;
 }
 
+*/
+
 void GetHessian(ImageType::Pointer input_aniso)
 {
 	// Make image isotropic
@@ -4530,9 +4545,155 @@ void GetHessian(ImageType::Pointer input_aniso)
 	IteratorTypeFloat4WithIndex input_iter(input,region);
 
 	// Compute hessian across 2 sigma scales
-	double sigma[2] = {0.56, 1.4};
+	double sigma[2] = {0.05, 1.4};
 
-	for (int k=0; k<2; k++)
+	for (int k=0; k<1; k++)
+	{
+		// Compute smoothed Hessian
+		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
+		hessianFilter->SetInput(input);
+		hessianFilter->SetNormalizeAcrossScale(true);
+		hessianFilter->SetSigma(sigma[k]);
+		hessianFilter->Update();
+		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
+
+		double alpha[7] = {0.25,0.5,1,2,5,10,20};
+		double gamma[6] = {0.5,1,2,5,10,20};
+
+		for (int j=0; j<7; j++) {
+
+			for (int i=0; i<6; i++) {
+
+			
+				ImageType::Pointer w1 = AllocateNewImage(region);
+				w1->FillBuffer(0);
+				IteratorTypeFloat4WithIndex w1_iter(w1,region);
+				w1_iter.GoToBegin();
+			
+				//// Create helper images and iters to visualize algorithm
+				//std::vector< ImageType::Pointer > LambdaImageVector(3);
+				//std::vector< itk::ImageRegionIterator<ImageType> > LambdaIterVector(3);
+
+				//for (int i=0; i<3; i++)
+				//{
+				//	LambdaImageVector[i] = AllocateNewImage(region);
+				//	LambdaImageVector[i]->SetSpacing( input->GetSpacing() );
+				//	LambdaImageVector[i]->FillBuffer(0);
+				//	LambdaIterVector[i] = itk::ImageRegionIterator<ImageType>( LambdaImageVector[i], region);
+				//	LambdaIterVector[i].GoToBegin();
+				//}
+
+				//// Allocate eigen norm image
+				//ImageType::Pointer eigen_norm = AllocateNewImage(region);
+				//eigen_norm->SetSpacing( input->GetSpacing() );
+				//eigen_norm->FillBuffer(0);
+				//IteratorTypeFloat4WithIndex eigen_norm_iter(eigen_norm,region);
+
+				hessian_iter.GoToBegin();
+				input_iter.GoToBegin();
+				/*eigen_norm_iter.GoToBegin();*/
+
+				int count=0;
+
+				while (!hessian_iter.IsAtEnd()) 
+				{			
+					if (input_iter.Get() >= 150 && input_iter.Get() <= 700)
+					{
+						EigenValueArrayType lambda;
+
+						// Get eigenvalues
+						hessian_iter.Get().ComputeEigenValues(lambda);
+						std::sort(lambda.Begin(),lambda.End(),OrderByValueDesc);
+
+						if ( lambda[0] >= 0 )
+						{
+
+							w1_iter.Set( weight_dark(lambda[0], lambda[1], alpha[j], gamma[i]) );
+
+							/*for (int i=0; i<3; i++)
+							{
+								LambdaIterVector[i].Set( lambda[i] );
+							}*/
+
+							//eigen_norm_iter.Set( sqrt( lambda[0]*lambda[0] + lambda[1]*lambda[1] + lambda[2]*lambda[2] ) );
+
+						}
+
+					}
+					
+					if (++count % 500000 == 0)
+					{
+						std::cout << count << std::endl;
+					}	
+
+					++hessian_iter;
+					++input_iter;
+					++w1_iter;
+
+					/*++eigen_norm_iter;
+					for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }*/
+
+
+				} // end hessian loop
+
+
+				std::stringstream ss;
+				ss << "sigma_" << sigma[k] << "_alpha_" << alpha[j] << "_gamma_" << gamma[i] << "_w1.hdr";
+				WriteITK(w1,ss.str());
+
+			}
+		}
+
+		//for (int i=0; i<3; i++)
+		//{
+		//	std::stringstream ss;
+		//	ss << "sigma_" << sigma[k] << "_lambda_" << i << "_REGION_input_150_700_lambda1_0.hdr";
+		//	WriteITK( LambdaImageVector[i], ss.str());
+		//}
+
+		//// Rescale eigen norm
+		//RescaleIntensityFilterType::Pointer rescaler = RescaleIntensityFilterType::New();
+		//rescaler->SetInput(eigen_norm);
+		//rescaler->SetOutputMaximum(1);
+		//rescaler->SetOutputMinimum(0);
+		//rescaler->Update();
+		//eigen_norm=rescaler->GetOutput();
+
+		//std::stringstream ss;
+		//ss << "sigma_" << sigma[k] << "_eigen_norm_REGION_input_150_700_lambda1_0.hdr";
+		//WriteITK( eigen_norm, ss.str() );
+	}
+}
+
+void UnderstandHessian(ImageType::Pointer input_aniso)
+{
+	// Make image isotropic
+	ImageType::SpacingType aniso_spacing = input_aniso->GetSpacing();
+	
+	ImageType::SpacingType iso_spacing = aniso_spacing;
+	iso_spacing[1] = iso_spacing[0];
+	iso_spacing[2] = iso_spacing[0];
+
+	ImageType::Pointer input = ResampleImage(input_aniso, iso_spacing);
+	WriteITK(input,"input_isotropic.hdr");
+
+	// Get input info
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	// Allocate output across scales
+	ImageType::Pointer output = AllocateNewImage(region);
+	output->FillBuffer(0);
+
+	IteratorTypeFloat4WithIndex output_iter(output,region);
+	IteratorTypeFloat4WithIndex input_iter(input,region);
+	
+	double gamma = 1.5;
+
+
+	// Compute hessian across 2 sigma scales
+	double sigma[5] = {0.05,0.1,0.25,0.56,1.4};
+
+	for (int k=0; k<5; k++)
 	{
 		// Compute smoothed Hessian
 		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
@@ -4542,29 +4703,33 @@ void GetHessian(ImageType::Pointer input_aniso)
 		hessianFilter->Update();
 		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
 		
-		// Create helper images and iters to visualize algorithm
-		std::vector< ImageType::Pointer > LambdaImageVector(3);
-		std::vector< itk::ImageRegionIterator<ImageType> > LambdaIterVector(3);
+		// Response at each scale N
+		ImageType::Pointer N = AllocateNewImage(region);
+		N->FillBuffer(0);
+		IteratorTypeFloat4WithIndex N_iter(N,region);
 
-		for (int i=0; i<3; i++)
+		/*double lambda3_max = 0;
+
+		//Find lambda3 max
+		for (hessian_iter.GoToBegin(), input_iter.GoToBegin(); !hessian_iter.IsAtEnd(); ++hessian_iter, ++input_iter)
 		{
-			LambdaImageVector[i] = AllocateNewImage(region);
-			LambdaImageVector[i]->SetSpacing( iso_spacing );
-			LambdaImageVector[i]->FillBuffer(0);
-			LambdaIterVector[i] = itk::ImageRegionIterator<ImageType>( LambdaImageVector[i], region);
-			LambdaIterVector[i].GoToBegin();
-		}
+			if (input_iter.Get() >= 150 && input_iter.Get() <= 700)
+			{
+				EigenValueArrayType lambda;
+				hessian_iter.Get().ComputeEigenValues(lambda);
+				std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
 
-		// Allocate eigen norm image
-		ImageType::Pointer eigen_norm = AllocateNewImage(region);
-		eigen_norm->SetSpacing( iso_spacing );
-		eigen_norm->FillBuffer(0);
-		IteratorTypeFloat4WithIndex eigen_norm_iter(eigen_norm,region);
-
+				if ( lambda[2] > lambda3_max )
+				{
+					lambda3_max = lambda[2];
+				}
+			}
+		}*/
 
 		hessian_iter.GoToBegin();
 		input_iter.GoToBegin();
-		eigen_norm_iter.GoToBegin();
+		output_iter.GoToBegin();
+		N_iter.GoToBegin();
 
 		int count=0;
 
@@ -4576,17 +4741,20 @@ void GetHessian(ImageType::Pointer input_aniso)
 
 				// Get eigenvalues
 				hessian_iter.Get().ComputeEigenValues(lambda);
-				std::sort(lambda.Begin(),lambda.End(),OrderByValueDesc);
+				std::sort(lambda.Begin(),lambda.End(),OrderByMagnitude);
 
-				if ( lambda[0] >= 100 )
+				if ( lambda[2] >= 0 )
 				{
+					double Ra = abs( lambda[0] / lambda[2] );
+					double Rb = abs( lambda[1] / lambda[2] );
+					
 
-					for (int i=0; i<3; i++)
-					{
-						LambdaIterVector[i].Set( lambda[i] );
-					}
+					double val = lambda[3] * pow( 1-Ra , gamma ) * pow( 1-Rb, gamma );
 
-					eigen_norm_iter.Set( sqrt( lambda[0]*lambda[0] + lambda[1]*lambda[1] + lambda[2]*lambda[2] ) );
+					N_iter.Set( val );
+
+					if ( val > output_iter.Get() )
+						output_iter.Set( val );
 
 				}
 
@@ -4599,28 +4767,18 @@ void GetHessian(ImageType::Pointer input_aniso)
 
 			++hessian_iter;
 			++input_iter;
-			++eigen_norm_iter;
+			++output_iter;
+			++N_iter;
+		} // end hessian loop
 
-			for (int i=0; i<3; i++) { ++LambdaIterVector[i]; }
-		}
-
-		for (int i=0; i<3; i++)
-		{
-			std::stringstream ss;
-			ss << "sigma_" << sigma[k] << "_lambda_" << i << "_REGION.hdr";
-			WriteITK( LambdaImageVector[i], ss.str());
-		}
-
-		// Rescale eigen norm
-		RescaleIntensityFilterType::Pointer rescaler = RescaleIntensityFilterType::New();
-		rescaler->SetInput(eigen_norm);
-		rescaler->SetOutputMaximum(1);
-		rescaler->SetOutputMinimum(0);
-		rescaler->Update();
-		eigen_norm=rescaler->GetOutput();
 
 		std::stringstream ss;
-		ss << "sigma_" << sigma[k] << "_eigen_norm_REGION.hdr";
-		WriteITK( eigen_norm, ss.str() );
+		ss << "sigma_" << sigma[k] << "_gamma_" << gamma << "_N_scaled.hdr";
+		WriteITK(N,ss.str());
+
 	}
+
+	std::stringstream ss;
+	ss << "gamma_" << gamma << "_hessian_scaled.hdr";
+	WriteITK(output,ss.str());
 }

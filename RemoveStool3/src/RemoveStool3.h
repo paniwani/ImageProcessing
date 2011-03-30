@@ -297,5 +297,6 @@ void EnhanceVoxelType(ImageType::Pointer input, ImageType::Pointer hessian, Voxe
 ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, double gamma);
 void ProcessHessian(ImageType::Pointer hessian, VoxelTypeImage::Pointer voxel_type);
 
-ImageType::Pointer SatoHessianEdgeEnhancingDiffusion(ImageType::Pointer input);
+//ImageType::Pointer SatoHessianEdgeEnhancingDiffusion(ImageType::Pointer input);
 void GetHessian(ImageType::Pointer input_aniso);
+void UnderstandHessian(ImageType::Pointer input_aniso);
