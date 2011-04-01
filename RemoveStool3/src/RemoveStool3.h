@@ -74,6 +74,12 @@
 
 #include <itkAnisotropicEdgeEnhancementDiffusionImageFilter.h>
 #include <itkDiscreteHessianGaussianImageFunction.h>
+#include <itkBinaryDilateImageFilter.h>
+#include <itkConnectedThresholdImageFilter.h>
+#include <itkShapeRelabelImageFilter.h>
+#include <itkBinaryMedianImageFilter.h>
+#include <itkRelabelComponentImageFilter.h>
+#include <itkSliceBySliceImageFilter.h>
 
 
 #include <fstream>
@@ -224,9 +230,6 @@ void EMClassification(IteratorTypeFloat4WithIndex input_iter, IteratorTypeVoxelT
 
 //New functions
 double round(float d);
-void FindVoxelsByGradient(VoxelTypeImage::Pointer voxelEdge, ImageType::IndexType &index, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex, CovariantVectorType &grad, int numOfVoxels, std::vector<ImageType::IndexType> &indexVector);
-void FindVoxelsByGradient2(VoxelTypeImage::Pointer voxelEdge, ImageType::IndexType &index, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex, CovariantVectorType &grad, int numOfVoxels, std::vector<ImageType::IndexType> &indexVector);
-void OptimizeVoxelEdge(ImageType::Pointer input, VoxelTypeImage::Pointer voxelEdge, ImageVectorType::Pointer gradient );
 void WriteITK(ImageType::Pointer image, std::string name);
 void WriteITK(FuzzyFilterType::FuzzySceneType, std::string name);
 void WriteITK(ByteImageType::Pointer image, std::string name);
@@ -245,7 +248,6 @@ void SmoothPartialVector(ImageVectorType::Pointer pv, ByteImageType::Pointer cha
 
 void RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type);
 void RunConnectedThresholdGrowing(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type);
-void RunRegionalMinima(ImageType::Pointer input);
 
 float vesselness(const float lambda1, const float lambda2, const float lambda3, const float alpha, const float gamma12, const float gamma23);
 float thinness( float l[3] );
@@ -295,8 +297,35 @@ std::string VoxelTypeToString(VoxelType type);
 ImageType::Pointer HessianResponse(ImageType::Pointer input_aniso, double alpha, double beta, double gamma, double eta);
 void EnhanceVoxelType(ImageType::Pointer input, ImageType::Pointer hessian, VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer chamfer_colon);
 ImageType::Pointer SatoResponse(ImageType::Pointer input_aniso, double alpha, double gamma);
-void ProcessHessian(ImageType::Pointer hessian, VoxelTypeImage::Pointer voxel_type);
+//void ProcessHessian(ImageType::Pointer hessian, VoxelTypeImage::Pointer voxel_type);
 
 //ImageType::Pointer SatoHessianEdgeEnhancingDiffusion(ImageType::Pointer input);
 void GetHessian(ImageType::Pointer input_aniso);
 void UnderstandHessian(ImageType::Pointer input_aniso);
+
+ByteImageType::Pointer SegmentColon(ImageType::Pointer input);
+void CleanIsolatedStool(VoxelTypeImage::Pointer voxel_type);
+ImageType::Pointer SatoModifiedResponse(ImageType::Pointer input_aniso, double gamma);
+ImageType::Pointer Sharpen(ImageType::Pointer input);
+
+/// PARAMS
+float Modified=false;
+double PI=3.1415926;
+double neighbor_weight[3]={1,1,.5};
+double beta=.7;
+double weight_sum=2.5;
+int chamfer_weights[3]={3,4,5};
+
+bool writeNum = false;
+int writeCount=1;
+
+std::string note = "";
+const float N_SVAL = 400;
+
+const double ALPHA = 0.5;
+const double BETA = 0.3;
+const double GAMMA = 0.3;
+const double ETA = 0.2;
+
+bool truncateOn = true;
+unsigned int truncate_ar[2] = {85,100};
