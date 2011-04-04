@@ -67,6 +67,7 @@ int main(int argc, char * argv[])
 
 	IteratorTypeFloat4WithIndex input_iter(input,fullRegion);
 
+
 	ByteImageType::Pointer chamfer_colon = SegmentColon( input ); //change name later
 	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,fullRegion);
 
@@ -76,11 +77,10 @@ int main(int argc, char * argv[])
 	//double gamma[6] = {0.25,.5,1,2,4,10};
 	//for (int i=0; i<6; i++)
 
-	double sigma[7] = {0.1,0.25,0.5,1,1.5,2,3};
-	double gamma = 1;
-
-	for (int i=0; i<7; i++)	
-		ImageType::Pointer hessian = SatoModifiedResponse(input,chamfer_colon,sigma[i],gamma);
+	///*double sigma[2] = {0.56,1.4};
+	//double gamma = 1;
+	//
+	//Imag*/eType::Pointer hessian = SatoModifiedResponse(input,chamfer_colon,sigma[i],gamma);
 
 
 	//ImageType::Pointer test = HessianResponse(input,ALPHA,BETA,GAMMA,ETA);
@@ -96,7 +96,7 @@ int main(int argc, char * argv[])
 	/*
 	GetHessian(input);
 
-d	ouble alpha = 1;
+	double alpha = 1;
 	double gamma = 0.5;
 
 	;*/
@@ -197,6 +197,27 @@ d	ouble alpha = 1;
 	WriteITK(voxel_type, "voxel_type_start.hdr");
 
 	CleanIsolatedStool( voxel_type );
+
+
+
+	double alpha = 1;
+	double gamma = 3;
+
+	ImageType::Pointer hessian = SatoResponse(input, chamfer_colon, alpha, gamma);
+
+	WriteITK(hessian,"hessian.hdr");
+
+	ProcessHessian( hessian, voxel_type );
+
+	//double contrast[7] = {5,10,20,30,50,100,1000};
+	/*double contrast = 15.0;
+	double sigma[5] = {0.5,1,2,4,10};
+	
+	for (int i=0; i<5; i++)
+		DiffusionTest( hessian , contrast, sigma[i]);
+	*/
+	
+	//ProcessHessian(hessian,voxel_type);
 
 
 
@@ -602,6 +623,8 @@ d	ouble alpha = 1;
 
 	WriteITK(voxel_type, "voxel_type_tissue_fix_5.hdr");
 
+	SubtractStool( input, voxel_type );
+
 
 	//Optimize SA transitions using gradient information
 	//std::cerr<<"Running voxel edge optimization"<<std::endl;
@@ -610,148 +633,148 @@ d	ouble alpha = 1;
 	
 	//WriteITK(voxel_type, "voxel_edge_optimized_noz.hdr");
 
-	// Find thin stool regions [Carston 2.3.6]
-	ByteImageType::Pointer chamfer_from_stool_involvement=AllocateNewByteImage(fullRegion);
-	IteratorTypeByteWithIndex chamfer_from_stool_involvement_iter(chamfer_from_stool_involvement,fullRegion);
+	//// Find thin stool regions [Carston 2.3.6]
+	//ByteImageType::Pointer chamfer_from_stool_involvement=AllocateNewByteImage(fullRegion);
+	//IteratorTypeByteWithIndex chamfer_from_stool_involvement_iter(chamfer_from_stool_involvement,fullRegion);
 
-	for(voxel_type_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin(); 
-		!voxel_type_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd(); 
-		++voxel_type_iter, ++chamfer_from_stool_involvement_iter) 
-    {
-		if (voxel_type_iter.Get()==Stool || voxel_type_iter.Get()==TissueStool || voxel_type_iter.Get()==StoolAir) {
-			chamfer_from_stool_involvement_iter.Set(0);     //stool
-		} else {
-			chamfer_from_stool_involvement_iter.Set(1);     //non stool is the object
-		}
-	}
+	//for(voxel_type_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin(); 
+	//	!voxel_type_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd(); 
+	//	++voxel_type_iter, ++chamfer_from_stool_involvement_iter) 
+ //   {
+	//	if (voxel_type_iter.Get()==Stool || voxel_type_iter.Get()==TissueStool || voxel_type_iter.Get()==StoolAir) {
+	//		chamfer_from_stool_involvement_iter.Set(0);     //stool
+	//	} else {
+	//		chamfer_from_stool_involvement_iter.Set(1);     //non stool is the object
+	//	}
+	//}
 
-	//WriteITK(chamfer_from_stool_involvement,"non_stool_mask.hdr");
+	////WriteITK(chamfer_from_stool_involvement,"non_stool_mask.hdr");
 
-	chamfer_filter = ChamferDistanceFilterType::New();
-	chamfer_filter->SetInput(chamfer_from_stool_involvement);
-	int weights[3]={3,4,5};	//3d distance weight recommended by julian
-	chamfer_filter->SetWeights(weights, weights+3);
-	chamfer_filter->SetDistanceFromObject(true);
-	chamfer_filter->Update();
-	chamfer_from_stool_involvement=chamfer_filter->GetOutput();
-	chamfer_from_stool_involvement_iter = IteratorTypeByteWithIndex(chamfer_from_stool_involvement,fullRegion);
-	chamfer_filter.~SmartPointer();
+	//chamfer_filter = ChamferDistanceFilterType::New();
+	//chamfer_filter->SetInput(chamfer_from_stool_involvement);
+	//int weights[3]={3,4,5};	//3d distance weight recommended by julian
+	//chamfer_filter->SetWeights(weights, weights+3);
+	//chamfer_filter->SetDistanceFromObject(true);
+	//chamfer_filter->Update();
+	//chamfer_from_stool_involvement=chamfer_filter->GetOutput();
+	//chamfer_from_stool_involvement_iter = IteratorTypeByteWithIndex(chamfer_from_stool_involvement,fullRegion);
+	//chamfer_filter.~SmartPointer();
 
-	//WriteITK(chamfer_from_stool_involvement, "non_stool_distance.hdr");
+	////WriteITK(chamfer_from_stool_involvement, "non_stool_distance.hdr");
 
-	// Find thin stool voxels < 8 and no neighbors > 8 (which were not already classified as stool)
-	int chamfercutoff = 8;
-	int thinStoolCount = 0;
+	//// Find thin stool voxels < 8 and no neighbors > 8 (which were not already classified as stool)
+	//int chamfercutoff = 8;
+	//int thinStoolCount = 0;
 
-	for(voxel_type_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin();
-		!voxel_type_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd(); 
-		++voxel_type_iter, ++chamfer_from_stool_involvement_iter) 
-    {
-		//if (voxel_type_iter.Get() != Stool && voxel_type_iter.Get() != TissueStool) // do not turn these into thin stool
-		//{
-			if (chamfer_from_stool_involvement_iter.Get() < chamfercutoff && chamfer_from_stool_involvement_iter.Get() > 0)
-			{
-				ImageType::IndexType index = chamfer_from_stool_involvement_iter.GetIndex();
+	//for(voxel_type_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin();
+	//	!voxel_type_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd(); 
+	//	++voxel_type_iter, ++chamfer_from_stool_involvement_iter) 
+ //   {
+	//	//if (voxel_type_iter.Get() != Stool && voxel_type_iter.Get() != TissueStool) // do not turn these into thin stool
+	//	//{
+	//		if (chamfer_from_stool_involvement_iter.Get() < chamfercutoff && chamfer_from_stool_involvement_iter.Get() > 0)
+	//		{
+	//			ImageType::IndexType index = chamfer_from_stool_involvement_iter.GetIndex();
 
-				bool thinNeighbors = true;
+	//			bool thinNeighbors = true;
 
-				for(int i=-1;i<=1; i++) {
-					if (thinNeighbors && index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
-						for (int j=-1;j<=1 && thinNeighbors; j++) {
-							if (thinNeighbors && index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
-								for (int k=-1;k<=1; k++) {
-									if (thinNeighbors && index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
-										
-										ImageType::IndexType neighbor_index={index[0]+i,index[1]+j,index[2]+k};
-										
-										if (chamfer_from_stool_involvement->GetPixel(neighbor_index) > chamfercutoff) {
-											thinNeighbors = false;
-										}
-									
-									}
-								}
-							}
-						}
-					}
-				}
+	//			for(int i=-1;i<=1; i++) {
+	//				if (thinNeighbors && index[0]+i<=endIndex[0] && index[0]+i>=startIndex[0]) {
+	//					for (int j=-1;j<=1 && thinNeighbors; j++) {
+	//						if (thinNeighbors && index[1]+j<=endIndex[1] && index[1]+j>=startIndex[1]) {
+	//							for (int k=-1;k<=1; k++) {
+	//								if (thinNeighbors && index[2]+k<=endIndex[2] && index[2]+k>=startIndex[2]) {
+	//									
+	//									ImageType::IndexType neighbor_index={index[0]+i,index[1]+j,index[2]+k};
+	//									
+	//									if (chamfer_from_stool_involvement->GetPixel(neighbor_index) > chamfercutoff) {
+	//										thinNeighbors = false;
+	//									}
+	//								
+	//								}
+	//							}
+	//						}
+	//					}
+	//				}
+	//			}
 
-				if (thinNeighbors)
-				{
-					voxel_type_iter.Set(ThinStool);
-					thinStoolCount++;
-				}
-			}
-		//}
-	}
+	//			if (thinNeighbors)
+	//			{
+	//				voxel_type_iter.Set(ThinStool);
+	//				thinStoolCount++;
+	//			}
+	//		}
+	//	//}
+	//}
 
-	std::cout << "Number of thin stool voxels: " << thinStoolCount << std::endl;
+	//std::cout << "Number of thin stool voxels: " << thinStoolCount << std::endl;
 
-	WriteITK(voxel_type,"voxel_type_thinstool.hdr");
+	//WriteITK(voxel_type,"voxel_type_thinstool.hdr");
 
-	// Apply voting scheme to voxel edge
-	//VoteVoxels(voxel_type, chamfer_colon);
-	
-	//voxel_type_iter=IteratorTypeVoxelType(voxel_type,fullRegion);
-	
-	//WriteITK(voxel_type, "voxel_edge_voting.hdr");
+	//// Apply voting scheme to voxel edge
+	////VoteVoxels(voxel_type, chamfer_colon);
+	//
+	////voxel_type_iter=IteratorTypeVoxelType(voxel_type,fullRegion);
+	//
+	////WriteITK(voxel_type, "voxel_edge_voting.hdr");
 
-	// Find thin stool distance to air
-	ByteImageType::Pointer chamfer_air=AllocateNewByteImage( fullRegion );
-    IteratorTypeByteWithIndex chamfer_air_iter(chamfer_air,fullRegion);
+	//// Find thin stool distance to air
+	//ByteImageType::Pointer chamfer_air=AllocateNewByteImage( fullRegion );
+ //   IteratorTypeByteWithIndex chamfer_air_iter(chamfer_air,fullRegion);
 
-    for(voxel_type_iter.GoToBegin(), chamfer_air_iter.GoToBegin();
-        !voxel_type_iter.IsAtEnd() && !chamfer_air_iter.IsAtEnd();
-        ++voxel_type_iter, ++chamfer_air_iter)
-    {
-		if (voxel_type_iter.Get()==Air) {
-            chamfer_air_iter.Set(1);					
-        } else {
-            chamfer_air_iter.Set(0);	
-		}
-    }
+ //   for(voxel_type_iter.GoToBegin(), chamfer_air_iter.GoToBegin();
+ //       !voxel_type_iter.IsAtEnd() && !chamfer_air_iter.IsAtEnd();
+ //       ++voxel_type_iter, ++chamfer_air_iter)
+ //   {
+	//	if (voxel_type_iter.Get()==Air) {
+ //           chamfer_air_iter.Set(1);					
+ //       } else {
+ //           chamfer_air_iter.Set(0);	
+	//	}
+ //   }
 
-	//compute chamfer for air
-	chamfer_filter = ChamferDistanceFilterType::New();
-	chamfer_filter->SetInput(chamfer_air);
-	chamfer_filter->SetWeights(weights, weights+3);
-	chamfer_filter->SetDistanceFromObject(true);
-	chamfer_filter->Update();
-	chamfer_air=chamfer_filter->GetOutput();
-	chamfer_air_iter= IteratorTypeByteWithIndex(chamfer_air,fullRegion);
-	chamfer_filter.~SmartPointer();
-	//WriteITK(chamfer_air,"chamfer_to_air.hdr");
-	
-	// Convert stool and air chamfers to float and normalize
-	ImageType::Pointer ds = AllocateNewImage(fullRegion);
-	IteratorTypeFloat4WithIndex ds_iter(ds,fullRegion);
+	////compute chamfer for air
+	//chamfer_filter = ChamferDistanceFilterType::New();
+	//chamfer_filter->SetInput(chamfer_air);
+	//chamfer_filter->SetWeights(weights, weights+3);
+	//chamfer_filter->SetDistanceFromObject(true);
+	//chamfer_filter->Update();
+	//chamfer_air=chamfer_filter->GetOutput();
+	//chamfer_air_iter= IteratorTypeByteWithIndex(chamfer_air,fullRegion);
+	//chamfer_filter.~SmartPointer();
+	////WriteITK(chamfer_air,"chamfer_to_air.hdr");
+	//
+	//// Convert stool and air chamfers to float and normalize
+	//ImageType::Pointer ds = AllocateNewImage(fullRegion);
+	//IteratorTypeFloat4WithIndex ds_iter(ds,fullRegion);
 
-	ImageType::Pointer da = AllocateNewImage(fullRegion);
-	IteratorTypeFloat4WithIndex da_iter(da,fullRegion);
+	//ImageType::Pointer da = AllocateNewImage(fullRegion);
+	//IteratorTypeFloat4WithIndex da_iter(da,fullRegion);
 
-	for(chamfer_air_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin(), da_iter.GoToBegin(), ds_iter.GoToBegin();
-		!chamfer_air_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd(), !da_iter.IsAtEnd(), !ds_iter.IsAtEnd();
-        ++chamfer_air_iter, ++chamfer_from_stool_involvement_iter, ++da_iter, ++ds_iter)
-    {
-		if ( chamfer_from_stool_involvement_iter.Get() >= 8)
-		{
-			ds_iter.Set(1);
-		} else {
-			ds_iter.Set( (float) chamfer_from_stool_involvement_iter.Get() / 8 );
-		}
+	//for(chamfer_air_iter.GoToBegin(), chamfer_from_stool_involvement_iter.GoToBegin(), da_iter.GoToBegin(), ds_iter.GoToBegin();
+	//	!chamfer_air_iter.IsAtEnd() && !chamfer_from_stool_involvement_iter.IsAtEnd(), !da_iter.IsAtEnd(), !ds_iter.IsAtEnd();
+ //       ++chamfer_air_iter, ++chamfer_from_stool_involvement_iter, ++da_iter, ++ds_iter)
+ //   {
+	//	if ( chamfer_from_stool_involvement_iter.Get() >= 8)
+	//	{
+	//		ds_iter.Set(1);
+	//	} else {
+	//		ds_iter.Set( (float) chamfer_from_stool_involvement_iter.Get() / 8 );
+	//	}
 
-		if ( chamfer_air_iter.Get() >= 8)
-		{
-			da_iter.Set(1);
-		} else {
-			da_iter.Set( (float) chamfer_air_iter.Get() / 8 );
-		}
-	}
+	//	if ( chamfer_air_iter.Get() >= 8)
+	//	{
+	//		da_iter.Set(1);
+	//	} else {
+	//		da_iter.Set( (float) chamfer_air_iter.Get() / 8 );
+	//	}
+	//}
 
-	da_iter = IteratorTypeFloat4WithIndex(da,fullRegion);
-	ds_iter = IteratorTypeFloat4WithIndex(ds,fullRegion);
+	//da_iter = IteratorTypeFloat4WithIndex(da,fullRegion);
+	//ds_iter = IteratorTypeFloat4WithIndex(ds,fullRegion);
 
-	//WriteITK(da,"normalized_air.hdr");
-	//WriteITK(ds,"normalized_stool.hdr");
+	////WriteITK(da,"normalized_air.hdr");
+	////WriteITK(ds,"normalized_stool.hdr");
 
 	//-------------------------------------------------COMPUTE PARTIAL VOLUMES---------------------------------------------------------------
 	
@@ -838,28 +861,28 @@ d	ouble alpha = 1;
 					//file << "StoolAir";
 					break;
 				case ThinStool:
-					value[0]=0.5*(1-vnl_erf((da_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2))));
-					/*
-					if (Modified)
-					{
-						value[0]=0.5*(1-vnl_erf((da_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2)))); //check eq
-					} else {
-						value[0]=0.5*(1+vnl_erf((da_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2))));
-					}
-					*/
-					
-					if (value[0] <= 0) { value[0] = 0; }
-					if (value[0] >= 1) { value[0] = 1; }
+					//value[0]=0.5*(1-vnl_erf((da_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2))));
+					///*
+					//if (Modified)
+					//{
+					//	value[0]=0.5*(1-vnl_erf((da_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2)))); //check eq
+					//} else {
+					//	value[0]=0.5*(1+vnl_erf((da_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2))));
+					//}
+					//*/
+					//
+					//if (value[0] <= 0) { value[0] = 0; }
+					//if (value[0] >= 1) { value[0] = 1; }
 
-					value[2]=0.5*(1+vnl_erf((ds_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2))));
+					//value[2]=0.5*(1+vnl_erf((ds_iter.Get()-0.5)/(CDF_SIGMA*sqrtf(2))));
 
-					if (value[2] <= 0) { value[2] = 0; }
-					if (value[2] >= 1) { value[2] = 1; }
+					//if (value[2] <= 0) { value[2] = 0; }
+					//if (value[2] >= 1) { value[2] = 1; }
 
-					value[1]=1-value[0]-value[2];
+					//value[1]=1-value[0]-value[2];
 
-					if (value[1] <= 0) { value[1] = 0; }
-					if (value[1] >= 1) { value[1] = 1; }
+					//if (value[1] <= 0) { value[1] = 0; }
+					//if (value[1] >= 1) { value[1] = 1; }
 
 					//file << "ThinStool";
 					break;
@@ -2091,7 +2114,12 @@ void WriteITK(FuzzySceneType::Pointer image, std::string name) {
 		ss << "Modified_";
 	if ( !note.empty() )
 		ss << note << "_";
-	ss << writeCount++ << "_" << name;
+
+	if ( writeNum )
+		ss << writeCount++ << "_";
+
+	ss << name;
+
 	writer->SetFileName(ss.str().c_str());
 
 	writer->SetInput(image);
@@ -2110,9 +2138,13 @@ void WriteITK(ByteImageType::Pointer image, std::string name) {
 		ss << "Modified_";
 	if ( !note.empty() )
 		ss << note << "_";
-	ss << writeCount++ << "_" << name;
-	writer->SetFileName(ss.str().c_str());
 
+	if ( writeNum )
+		ss << writeCount++ << "_";
+
+	ss << name;
+
+	writer->SetFileName(ss.str().c_str());
 	writer->SetInput(image);
 	std::cout<<"Writing: "<<ss.str()<<std::endl;
 	writer->Update();
@@ -2129,7 +2161,12 @@ void WriteITK(IntImageType::Pointer image, std::string name) {
 		ss << "Modified_";
 	if ( !note.empty() )
 		ss << note << "_";
-	ss << writeCount++ << "_" << name;
+
+	if ( writeNum )
+		ss << writeCount++ << "_";
+
+	ss << name;
+
 	writer->SetFileName(ss.str().c_str());
 
 	writer->SetInput(image);
@@ -2148,7 +2185,12 @@ void WriteITK(UintImageType::Pointer image, std::string name) {
 		ss << "Modified_";
 	if ( !note.empty() )
 		ss << note << "_";
-	ss << writeCount++ << "_" << name;
+
+	if ( writeNum )
+		ss << writeCount++ << "_";
+
+	ss << name;
+
 	writer->SetFileName(ss.str().c_str());
 
 	writer->SetInput(image);
@@ -3510,4 +3552,75 @@ ImageType::Pointer Sharpen(ImageType::Pointer input)
 	}
 
 	return output;
+}
+
+void DiffusionTest( ImageType::Pointer input, double ContrastParameter, double sigma)
+{
+	typedef itk::Image< double, 3 > DoubleImageType;
+
+	// Cast image to type double
+	typedef itk::CastImageFilter<ImageType, DoubleImageType> CastImageFilterType;
+	CastImageFilterType::Pointer caster = CastImageFilterType::New();
+	caster->SetInput( input );
+	caster->Update();
+	
+	DoubleImageType::Pointer input_double = caster->GetOutput();
+
+	// Run diffusion filter
+	/*typedef itk::AnisotropicHybridDiffusionImageFilter< DoubleImageType, DoubleImageType> HybridFilterType;
+	HybridFilterType::Pointer hybridFilter = HybridFilterType::New();
+	hybridFilter->SetInput ( input_double );*/
+
+	typedef itk::AnisotropicEdgeEnhancementDiffusionImageFilter<DoubleImageType, DoubleImageType> EdgeDiffusionFilterType;
+
+	typedef itk::AnisotropicCoherenceEnhancingDiffusionImageFilter<DoubleImageType, DoubleImageType> CoherenceDiffusionFilterType;
+	
+	CoherenceDiffusionFilterType::Pointer diffusionFilter = CoherenceDiffusionFilterType::New();
+	diffusionFilter->SetInput( input_double );
+
+	diffusionFilter->SetContrastParameterLambdaC( ContrastParameter );
+	diffusionFilter->SetSigma( sigma );
+
+	// Cast back to float
+	typedef itk::CastImageFilter<DoubleImageType, ImageType> CastImageFilterType2;
+	CastImageFilterType2::Pointer caster2 = CastImageFilterType2::New();
+	caster2->SetInput( diffusionFilter->GetOutput() );
+	caster2->Update();
+
+	std::stringstream ss;
+	ss << "diffusion_coherence_contrast_" << ContrastParameter << "_sigma_" << sigma << ".hdr";
+	WriteITK(caster2->GetOutput(), ss.str());
+
+}
+
+void SubtractStool( ImageType::Pointer input, VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer chamfer_colon)
+{
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	// Allocate subtracted output image
+	ImageType::Pointer output = AllocateNewImage(region);
+	output->CopyInformation(input);
+	output->SetSpacing(input->GetSpacing());
+
+	IteratorTypeFloat4WithIndex input_iter(input,region);
+	IteratorTypeFloat4WithIndex output_iter(output,region);
+	IteratorTypeVoxelType voxel_type_iter(voxel_type,region);
+	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,region);
+
+	for (input_iter.GoToBegin(), output_iter.GoToBegin(), voxel_type_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++output_iter, ++voxel_type_iter, ++chamfer_colon_iter)
+	{
+		output_iter.Set( input_iter.Get() );
+
+		if ( chamfer_colon_iter.Get() == 1 )
+		{
+			if ( voxel_type_iter.Get() == Stool || voxel_type_iter.Get() == Air || voxel_type_iter.Get() == TissueStool || voxel_type_iter.Get() == StoolAir )
+			{
+				output_iter.Set(-1025);
+			}
+		}
+	}
+
+
+
+
 }
