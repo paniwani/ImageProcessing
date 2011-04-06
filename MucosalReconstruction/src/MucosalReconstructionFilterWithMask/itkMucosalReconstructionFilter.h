@@ -19,7 +19,7 @@ namespace itk
  * the type of the output image.  
  * 
  */
-template <class TInputImage, class TOutputImage=TInputImage>
+template <class TInputImage, class TOutputImage, class TMaskImage>
 class ITK_EXPORT MucosalReconstructionFilter : public ImageToImageFilter<TInputImage,TOutputImage> 
 {
 public:
@@ -46,6 +46,9 @@ public:
   typedef typename     OutputImageType::RegionType OutputImageRegionType;
   typedef typename     OutputImageType::PixelType  OutputImagePixelType;  
   
+  typedef TMaskImage							MaskImageType;
+  typedef typename MaskImageType::Pointer   	MaskImagePointer;
+  
 
   /** Set number of layers to reconstruct */
   itkGetConstMacro( NumOfLayers, unsigned int );
@@ -56,6 +59,16 @@ public:
                       TInputImage::ImageDimension);
   itkStaticConstMacro(OutputImageDimension, unsigned int,
                       TOutputImage::ImageDimension);
+					  
+	void SetMaskImage(TMaskImage* mask)
+	{
+	this->SetNthInput(1, const_cast<TMaskImage *>( mask ));
+	}
+					  
+	const TMaskImage* GetMaskImage() const
+	{
+	return (static_cast<const TMaskImage*>(this->ProcessObject::GetInput(1)));
+	}
 					  
 
 #ifdef ITK_USE_CONCEPT_CHECKING

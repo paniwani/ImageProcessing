@@ -196,7 +196,7 @@ MucosalReconstructionFilter<TInputImage,TOutputImage>
 	scaffold_mask_iter = ByteIteratorType(scaffold_mask,region);
 
 	// Smooth output within scaffold mask
-	typedef itk::GaussianBlurImageFunction< ImageType > GaussianBlurImageFunctionType;
+	typedef itk::GaussianBlurImageFunction< OutputImageType > GaussianBlurImageFunctionType;
 	GaussianBlurImageFunctionType::Pointer gaussianFunction = GaussianBlurImageFunctionType::New();
 	gaussianFunction->SetInputImage( output );
 

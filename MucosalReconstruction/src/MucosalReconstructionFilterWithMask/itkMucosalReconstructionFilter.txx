@@ -11,8 +11,8 @@ namespace itk
 /**
  * Constructor
  */
-template <class TInputImage, class TOutputImage >
-MucosalReconstructionFilter<TInputImage,TOutputImage >
+template <class TInputImage, class TOutputImage, class TMaskImage>
+MucosalReconstructionFilter<TInputImage,TOutputImage,TMaskImage>
 ::MucosalReconstructionFilter()
 {
   this->SetNumberOfRequiredInputs( 1 );
@@ -23,14 +23,15 @@ MucosalReconstructionFilter<TInputImage,TOutputImage >
 /**
  * GenerateData Performs the reconstruction
  */
-template <class TInputImage, class TOutputImage >
+template <class TInputImage, class TOutputImage, class TMaskImage>
 void
-MucosalReconstructionFilter<TInputImage,TOutputImage>
+MucosalReconstructionFilter<TInputImage,TOutputImage,TMaskImage>
 ::GenerateData( void )
 {
 	// Setup
 	typename Superclass::InputImageConstPointer  input = this->GetInput();
 	typename Superclass::OutputImagePointer output = this->GetOutput(0);
+	typename TMaskImage::ConstPointer mask = this->GetMaskImage();
 
 	InputImageType::RegionType region = input->GetLargestPossibleRegion();
 
@@ -45,8 +46,9 @@ MucosalReconstructionFilter<TInputImage,TOutputImage>
 	typedef itk::ImageRegionConstIteratorWithIndex< InputImageType > 	InputIteratorType;	
 	typedef itk::ImageRegionIteratorWithIndex< OutputImageType > 		IteratorType;
 	typedef itk::ImageRegionIterator< ByteImageType >  					ByteIteratorType;
+	typedef itk::ImageRegionConstIterator< MaskImageType > 				MaskIteratorType;
   
-	// Threshold to detect air
+	// Threshold to detect air within mask
 	ByteImageType::Pointer air = ByteImageType::New();
 	air->SetRegions(region);
 	air->SetSpacing( input->GetSpacing() );
@@ -54,19 +56,53 @@ MucosalReconstructionFilter<TInputImage,TOutputImage>
 
 	InputIteratorType input_iter(input,region);
 	ByteIteratorType air_iter(air,region);
+	MaskIteratorType mask_iter(mask,region);
 
-	for (input_iter.GoToBegin(), air_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++air_iter)
+	for (input_iter.GoToBegin(), air_iter.GoToBegin(), mask_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++air_iter, ++mask_iter)
 	{
-		if (input_iter.Get() < -300) // Chosen to reconstruct entire mucosa (including regions with no stool) for uniformity
+		if (mask_iter.Get()==1 && input_iter.Get() < -300) // Chosen to reconstruct entire mucosa (including regions with no stool) for uniformity
 		{
-			air_iter.Set( 1 );
-		} else {
 			air_iter.Set( 0 );
+		} else {
+			air_iter.Set( 1 );
 		}
 	}
 
-	
-	// Copy input to output
+	// Remove non-air components that are not connected to the largest body of tissue
+	typedef itk::BinaryShapeKeepNObjectsImageFilter< ByteImageType > BinaryShapeKeepNObjectsImageFilterType;
+	BinaryShapeKeepNObjectsImageFilterType::Pointer binaryFilter = BinaryShapeKeepNObjectsImageFilterType::New();
+	binaryFilter->SetInput( air );
+	binaryFilter->SetBackgroundValue(0);
+	binaryFilter->SetForegroundValue(1);
+	binaryFilter->SetAttribute("Size");
+	binaryFilter->SetNumberOfObjects(1);
+	binaryFilter->Update();
+	air = binaryFilter->GetOutput();
+
+	// Invert image to label air components
+	air_iter = ByteIteratorType(air,region);
+	for (air_iter.GoToBegin(); !air_iter.IsAtEnd(); ++air_iter)
+	{
+		air_iter.Set( !air_iter.Get() );
+	}	
+
+	// Isolate largest air component with largest size on border (background air)
+	binaryFilter = BinaryShapeKeepNObjectsImageFilterType::New();
+	binaryFilter->SetInput( air );
+	binaryFilter->SetBackgroundValue(0);
+	binaryFilter->SetForegroundValue(1);
+	binaryFilter->SetAttribute("SizeOnBorder");
+	binaryFilter->SetNumberOfObjects(1);
+	binaryFilter->Update();
+	ByteImageType::Pointer bkg = binaryFilter->GetOutput();
+	ByteIteratorType bkg_iter(bkg,region);
+
+	for (air_iter.GoToBegin(), bkg_iter.GoToBegin(); !air_iter.IsAtEnd(); ++air_iter, ++bkg_iter)
+	{
+		if (bkg_iter.Get() == 1)
+			air_iter.Set( 0 );
+	}
+
 	IteratorType output_iter(output,region);
 
 	for (input_iter.GoToBegin(), output_iter.GoToBegin(), air_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++output_iter, ++air_iter)
@@ -80,7 +116,7 @@ MucosalReconstructionFilter<TInputImage,TOutputImage>
 	}
 
 	/****
-		Determine initial starting tissue value To by dilating air boundary, finding edges, and averaging intensity
+		Determine initial starting tissue value (T0) by dilating air boundary, finding edges, and averaging intensity
 	****/
 
 	// Dilate by 1
@@ -205,9 +241,9 @@ MucosalReconstructionFilter<TInputImage,TOutputImage>
 	gaussianFunction->SetMaximumError( setError );
 	gaussianFunction->SetSigma( 0.7 );
 
-	for (output_iter.GoToBegin(), scaffold_mask_iter.GoToBegin(); !output_iter.IsAtEnd(); ++output_iter, ++scaffold_mask_iter)
+	for (output_iter.GoToBegin(), scaffold_mask_iter.GoToBegin(), mask_iter.GoToBegin(); !output_iter.IsAtEnd(); ++output_iter, ++scaffold_mask_iter, ++mask_iter)
 	{
-		if (scaffold_mask_iter.Get() == 1)
+		if (mask_iter.Get()==1 && scaffold_mask_iter.Get()==1)
 		{
 			output_iter.Set( gaussianFunction->EvaluateAtIndex( output_iter.GetIndex() ) );
 		}
@@ -215,9 +251,9 @@ MucosalReconstructionFilter<TInputImage,TOutputImage>
 	
 }
 
-template <class TInputImage, class TOutputImage >
+template <class TInputImage, class TOutputImage, class TMaskImage>
 void
-MucosalReconstructionFilter<TInputImage,TOutputImage>::
+MucosalReconstructionFilter<TInputImage,TOutputImage,TMaskImage>::
 PrintSelf(std::ostream& os, Indent indent) const
 {
   Superclass::PrintSelf(os,indent);

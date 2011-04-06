@@ -623,7 +623,7 @@ int main(int argc, char * argv[])
 
 	WriteITK(voxel_type, "voxel_type_tissue_fix_5.hdr");
 
-	SubtractStool( input, voxel_type );
+	SubtractStool( input, voxel_type, chamfer_colon );
 
 
 	//Optimize SA transitions using gradient information
@@ -791,9 +791,9 @@ int main(int argc, char * argv[])
 	//file.open("pv.txt");
 	//file << "Index\tIntensity\tGradient\tClass\tPa\tPt\tPs\n";
 
-	for(partialVector_iter.GoToBegin(), input_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), voxel_type_iter.GoToBegin(), input_smax_iter.GoToBegin(), gradient_magnitude_iter.GoToBegin(), da_iter.GoToBegin(), ds_iter.GoToBegin();
-		!partialVector_iter.IsAtEnd() && !input_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd() && !voxel_type_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !gradient_magnitude_iter.IsAtEnd() && !da_iter.IsAtEnd() && !ds_iter.IsAtEnd() ; 
-        ++partialVector_iter, ++input_iter, ++chamfer_colon_iter, ++voxel_type_iter, ++input_smax_iter, ++gradient_magnitude_iter, ++da_iter, ++ds_iter) 
+	for(partialVector_iter.GoToBegin(), input_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), voxel_type_iter.GoToBegin(), input_smax_iter.GoToBegin(), gradient_magnitude_iter.GoToBegin()/*, da_iter.GoToBegin(), ds_iter.GoToBegin()*/;
+		!partialVector_iter.IsAtEnd() && !input_iter.IsAtEnd() && !chamfer_colon_iter.IsAtEnd() && !voxel_type_iter.IsAtEnd() && !input_smax_iter.IsAtEnd() && !gradient_magnitude_iter.IsAtEnd()/* && !da_iter.IsAtEnd() && !ds_iter.IsAtEnd()*/ ; 
+        ++partialVector_iter, ++input_iter, ++chamfer_colon_iter, ++voxel_type_iter, ++input_smax_iter, ++gradient_magnitude_iter/*, ++da_iter, ++ds_iter*/) 
 	{
 		if (chamfer_colon_iter.Get() == 1)
 		{
@@ -3613,14 +3613,75 @@ void SubtractStool( ImageType::Pointer input, VoxelTypeImage::Pointer voxel_type
 
 		if ( chamfer_colon_iter.Get() == 1 )
 		{
-			if ( voxel_type_iter.Get() == Stool || voxel_type_iter.Get() == Air || voxel_type_iter.Get() == TissueStool || voxel_type_iter.Get() == StoolAir )
+			if ( voxel_type_iter.Get() == Stool || voxel_type_iter.Get() == Air || voxel_type_iter.Get() == TissueStool || voxel_type_iter.Get() == StoolAir || input_iter.Get() > 150)
 			{
 				output_iter.Set(-1025);
 			}
 		}
 	}
 
+	WriteITK(output,"basic_subtraction.hdr");
 
+	// Threshold to detect non-air within mask
+	ByteImageType::Pointer air = ByteImageType::New();
+	air->SetRegions(region);
+	air->SetSpacing( input->GetSpacing() );
+	air->Allocate();
 
+	IteratorTypeByteWithIndex air_iter(air,region);
 
+	for (input_iter.GoToBegin(), air_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++air_iter, ++chamfer_colon_iter)
+	{
+		if (chamfer_colon_iter.Get()==1 && input_iter.Get() < -300) // Chosen to reconstruct entire mucosa (including regions with no stool) for uniformity
+		{
+			air_iter.Set( 0 );
+		} else {
+			air_iter.Set( 1 );
+		}
+	}
+
+	// Remove non-air components that are not connected to the largest body of tissue
+	typedef itk::BinaryShapeKeepNObjectsImageFilter< ByteImageType > BinaryShapeKeepNObjectsImageFilterType;
+	BinaryShapeKeepNObjectsImageFilterType::Pointer binaryFilter = BinaryShapeKeepNObjectsImageFilterType::New();
+	binaryFilter->SetInput( air );
+	binaryFilter->SetBackgroundValue(0);
+	binaryFilter->SetForegroundValue(1);
+	binaryFilter->SetAttribute("Size");
+	binaryFilter->SetNumberOfObjects(1);
+	binaryFilter->Update();
+	air = binaryFilter->GetOutput();
+	air_iter = IteratorTypeByteWithIndex(air,region);
+
+	for (output_iter.GoToBegin(), air_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(); !output_iter.IsAtEnd(); ++output_iter, ++air_iter, ++chamfer_colon_iter)
+	{
+		if (chamfer_colon_iter.Get()==1 && air_iter.Get() == 0)
+		{
+			output_iter.Set(-1025);
+		}
+	}
+
+	WriteITK(output,"full_subtraction_connected.hdr");
+
+	// Apply mask to output
+	typedef itk::MaskImageFilter< ImageType, ByteImageType> MaskImageFilterType;
+	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
+	masker->SetInput1( output );
+	masker->SetInput2( chamfer_colon );
+	masker->Update();
+	output = masker->GetOutput();
+
+	WriteITK(output,"full_subtraction_post_mask.hdr");
+
+	// Reconstruct mucosa slice by slice
+	typedef itk::Image< PixelType, 2 > ImageType2D;
+
+	typedef itk::MucosalReconstructionFilter< ImageType2D > MucosalReconstructionFilterType2D;
+	typedef itk::SliceBySliceImageFilter< ImageType, ImageType, MucosalReconstructionFilterType2D > SliceBySliceFilterType;
+
+	MucosalReconstructionFilterType2D::Pointer reconstructionFilter = MucosalReconstructionFilterType2D::New();
+	SliceBySliceFilterType::Pointer sliceFilter = SliceBySliceFilterType::New();
+	sliceFilter->SetFilter( reconstructionFilter );
+	sliceFilter->Update();
+	
+	WriteITK(sliceFilter->GetOutput(),"output_reconstruction.hdr");
 }

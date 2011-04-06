@@ -84,6 +84,7 @@
 #include <itkAnisotropicHybridDiffusionImageFilter.h>
 #include <itkAnisotropicCoherenceEnhancingDiffusionImageFilter.h>
 #include <itkLabelShapeKeepNObjectsImageFilter.h>
+#include <itkMucosalReconstructionFilter.h>
 
 
 #include <fstream>
@@ -312,6 +313,7 @@ void CleanIsolatedStool(VoxelTypeImage::Pointer voxel_type);
 ImageType::Pointer SatoModifiedResponse(ImageType::Pointer input_aniso, ByteImageType::Pointer chamfer_colon, double sigma, double gamma);
 ImageType::Pointer Sharpen(ImageType::Pointer input);
 void DiffusionTest( ImageType::Pointer input, double ContrastParameter, double sigma);
+void SubtractStool( ImageType::Pointer input, VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer chamfer_colon);
 
 /// PARAMS
 float Modified=false;
