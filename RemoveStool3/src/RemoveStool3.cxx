@@ -623,7 +623,7 @@ int main(int argc, char * argv[])
 
 	WriteITK(voxel_type, "voxel_type_tissue_fix_5.hdr");
 
-	SubtractStool( input, voxel_type, chamfer_colon );
+	//SubtractStool( input, voxel_type, chamfer_colon );
 
 
 	//Optimize SA transitions using gradient information
@@ -3622,6 +3622,8 @@ void SubtractStool( ImageType::Pointer input, VoxelTypeImage::Pointer voxel_type
 
 	WriteITK(output,"basic_subtraction.hdr");
 
+	/*
+
 	// Threshold to detect non-air within mask
 	ByteImageType::Pointer air = ByteImageType::New();
 	air->SetRegions(region);
@@ -3672,14 +3674,17 @@ void SubtractStool( ImageType::Pointer input, VoxelTypeImage::Pointer voxel_type
 
 	WriteITK(output,"full_subtraction_post_mask.hdr");
 
+	*/
+
 	// Reconstruct mucosa slice by slice
 	typedef itk::Image< PixelType, 2 > ImageType2D;
 
 	typedef itk::MucosalReconstructionFilter< ImageType2D > MucosalReconstructionFilterType2D;
-	typedef itk::SliceBySliceImageFilter< ImageType, ImageType, MucosalReconstructionFilterType2D > SliceBySliceFilterType;
+	typedef itk::SliceBySliceImageFilter< ImageType, ImageType, MucosalReconstructionFilterType2D, MucosalReconstructionFilterType2D > SliceBySliceFilterType;
 
 	MucosalReconstructionFilterType2D::Pointer reconstructionFilter = MucosalReconstructionFilterType2D::New();
 	SliceBySliceFilterType::Pointer sliceFilter = SliceBySliceFilterType::New();
+	sliceFilter->SetInput( output );
 	sliceFilter->SetFilter( reconstructionFilter );
 	sliceFilter->Update();
 	

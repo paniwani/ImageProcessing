@@ -31,10 +31,13 @@
 #include <itkLabelImageToShapeLabelMapFilter.h>
 #include <itkBinaryMedianImageFilter.h>
 #include <itkVotingBinaryIterativeHoleFillingImageFilter.h>
+
+// Dicom includes
 #include "itkRegularExpressionSeriesFileNames.h"
 #include "itkGDCMImageIO.h"
 #include "itkImageSeriesReader.h"
 #include "itkOrientImageFilter.h"
+
 #include "itkRescaleIntensityImageFilter.h"
 #include "itkResampleImageFilter.h"
 #include "itkAffineTransform.h"
