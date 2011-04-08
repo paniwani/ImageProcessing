@@ -149,8 +149,8 @@ ImageType::Pointer ReadDicom( std::string path )
 	std::vector<std::string> names = fit->GetFileNames();
 	
 	/*
-	unsigned int firstSlice = 150;
-	unsigned int lastSlice = 180;
+	unsigned int firstSlice = 0;
+	unsigned int lastSlice = 150;
 
 	names.erase( names.begin(), names.begin()+firstSlice);
 	names.erase( names.begin()+lastSlice-firstSlice, names.end() );
@@ -167,16 +167,18 @@ ImageType::Pointer ReadDicom( std::string path )
 		return 0;
 	}
 
+	ImageType::Pointer output = reader->GetOutput();
+
     // Orient all input images into LAI orientation (spine is at top of image)
     itk::OrientImageFilter<ImageType,ImageType>::Pointer orienter = itk::OrientImageFilter<ImageType,ImageType>::New();
     orienter->UseImageDirectionOn();
     orienter->SetDesiredCoordinateOrientation(itk::SpatialOrientation::ITK_COORDINATE_ORIENTATION_LAI); //LPI
-    orienter->SetInput(reader->GetOutput());
+    orienter->SetInput( output );
     orienter->Update();
+	output = orienter->GetOutput();
 
-	// Set direction cosines to identity matrix
-	ImageType::Pointer output = orienter->GetOutput();
-	
+	/*
+	// Set direction cosines to identity matrix	
 	ImageType::DirectionType direction;
 	direction.Fill(0);
 	direction[0][0] = 1;
@@ -184,6 +186,7 @@ ImageType::Pointer ReadDicom( std::string path )
 	direction[2][2] = 1;
 	
 	output->SetDirection(direction);
+	*/
 
     return output;
 
@@ -255,6 +258,8 @@ int main(int argc, char * argv[])
 	segmenter->Update();
 	ByteImageType::Pointer colon = segmenter->GetOutput();
 	ByteIteratorType colon_iter(colon,region);
+
+	WriteITK(colon,"colon_segmentation.hdr");
 	
 	// Compute gradient
 	typedef itk::GradientMagnitudeImageFilter<ImageType,ImageType> GradientMagnitudeImageFilterType;
