@@ -8,6 +8,7 @@
 #include "itkImageSeriesReader.h"
 #include "itkOrientImageFilter.h"
 #include "itkGradientMagnitudeImageFilter.h"
+#include "itkOtsuThresholdImageCalculatorModified.h"
 
 enum VoxelType {
 	Stool=1,
@@ -260,14 +261,45 @@ int main(int argc, char * argv[])
 	ByteIteratorType colon_iter(colon,region);
 
 	WriteITK(colon,"colon_segmentation.hdr");
+
+	// Mask the input with colon segmentation
+	typedef itk::MaskImageFilter< ImageType, ByteImageType, ImageType > MaskImageFilterType;
+	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
+	masker->SetInput1( input );
+	masker->SetInput2( colon );
+	masker->SetOutsideValue( -1500 ); // arbitrary
+	masker->Update();
+	ImageType::Pointer input_mask = masker->GetOutput();
+
+	//WriteITK (input_mask,"input_masked.hdr");
+
+	// Compute otsu threshold for tissue and stool intensity ONLY in the colon
+	typedef itk::OtsuThresholdImageCalculatorModified< ImageType >  OtsuThresholdImageCalculatorModifiedType;
+	OtsuThresholdImageCalculatorModifiedType::Pointer otsuCalculator = OtsuThresholdImageCalculatorModifiedType::New();
+	otsuCalculator->SetImage( input_mask );
+	otsuCalculator->SetMinMax(true);
+	otsuCalculator->SetHistogramMin(-250);
+	otsuCalculator->SetHistogramMax(1400);
+	otsuCalculator->SetPrintHistogram(note+"_intensity.csv");
+	otsuCalculator->Compute();
+
+	std::cout << "Otsu Intensity: " << otsuCalculator->GetThreshold() << std::endl;
+
+	std::ofstream file;
+	std::string filename = note+".txt";
+	file.open( filename.c_str() );
+	file << "Otsu Intensity: " << otsuCalculator->GetThreshold() << "\n";
+	file.close();
 	
 	// Compute gradient
 	typedef itk::GradientMagnitudeImageFilter<ImageType,ImageType> GradientMagnitudeImageFilterType;
 	GradientMagnitudeImageFilterType::Pointer gradientMagFilter = GradientMagnitudeImageFilterType::New();
-	gradientMagFilter->SetInput(input);
+	gradientMagFilter->SetInput(input_mask);
 	gradientMagFilter->Update();
 	ImageType::Pointer gmag = gradientMagFilter->GetOutput();
 	IteratorType gmag_iter(gmag,region);
+
+	//WriteITK(gmag, "gradient.hdr");
 	
 	// Apply single material thresholds
 	VoxelImageType::Pointer vmap = VoxelImageType::New();
@@ -278,6 +310,34 @@ int main(int argc, char * argv[])
 	VoxelIteratorType vmap_iter(vmap,region);
 	
 	IteratorType input_iter(input,region);
+
+	float otsu = otsuCalculator->GetThreshold();
+
+	for (input_iter.GoToBegin(), gmag_iter.GoToBegin(), vmap_iter.GoToBegin(), colon_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++gmag_iter, ++vmap_iter, ++colon_iter)
+	{
+		if (colon_iter.Get() == 255)
+		{
+			VoxelType voxel = Unclassified;
+			float input_pixel = input_iter.Get();
+			float input_gradient_pixel = gmag_iter.Get();
+		
+			if ((input_pixel >= otsu && input_gradient_pixel<=0.8*input_pixel) || input_pixel >= 1000) {
+				voxel = Stool;
+			} else if (input_pixel<=-700) {
+				voxel = Air;
+			} else if (input_pixel<= otsu  && input_pixel>=-250 && input_gradient_pixel<=400) {
+				voxel = Tissue;
+			}
+			
+			vmap_iter.Set(voxel);
+		}
+	}
+
+	WriteITK(vmap,"vmap_otsu.hdr");
+
+
+
+	/*
 	
 	for (input_iter.GoToBegin(), gmag_iter.GoToBegin(), vmap_iter.GoToBegin(), colon_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++gmag_iter, ++vmap_iter, ++colon_iter)
 	{
@@ -331,6 +391,8 @@ int main(int argc, char * argv[])
 	}
 	
 	WriteITK(vmap,"vmap_modified.hdr");
+
+	*/
 	
 	return 0;
 }
