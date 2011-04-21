@@ -88,6 +88,9 @@
 #include <itkAnisotropicCoherenceEnhancingDiffusionImageFilter.h>
 #include <itkLabelShapeKeepNObjectsImageFilter.h>
 #include <itkMucosalReconstructionFilter.h>
+#include <itkColonSegmentationFilter.h>
+#include <itkOtsuThresholdImageCalculatorModified.h>
+#include <itkImageDuplicator.h>
 
 
 #include <fstream>
@@ -109,6 +112,7 @@ enum VoxelType {
 
 //Pixel Type
 typedef float                                                               PixelType;
+typedef BYTE																BytePixelType;
 typedef itk::ContinuousIndex< PixelType, 3 >								ContinuousIndexType;
 
 typedef  itk::FixedArray< double, 3 >										EigenValueArrayType;
@@ -170,6 +174,25 @@ typedef itk::ChamferDistanceTransformImageFilter<
 
 
 typedef itk::DiscreteGaussianImageFilter<ImageType, ImageType>				DiscreteGaussianFilterType;
+
+
+typedef itk::ColonSegmentationFilter< ImageType, ByteImageType >			ColonSegmenationFilterType;
+
+typedef itk::MaskImageFilter< ImageType, ByteImageType, ImageType >			MaskImageFilterType;
+
+typedef itk::OtsuThresholdImageCalculatorModified< ImageType >				OtsuThresholdImageCalculatorModifiedType;
+
+typedef itk::MinimumMaximumImageCalculator< ImageType >						MinimumMaximumImageCalculatorType;
+
+typedef itk::ImageDuplicator<ByteImageType>									ImageDuplicatorByteType;
+
+typedef itk::RescaleIntensityImageFilter<ByteImageType>						RescaleIntensityImageFilterByteType;
+
+
+
+
+
+
 //typedef itk::RecursiveGaussianImageFilter<ImageType, ImageType>				GaussianFilterType3;
 // define the fillhole filter
 typedef itk::GrayscaleFillholeImageFilter<ImageType, ImageType>				FillholeFilterType;
@@ -204,8 +227,7 @@ typedef itk::Image<SymmetricSecondRankTensorType, 3>						HessianImageType;
 
 //Main Operation Function
 ImageType::Pointer RemoveStool(ImageType::Pointer input);
-VoxelType SingleMaterialClassification(ImageType::PixelType input_pixel, 
-                                       ImageType::PixelType input_gradient_pixel);
+void SingleMaterialClassification(ImageType::Pointer input, ImageType::Pointer gradient, VoxelTypeImage::Pointer voxel_type, ByteImageType::Pointer chamfer_colon);
 ImageType::Pointer AllocateNewImage(ImageType::RegionType fullRegion);
 ImageVectorType::Pointer AllocateNewVectorImage(ImageType::RegionType fullRegion);
 
@@ -338,4 +360,4 @@ const double GAMMA = 0.3;
 const double ETA = 0.2;
 
 bool truncateOn = true;
-unsigned int truncate_ar[2] = {85,100};
+unsigned int truncate_ar[2] = {85,125};
