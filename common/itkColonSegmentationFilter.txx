@@ -14,7 +14,7 @@ ColonSegmentationFilter<TInputImage,TOutputImage >
 ::ColonSegmentationFilter()
 {
   this->SetNumberOfRequiredInputs( 1 );
-  m_TaggedValue=200;
+  m_TaggedValue=1225;
   m_ForegroundValue=255;
   m_BackgroundValue=0;
   m_PrintImages=false;
@@ -98,7 +98,7 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 
 	for (input_iter.GoToBegin(), air_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++air_iter)
 	{
-		if (input_iter.Get() < -600)
+		if (input_iter.Get() < 400)
 		{
 			air_iter.Set(255);
 		} else {
@@ -266,12 +266,12 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 	{
 		// Detect bone using region growing with seeds from first slice
 		// Assumption: only high intensity object at z=0 is bone
-		InputImagePixelType bone_threshold = 250;
+		InputImagePixelType bone_threshold = 1275;
 
 		ConnectedThresholdImageFilterType::Pointer grower = ConnectedThresholdImageFilterType::New();
 		grower->SetInput( input );
 		grower->SetLower( bone_threshold );
-		grower->SetUpper(1200);
+		grower->SetUpper(2225);
 		grower->SetReplaceValue(255);
 
 		// Set tagged regions within dilated area as seeds of region growing
@@ -358,7 +358,7 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 		IsolatedConnectedImageFilterType::Pointer isolatedGrower = IsolatedConnectedImageFilterType::New();
 		isolatedGrower->SetInput( input );
 		isolatedGrower->SetLower(m_TaggedValue);
-		isolatedGrower->SetUpper( 1200 );
+		isolatedGrower->SetUpper( 2225 );
 		isolatedGrower->SetReplaceValue( 255 );
 		isolatedGrower->FindUpperThresholdOff();
 
@@ -394,7 +394,7 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 		ConnectedThresholdImageFilterType::Pointer grower2 = ConnectedThresholdImageFilterType::New();
 		grower2->SetInput( input );
 		grower2->SetLower(m_TaggedValue);
-		grower2->SetUpper(1200);
+		grower2->SetUpper(2225);
 		grower2->SetReplaceValue(255);
 
 		// Set tagged regions within dilated area as seeds of region growing

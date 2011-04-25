@@ -2,26 +2,105 @@
 #include "HessianFunctions.cxx"
 #include "ScatterCorrection.cxx"
 
-//int main1(int argc, char * argv[])
-//{
-//	if( argc < 2 )
-//	{
-//		std::cerr << "Usage: " << std::endl;
-//		std::cerr << argv[0] << " DicomDirectory";
-//		system("pause");
-//		return EXIT_FAILURE;
-//	}
-//
-//	ImageType::Pointer input;
-//	ByteImageType::Pointer colon;
-//
-//	Setup(argv[1],input,colon);
-//
-//
-//}
-
-
 int main(int argc, char * argv[])
+{
+	if( argc < 2 )
+	{
+		std::cerr << "Usage: " << std::endl;
+		std::cerr << argv[0] << " DicomDirectory";
+		system("pause");
+		return EXIT_FAILURE;
+	}
+
+	ImageType::Pointer input;
+	ByteImageType::Pointer colon;
+
+	Setup(argv[1],input,colon);
+
+
+}
+
+/*********************************************************
+1. Load image
+2. Segment colon
+3. Mask input with colon
+4. Rescale input so that air is 0 HU
+*********************************************************/
+void Setup(std::string dataset, ImageType::Pointer input, ByteImageType::Pointer colon)
+{
+	//----------------------------------------------
+	// 1. Load image
+	//----------------------------------------------
+	std::vector<std::string> dataset_ar = explode( "\\", dataset );
+	std::string dsname = dataset_ar[ dataset_ar.size() - 2 ];
+	std::cout << "Dataset: " << dsname << std::endl;
+
+	if (truncateOn)
+	{
+		std::cout << "Truncating data" << std::endl;
+		std::cout << "Slices: " << truncate_ar[0] << " to " << truncate_ar[1] << std::endl;
+		
+		std::stringstream ss;
+		ss << dsname << "_" << truncate_ar[0] << "_" << truncate_ar[1];
+		dsname = ss.str();
+	}
+
+	// Set writer prefix
+	note = dsname;
+
+	ShortImageType::Pointer input_s;
+
+	// Load dicom files
+	if (!truncateOn)
+	{
+		input_s = ReadDicom( dataset );
+	} else {
+		input_s = ReadDicom( dataset, truncate_ar[0], truncate_ar[1] );
+	}
+
+	// Scale and cast to 16-bit unsigned short
+	typedef itk::MinimumMaximumImageCalculator< ShortImageType > MinimumMaximumImageCalculatorType;
+	MinimumMaximumImageCalculatorType::Pointer minMaxCalc = MinimumMaximumImageCalculatorType::New();
+	minMaxCalc->SetImage( input_s );
+	minMaxCalc->ComputeMinimum();
+	ShortImageType::PixelType min = minMaxCalc->GetMinimum();
+
+	IteratorShortType
+	
+
+
+
+	//----------------------------------------------
+	// 2. Segment colon
+	//----------------------------------------------
+	ColonSegmenationFilterType::Pointer colon_segmenter = ColonSegmenationFilterType::New();
+	colon_segmenter->SetInput( input );
+
+	if (truncateOn)
+		colon_segmenter->SetRemoveBoneLung( false );
+
+	colon_segmenter->SetBackgroundValue( 0 );
+	colon_segmenter->SetForegroundValue( 1 );
+	colon_segmenter->Update();
+
+	ByteImageType::Pointer chamfer_colon = colon_segmenter->GetOutput();
+
+	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,fullRegion);
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+int main2(int argc, char * argv[])
 {
 	//-------------------------------------------BEGIN SETUP-------------------------------------------------------
 
@@ -62,7 +141,7 @@ int main(int argc, char * argv[])
 	std::cout << "Modified: " << Modified << std::endl;
 
 	// Read and write dicom input
-	ImageType::Pointer input = ReadDicom <ImageType> ( dataset , truncate_ar[0], truncate_ar[1]);
+	ImageType::Pointer input = ReadDicom( dataset );
 
 	WriteITK(input,"input.nii");
 
@@ -91,8 +170,7 @@ int main(int argc, char * argv[])
 	IteratorTypeFloat4WithIndex input_iter(input,fullRegion);
 
 	// Segment colon
-	typedef itk::ColonSegmentationFilter<ImageType, ByteImageType> ColonSegmentationFilterType;
-	ColonSegmentationFilterType::Pointer colon_segmenter = ColonSegmentationFilterType::New();
+	ColonSegmenationFilterType::Pointer colon_segmenter = ColonSegmenationFilterType::New();
 	colon_segmenter->SetInput( input );
 
 	if (truncateOn)
@@ -144,7 +222,7 @@ int main(int argc, char * argv[])
 	std::cout << std::endl << std::endl;
 
 
-	//RemoveStool5(input,chamfer_colon);
+	RemoveStool5(input,chamfer_colon);
 
 	/*
 
@@ -1819,7 +1897,6 @@ void SingleMaterialClassification(ImageType::Pointer input, ImageType::Pointer g
 	// Determine tissue stool intensity threshold using otsu threshold on histogram
 
 	// Mask input with colon segmentation
-	typedef itk::MaskImageFilter<ImageType,ByteImageType,ImageType> MaskImageFilterType;
 	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
 	masker->SetInput1( input );
 	masker->SetInput2( chamfer_colon );
@@ -2269,7 +2346,7 @@ VoxelType NumToVoxelType(int num)
 }
 
 template <typename T>
-typename T::Pointer ReadDicom( std::string path, int slice1, int slice2)
+typename T::Pointer ReadDicom( std::string path, int slice1=0, int slice2=-1)
 {	
 	// Create reader
 	itk::ImageSeriesReader<T>::Pointer reader = itk::ImageSeriesReader<T>::New();
@@ -3597,7 +3674,6 @@ void RemoveStool4(ImageType::Pointer input, ByteImageType::Pointer colon)
 	// Find optimal tissue stool threshold
 
 	// Mask input with colon segmentation
-	typedef itk::MaskImageFilter<ImageType,ByteImageType,ImageType> MaskImageFilterType;
 	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
 	masker->SetInput1( input );
 	masker->SetInput2( colon );
@@ -3657,7 +3733,6 @@ void RemoveStool5(ImageType::Pointer input, ByteImageType::Pointer colon)
 	WriteITK(colon, "colon.nii");
 
 	// Shift input so that air is 0 HU
-	typedef itk::MinimumMaximumImageCalculator<ImageType> MinimumMaximumImageCalculatorType;
 	MinimumMaximumImageCalculatorType::Pointer minMaxCalc = MinimumMaximumImageCalculatorType::New();
 	minMaxCalc->SetImage(input);
 	minMaxCalc->ComputeMinimum();
@@ -3671,7 +3746,6 @@ void RemoveStool5(ImageType::Pointer input, ByteImageType::Pointer colon)
 
 
 	// Mask with colon
-	typedef itk::MaskImageFilter<ImageType,ByteImageType,ImageType> MaskImageFilterType;
 	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
 	masker->SetInput1(input);
 	masker->SetInput2(colon);

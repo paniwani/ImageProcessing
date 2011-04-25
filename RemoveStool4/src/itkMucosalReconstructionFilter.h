@@ -1,5 +1,5 @@
-#ifndef __itkColonSegmentationFilter_h
-#define __itkColonSegmentationFilter_h
+#ifndef __itkMucosalReconstructionFilter_h
+#define __itkMucosalReconstructionFilter_h
 
 #include "itkImageToImageFilter.h"
 #include <itkBinaryContourImageFilter.h>
@@ -7,31 +7,24 @@
 #include <itkBinaryDilateImageFilter.h>
 #include <itkBinaryErodeImageFilter.h>
 #include <itkBinaryShapeKeepNObjectsImageFilter.h>
-#include <itkBinaryShapeOpeningImageFilter.h>
-#include <itkBinaryMedianImageFilter.h>
-#include <itkConnectedThresholdImageFilter.h>
-#include <itkImageFileWriter.h>
-#include <itkSliceBySliceImageFilter.h>
-#include <itkIsolatedConnectedImageFilter.h>
+#include <itkGaussianBlurImageFunction.h>
 
 namespace itk
 {
   
-/** \class ColonSegmentationFilter
- * \brief Implements uncleansed colon segmentation
+/** \class MucosalReconstructionFilter
+ * \brief Implements a mucosal reconstruction post electronic subtraction
  *
  * This class is parameterized over the type of the input image and
  * the type of the output image.  
  * 
  */
-template <	class TInputImage, 
-			class TOutputImage=Image< unsigned char, ::itk::GetImageDimension<TInputImage>::ImageDimension >  >
-			
-class ITK_EXPORT ColonSegmentationFilter : public ImageToImageFilter<TInputImage,TOutputImage> 
+template <class TInputImage, class TOutputImage=TInputImage>
+class ITK_EXPORT MucosalReconstructionFilter : public ImageToImageFilter<TInputImage,TOutputImage> 
 {
 public:
   /** Standard class typedefs. */
-  typedef ColonSegmentationFilter                            Self;
+  typedef MucosalReconstructionFilter                            Self;
   typedef ImageToImageFilter<TInputImage,TOutputImage>  Superclass;
   typedef SmartPointer<Self>                            Pointer;
   typedef SmartPointer<const Self>                      ConstPointer;
@@ -40,7 +33,7 @@ public:
   itkNewMacro(Self);
   
   /** Run-time type information (and related methods). */
-  itkTypeMacro(ColonSegmentationFilter, ImageToImageFilter);
+  itkTypeMacro(MucosalReconstructionFilter, ImageToImageFilter);
 
   /** Some convenient typedefs. */
   typedef TInputImage                            InputImageType;
@@ -54,34 +47,15 @@ public:
   typedef typename     OutputImageType::PixelType  OutputImagePixelType;  
   
 
-  /** Set tagged value */
-  itkGetConstMacro( TaggedValue, unsigned int );
-  itkSetMacro( TaggedValue, unsigned int );
-  
-  itkSetMacro(ForegroundValue, OutputImagePixelType);
-  itkGetConstMacro(ForegroundValue, OutputImagePixelType);
-
-  itkSetMacro(BackgroundValue, OutputImagePixelType);
-  itkGetConstMacro(BackgroundValue, OutputImagePixelType);
-
-  itkSetMacro(PrintImages, bool);
-  itkGetConstMacro(PrintImages, bool);
-  
-  itkSetMacro(RemoveBoneLung, bool);
-  itkGetConstMacro(RemoveBoneLung, bool);
+  /** Set number of layers to reconstruct */
+  itkGetConstMacro( NumOfLayers, unsigned int );
+  itkSetMacro( NumOfLayers, unsigned int );
 
   /** ImageDimension constants */
   itkStaticConstMacro(InputImageDimension, unsigned int,
                       TInputImage::ImageDimension);
   itkStaticConstMacro(OutputImageDimension, unsigned int,
                       TOutputImage::ImageDimension);
-					  
-
-  typedef typename itk::Image<unsigned char, InputImageDimension> 				ByteImageType;
-
-  typedef itk::ImageRegionIteratorWithIndex< InputImageType > 			InputIteratorType;	
-  typedef itk::ImageRegionIteratorWithIndex< OutputImageType > 			IteratorType;
-  typedef itk::ImageRegionIteratorWithIndex< ByteImageType >  					ByteIteratorType;
 					  
 
 #ifdef ITK_USE_CONCEPT_CHECKING
@@ -94,10 +68,9 @@ public:
 #endif
 
 protected:
-  ColonSegmentationFilter();
-  virtual ~ColonSegmentationFilter() {};
+  MucosalReconstructionFilter();
+  virtual ~MucosalReconstructionFilter() {};
   void PrintSelf(std::ostream& os, Indent indent) const;
-  void WriteITK(typename ByteImageType::Pointer image, std::string name);
 
   /** This method implements the actual reflection of the image.
    *
@@ -106,21 +79,17 @@ protected:
   void GenerateData(void);
 
 private:
-  ColonSegmentationFilter(const Self&); //purposely not implemented
+  MucosalReconstructionFilter(const Self&); //purposely not implemented
   void operator=(const Self&); //purposely not implemented
 
-  unsigned int m_TaggedValue;
-  OutputImagePixelType m_ForegroundValue;
-  OutputImagePixelType m_BackgroundValue;
-  bool m_PrintImages;
-  bool m_RemoveBoneLung;
+  unsigned int m_NumOfLayers;
 
 };
 
 } // end namespace itk
 
 #ifndef ITK_MANUAL_INSTANTIATION
-#include "itkColonSegmentationFilter.txx"
+#include "itkMucosalReconstructionFilter.txx"
 #endif
 
 #endif

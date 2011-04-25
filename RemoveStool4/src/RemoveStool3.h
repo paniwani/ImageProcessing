@@ -358,7 +358,7 @@ const double GAMMA = 0.3;
 const double ETA = 0.2;
 
 bool truncateOn = true;
-unsigned int truncate_ar[2] = {85,90};
+unsigned int truncate_ar[2] = {85,125};
 
 void RemoveStool4(ImageType::Pointer input, ByteImageType::Pointer colon);
 void RemoveStool5(ImageType::Pointer input, ByteImageType::Pointer colon);
