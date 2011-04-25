@@ -91,6 +91,7 @@
 #include <itkColonSegmentationFilter.h>
 #include <itkOtsuThresholdImageCalculatorModified.h>
 #include <itkImageDuplicator.h>
+#include <itkCannyEdgeDetectionImageFilterModified.h>
 
 
 #include <fstream>
@@ -138,8 +139,8 @@ typedef itk::ImageRegionIteratorWithIndex<IntImageType>						IteratorTypeIntWith
 typedef itk::Image<unsigned int, 3>											UintImageType;
 typedef itk::ImageRegionIteratorWithIndex<UintImageType>					IteratorTypeUintWithIndex;
 
-//typedef itk::Image<unsigned short,3>										UshortImageType;
-//typedef itk::ImageRegionIteratorWithIndex<UshortImageType>					UshortImageTypeWithIndex;
+typedef itk::Image<unsigned short,3>										UshortImageType;
+typedef itk::ImageRegionIteratorWithIndex<UshortImageType>					UshortImageTypeWithIndex;
 
 typedef itk::ImageRegionIteratorWithIndex<EigenValueImageType>				EigenValueIterType;
 
@@ -175,18 +176,16 @@ typedef itk::ChamferDistanceTransformImageFilter<
 
 typedef itk::DiscreteGaussianImageFilter<ImageType, ImageType>				DiscreteGaussianFilterType;
 
-
-typedef itk::ColonSegmentationFilter< ImageType, ByteImageType >			ColonSegmenationFilterType;
-
-typedef itk::MaskImageFilter< ImageType, ByteImageType, ImageType >			MaskImageFilterType;
-
 typedef itk::OtsuThresholdImageCalculatorModified< ImageType >				OtsuThresholdImageCalculatorModifiedType;
-
-typedef itk::MinimumMaximumImageCalculator< ImageType >						MinimumMaximumImageCalculatorType;
 
 typedef itk::ImageDuplicator<ByteImageType>									ImageDuplicatorByteType;
 
 typedef itk::RescaleIntensityImageFilter<ByteImageType>						RescaleIntensityImageFilterByteType;
+
+typedef itk::BinaryErodeImageFilter<ByteImageType,ByteImageType,StructuringElementType> BinaryErodeImageFilterType;
+
+
+typedef itk::CannyEdgeDetectionImageFilterModified<ImageType,ImageType>		CannyEdgeDetectionImageFilterType;
 
 
 
@@ -273,7 +272,6 @@ bool compareSizeOnBorder(LabelObjectType::Pointer a, LabelObjectType::Pointer b)
 bool compareSize(LabelObjectType::Pointer a, LabelObjectType::Pointer b);
 int VoxelTypeToNum(VoxelType type);
 //VoxelType NumToVoxelType(int num);
-ImageType::Pointer ReadDicom( std::string path );
 void SmoothPartialVector(ImageVectorType::Pointer pv, ByteImageType::Pointer chamfer_colon, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex);
 
 void RunFuzzy(ImageType::Pointer input, ByteImageType::Pointer chamfer_colon, VoxelTypeImage::Pointer voxel_type);
@@ -361,3 +359,9 @@ const double ETA = 0.2;
 
 bool truncateOn = true;
 unsigned int truncate_ar[2] = {85,125};
+
+void RemoveStool4(ImageType::Pointer input, ByteImageType::Pointer colon);
+void RemoveStool5(ImageType::Pointer input, ByteImageType::Pointer colon);
+
+template <typename T>
+typename T::Pointer ReadDicom( std::string path, int slice1=0, int slice2=-1);

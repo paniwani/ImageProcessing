@@ -4,6 +4,104 @@
 
 int main(int argc, char * argv[])
 {
+	if( argc < 2 )
+	{
+		std::cerr << "Usage: " << std::endl;
+		std::cerr << argv[0] << " DicomDirectory";
+		system("pause");
+		return EXIT_FAILURE;
+	}
+
+	ImageType::Pointer input;
+	ByteImageType::Pointer colon;
+
+	Setup(argv[1],input,colon);
+
+
+}
+
+/*********************************************************
+1. Load image
+2. Segment colon
+3. Mask input with colon
+4. Rescale input so that air is 0 HU
+*********************************************************/
+void Setup(std::string dataset, ImageType::Pointer input, ByteImageType::Pointer colon)
+{
+	//----------------------------------------------
+	// 1. Load image
+	//----------------------------------------------
+	std::vector<std::string> dataset_ar = explode( "\\", dataset );
+	std::string dsname = dataset_ar[ dataset_ar.size() - 2 ];
+	std::cout << "Dataset: " << dsname << std::endl;
+
+	if (truncateOn)
+	{
+		std::cout << "Truncating data" << std::endl;
+		std::cout << "Slices: " << truncate_ar[0] << " to " << truncate_ar[1] << std::endl;
+		
+		std::stringstream ss;
+		ss << dsname << "_" << truncate_ar[0] << "_" << truncate_ar[1];
+		dsname = ss.str();
+	}
+
+	// Set writer prefix
+	note = dsname;
+
+	ShortImageType::Pointer input_s;
+
+	// Load dicom files
+	if (!truncateOn)
+	{
+		input_s = ReadDicom( dataset );
+	} else {
+		input_s = ReadDicom( dataset, truncate_ar[0], truncate_ar[1] );
+	}
+
+	// Scale and cast to 16-bit unsigned short
+	typedef itk::MinimumMaximumImageCalculator< ShortImageType > MinimumMaximumImageCalculatorType;
+	MinimumMaximumImageCalculatorType::Pointer minMaxCalc = MinimumMaximumImageCalculatorType::New();
+	minMaxCalc->SetImage( input_s );
+	minMaxCalc->ComputeMinimum();
+	ShortImageType::PixelType min = minMaxCalc->GetMinimum();
+
+	IteratorShortType
+	
+
+
+
+	//----------------------------------------------
+	// 2. Segment colon
+	//----------------------------------------------
+	ColonSegmenationFilterType::Pointer colon_segmenter = ColonSegmenationFilterType::New();
+	colon_segmenter->SetInput( input );
+
+	if (truncateOn)
+		colon_segmenter->SetRemoveBoneLung( false );
+
+	colon_segmenter->SetBackgroundValue( 0 );
+	colon_segmenter->SetForegroundValue( 1 );
+	colon_segmenter->Update();
+
+	ByteImageType::Pointer chamfer_colon = colon_segmenter->GetOutput();
+
+	IteratorTypeByteWithIndex chamfer_colon_iter(chamfer_colon,fullRegion);
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+int main2(int argc, char * argv[])
+{
 	//-------------------------------------------BEGIN SETUP-------------------------------------------------------
 
 	// Get arguments
@@ -121,6 +219,11 @@ int main(int argc, char * argv[])
 	std::cout << "Input maximum: " << input_max << std::endl;
 	std::cout << "Input mean: " << input_mean << std::endl;
 
+	std::cout << std::endl << std::endl;
+
+
+	RemoveStool5(input,chamfer_colon);
+
 	/*
 
 	// Scatter correction
@@ -232,6 +335,28 @@ int main(int argc, char * argv[])
 	
 	// Write out the gradient magnitude for the input image
 	WriteITK(gradient_magnitude, "gradient_1x.nii");
+
+
+
+	// Make mask of G < 0.8*I
+
+	ByteImageType::Pointer gmask = AllocateNewByteImage(fullRegion);
+	IteratorTypeByteWithIndex gmask_iter(gmask,fullRegion);
+
+	for (input_iter.GoToBegin(), gradient_magnitude_iter.GoToBegin(), chamfer_colon_iter.GoToBegin(), gmask_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++gradient_magnitude_iter, ++chamfer_colon_iter, ++gmask_iter)
+	{
+		if (chamfer_colon_iter.Get() == 1)
+		{
+			if ( gradient_magnitude_iter.Get() < (0.8 * input_iter.Get()) )
+			{
+				gmask_iter.Set( 255 );
+			} else {
+				gmask_iter.Set( 0 );
+			}
+		}
+	}
+
+	WriteITK( gmask, "gmask.nii");
 
 	// Create temporary image and iter
 	ImageType::Pointer temp = AllocateNewImage(fullRegion);
@@ -1812,9 +1937,9 @@ void SingleMaterialClassification(ImageType::Pointer input, ImageType::Pointer g
 				if ( ( I >= tissue_stool_threshold && G < 0.8*I ) || I > 1000 )
 				{
 					voxel = Stool;
-				} else if ( I <= -700 ) {
+				} else if ( I <= -600 ) {
 					voxel = Air;
-				} else if ( I < tissue_stool_threshold && I > -250 && G <= 400 ) {
+				} else if ( I < tissue_stool_threshold && I > -300 && G <= 400 ) {
 					voxel = Tissue;
 				} else {
 					voxel = Unclassified;
@@ -2220,28 +2345,45 @@ VoxelType NumToVoxelType(int num)
 	return Unclassified;
 }
 
-ImageType::Pointer ReadDicom( std::string path )
+template <typename T>
+typename T::Pointer ReadDicom( std::string path, int slice1=0, int slice2=-1)
 {	
 	// Create reader
-	itk::ImageSeriesReader<ImageType>::Pointer reader = itk::ImageSeriesReader<ImageType>::New();
+	itk::ImageSeriesReader<T>::Pointer reader = itk::ImageSeriesReader<T>::New();
     itk::GDCMImageIO::Pointer dicomIO = itk::GDCMImageIO::New();
     reader->SetImageIO( dicomIO );
 
+	/*
+	
+	typedef itk::GDCMSeriesFileNames NamesGeneratorType;
+	NamesGeneratorType::Pointer nameGenerator = NamesGeneratorType::New();
+	
+	nameGenerator->SetDirectory( path );
+	
+	const std::vector< std::string > seriesUID = nameGenerator->GetSeriesUIDs();
+	std::string seriesIdentifier = seriesUID.begin()->c_str();
+	
+	std::vector< std::string > names = nameGenerator->GetFileNames( seriesIdentifier );
+
+	*/
+	
+	
+	
 	// Create regex finder to match file names
 	itk::RegularExpressionSeriesFileNames::Pointer fit = itk::RegularExpressionSeriesFileNames::New();
 	
 	fit->SetDirectory( path );
-	//fit->SetRegularExpression("[^.]*.(.*)");
 	fit->SetRegularExpression("[^.]*i([0-9]+).dcm");
 	fit->SetSubMatch(1);
 
 	std::vector<std::string> names = fit->GetFileNames();
 	
-	if (truncateOn)
+	if (slice2 > 0 && slice2 > slice1)
 	{
-		names.erase( names.begin(), names.begin()+truncate_ar[0] );
-		names.erase( names.begin()+truncate_ar[1]-truncate_ar[0], names.end() );
+		names.erase( names.begin(), names.begin()+slice1);
+		names.erase( names.begin()+slice2-slice1, names.end() );
 	}
+	
 
     reader->SetFileNames( names );
 	try
@@ -2250,42 +2392,24 @@ ImageType::Pointer ReadDicom( std::string path )
 	}
 	catch( itk::ExceptionObject & err )
 	{
-		std::cerr << "Exception caught: " << err << std::endl;
+		std::cerr << "Error reading dicom: " << err << std::endl;
 		return 0;
 	}
-
-	ImageType::Pointer output = reader->GetOutput();
-
+	
+	T::Pointer output = reader->GetOutput();
+	
 	/*
-
     // Orient all input images into LAI orientation (spine is at top of image)
-    itk::OrientImageFilter<ImageType,ImageType>::Pointer orienter = itk::OrientImageFilter<ImageType,ImageType>::New();
+    itk::OrientImageFilter<T,T>::Pointer orienter = itk::OrientImageFilter<T,T>::New();
     orienter->UseImageDirectionOn();
     orienter->SetDesiredCoordinateOrientation(itk::SpatialOrientation::ITK_COORDINATE_ORIENTATION_LAI); //LPI
     orienter->SetInput( output );
     orienter->Update();
-
+	output = orienter->GetOutput();
 	*/
-
 	
-
-	/*
-
-	// Set direction cosines to identity matrix
-	ImageType::Pointer output = orienter->GetOutput();
 	
-	ImageType::DirectionType direction;
-	direction.Fill(0);
-	direction[0][0] = 1;
-	direction[1][1] = 1;
-	direction[2][2] = 1;
-	
-	output->SetDirection(direction);
-
-	*/
-
     return output;
-
 }
 
 void SmoothPartialVector(ImageVectorType::Pointer pv, ByteImageType::Pointer chamfer_colon, ImageType::IndexType &startIndex, ImageType::IndexType &endIndex)
@@ -3531,4 +3655,205 @@ void SubtractStool( ImageType::Pointer input, VoxelTypeImage::Pointer voxel_type
 	sliceFilter->Update();
 	
 	WriteITK(sliceFilter->GetOutput(),"output_reconstruction.nii");
+}
+
+void RemoveStool4(ImageType::Pointer input, ByteImageType::Pointer colon)
+{
+	ImageType::RegionType region = input->GetLargestPossibleRegion();	
+
+	VoxelTypeImage::Pointer vmap = VoxelTypeImage::New();
+	vmap->SetRegions(region);
+	vmap->SetSpacing(input->GetSpacing());
+	vmap->Allocate();
+	vmap->FillBuffer(Unclassified);
+
+	IteratorTypeFloat4WithIndex input_iter(input,region);
+	IteratorTypeByteWithIndex colon_iter(colon,region);
+	IteratorTypeVoxelType vmap_iter(vmap,region);
+
+	// Find optimal tissue stool threshold
+
+	// Mask input with colon segmentation
+	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
+	masker->SetInput1( input );
+	masker->SetInput2( colon );
+	masker->SetOutsideValue( -1500 ); // arbitrary
+	masker->Update();
+	ImageType::Pointer input_mask = masker->GetOutput();
+
+	// Compute otsu threshold for tissue and stool intensity
+	OtsuThresholdImageCalculatorModifiedType::Pointer otsuCalculator = OtsuThresholdImageCalculatorModifiedType::New();
+	otsuCalculator->SetImage( input_mask );
+	otsuCalculator->SetMinMax(true);
+	otsuCalculator->SetHistogramMin(-250);
+	otsuCalculator->SetHistogramMax(1400);
+	otsuCalculator->SetPrintHistogram(note+"_intensity.csv");
+	otsuCalculator->Compute();
+
+	float tissue_stool_threshold = otsuCalculator->GetThreshold();
+
+	otsuCalculator.~SmartPointer();
+	input_mask.~SmartPointer();
+	masker.~SmartPointer();
+	
+	std::cout << std::endl << std::endl;
+	std::cout << "Tissue Stool Otsu Threshold: " << tissue_stool_threshold << std::endl;
+	std::cout << std::endl << std::endl;
+
+	// Find air and stool
+
+	for (input_iter.GoToBegin(), vmap_iter.GoToBegin(), colon_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++vmap_iter, ++colon_iter)
+	{
+		if (colon_iter.Get() == 1)
+		{
+			if (input_iter.Get() < -600 )
+			{
+
+				vmap_iter.Set( Air );
+
+			} else if ( input_iter.Get() > tissue_stool_threshold ) {
+				
+				vmap_iter.Set( Stool );
+			}
+		}
+	}
+
+	WriteITK(vmap,"vmap.nii");
+
+}
+
+void RemoveStool5(ImageType::Pointer input, ByteImageType::Pointer colon)
+{
+	ImageType::RegionType fullRegion = input->GetLargestPossibleRegion();
+
+	IteratorTypeFloat4WithIndex input_iter(input,fullRegion);
+	IteratorTypeByteWithIndex colon_iter(colon,fullRegion);
+
+	
+	WriteITK(colon, "colon.nii");
+
+	// Shift input so that air is 0 HU
+	MinimumMaximumImageCalculatorType::Pointer minMaxCalc = MinimumMaximumImageCalculatorType::New();
+	minMaxCalc->SetImage(input);
+	minMaxCalc->ComputeMinimum();
+	PixelType min = minMaxCalc->GetMinimum();
+
+	for (input_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter)
+	{
+		input_iter.Set( input_iter.Get() + abs(min) );
+	}
+	minMaxCalc.~SmartPointer();
+
+
+	// Mask with colon
+	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
+	masker->SetInput1(input);
+	masker->SetInput2(colon);
+	masker->SetOutsideValue(0); // arbitrary
+	masker->Update();
+	input=masker->GetOutput();
+	masker.~SmartPointer();
+
+	WriteITK(input, "input_masked.nii");
+
+	// Otsu threshold intensity
+	OtsuThresholdImageCalculatorModifiedType::Pointer otsuCalculator = OtsuThresholdImageCalculatorModifiedType::New();
+	otsuCalculator->SetImage( input );
+	otsuCalculator->SetMinMax(true);
+	otsuCalculator->SetHistogramMin(750);
+	otsuCalculator->SetHistogramMax(2400);
+	otsuCalculator->SetPrintHistogram(note+"_intensity.csv");
+	otsuCalculator->Compute();
+	PixelType tissue_stool_threshold = otsuCalculator->GetThreshold();
+	otsuCalculator.~SmartPointer();
+	
+	std::cout << std::endl << std::endl;
+	std::cout << "Tissue Stool Otsu Threshold: " << tissue_stool_threshold << std::endl;
+	std::cout << std::endl << std::endl;
+
+	// Get gradient using canny, supress non-max
+	CannyEdgeDetectionImageFilterType::Pointer canny = CannyEdgeDetectionImageFilterType::New();
+	canny->SetInput(input);
+	canny->SetLowerThreshold(100); // minimum gradient threshold
+	canny->SetVariance(1);
+	canny->Update();
+	ImageType::Pointer grad = canny->GetOutput();
+
+	WriteITK(grad,"canny.nii");
+
+	// Mask gradient with colon (after 1px erosion) to remove outside region
+	BinaryErodeImageFilterType::Pointer eroder = BinaryErodeImageFilterType::New();
+
+	StructuringElementType se;
+	ImageType::SizeType radius;
+	radius.Fill(0);
+	radius[0] = 1;
+	radius[1] = 1;
+	radius[2] = 0;
+	se.SetRadius(radius);
+	se.CreateStructuringElement();
+
+	eroder->SetKernel(se);
+	eroder->SetInput(colon);
+	eroder->SetForegroundValue(1);
+	eroder->SetBackgroundValue(0);
+
+	eroder->Update();
+	ByteImageType::Pointer colonErode = eroder->GetOutput();
+
+	WriteITK(colonErode,"colonErode.nii");
+
+	masker = MaskImageFilterType::New();
+	masker->SetInput1(grad);
+	masker->SetInput2(colonErode);
+	masker->SetOutsideValue(0);
+	masker->Update();
+	grad=masker->GetOutput();
+	
+	eroder.~SmartPointer();
+	colonErode.~SmartPointer();
+	masker.~SmartPointer();
+
+	WriteITK(grad,"canny_erode.nii");
+
+	//// Cast float to 16-bit int
+	//typedef itk::CastImageFilter<ImageType,UshortImageType> CastImageFilterType;
+	//CastImageFilterType::Pointer caster = CastImageFilterType::New();
+	//caster->SetInput(grad);
+	//caster->Update();
+	//UshortImageType::Pointer grad2 = caster->GetOutput();
+
+	//WriteITK(grad2,"canny_erode_cast.nii");
+
+	// Get grad max
+	minMaxCalc = MinimumMaximumImageCalculatorType::New();
+	minMaxCalc->SetImage(grad);
+	minMaxCalc->ComputeMaximum();
+	PixelType gradMax = minMaxCalc->GetMaximum();
+
+	// Otsu gradient
+	otsuCalculator = OtsuThresholdImageCalculatorModifiedType::New();
+	otsuCalculator->SetImage(grad);
+	otsuCalculator->SetMinMax(true);
+	otsuCalculator->SetHistogramMin(0);
+	otsuCalculator->SetHistogramMax(gradMax);
+	otsuCalculator->SetPrintHistogram(note+"_gradient.csv");
+	otsuCalculator->Compute();
+
+	PixelType grad_threshold = otsuCalculator->GetThreshold();
+
+	otsuCalculator.~SmartPointer();
+	
+	std::cout << std::endl << std::endl;
+	std::cout << "Tissue Stool Otsu Threshold: " << grad_threshold << std::endl;
+	std::cout << std::endl << std::endl;
+
+	// Regular gradient
+	typedef itk::GradientMagnitudeRecursiveGaussianImageFilter<ImageType,ImageType> GradientMagnitudeRecursiveGaussianImageFilterType;
+	GradientMagnitudeRecursiveGaussianImageFilterType::Pointer gradMag = GradientMagnitudeRecursiveGaussianImageFilterType::New();
+	gradMag->SetInput(input);
+	gradMag->SetSigma(1);
+	gradMag->Update();
+	WriteITK(gradMag->GetOutput(),"gradMag.nii");
+
 }

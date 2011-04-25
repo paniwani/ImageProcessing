@@ -100,7 +100,7 @@ typename T::Pointer ReadDicom( std::string path, int slice1=0, int slice2=-1)
 		return 0;
 	}
 	
-	ImageType::Pointer output = reader->GetOutput();
+	T::Pointer output = reader->GetOutput();
 	
 	/*
     // Orient all input images into LAI orientation (spine is at top of image)
