@@ -32,6 +32,7 @@
 #include <itkGradientMagnitudeImageFilter.h>
 #include <itkGradientMagnitudeRecursiveGaussianImageFilter.h>
 #include <itkOtsuThresholdImageCalculatorModified.h>
+#include <itkImageDuplicator.h>
 
 #define CDF_SIGMA 0.27
 
@@ -46,7 +47,7 @@ enum VoxelType {
     ThinStool=8
 };
 
-typedef unsigned short                                                              PixelType;
+typedef float			                                                            PixelType;
 typedef unsigned char																BytePixelType;
 
 typedef itk::Image<PixelType, 3>													ImageType;

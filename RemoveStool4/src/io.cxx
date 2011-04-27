@@ -60,7 +60,7 @@ void Write(ShortImageType::Pointer image, std::string name) {
 	std::cout<<"Writing: "<<ss.str()<<std::endl;
 	writer->Update();
 }
-
+/*
 void Write(FloatImageType::Pointer image, std::string name) {
 	typedef itk::ImageFileWriter< FloatImageType >  WriterType;
     WriterType::Pointer writer = WriterType::New();
@@ -81,6 +81,7 @@ void Write(FloatImageType::Pointer image, std::string name) {
 	std::cout<<"Writing: "<<ss.str()<<std::endl;
 	writer->Update();
 } 
+*/
 
 void Write(VoxelImageType::Pointer vmap, std::string name) 
 {

@@ -7,7 +7,7 @@
 #define HIST_THRESHOLD 0.95
 #define tolerance 13.0
 
-typedef unsigned char SSlice[512][512];
+typedef unsigned char SSlice[512][512]; 
 
 typedef int Int4;
 int  mean_density_value;

@@ -1,6 +1,6 @@
 #include "RemoveStool4.h"
 #include "io.cxx"
-#include "ScatterCorrection.cxx"
+#include "scattercorrection.cxx"
 //#include "HessianFunctions.cxx"
 
 int main(int argc, char * argv[])
@@ -34,26 +34,37 @@ int main(int argc, char * argv[])
 	Write(input,"input.nii");
 	Write(colon,"colon.nii");
 
-	// Initial segmentation 
-	SingleMaterialClassification(input, gradient_magnitude, vmap, colon);
+	// Keep track of parameters
+	std::ofstream pfile;
+	std::stringstream ss;
+	ss << note << "_" << "params.txt";
+	pfile.open( ss.str().c_str() );
+	pfile << "DicomDirectory:\t" << argv[1] << std::endl;
 
-	Write(gradient_magnitude,"gradient_magnitude.nii");
-	Write(vmap,"vmap.nii");
+	//// Initial segmentation 
+	//SingleMaterialClassification(input, gradient_magnitude, vmap, colon);
+
+	//Write(gradient_magnitude,"gradient_magnitude.nii");
+	//Write(vmap,"vmap.nii");
 
 	// Apply scatter correction
-	input = ScatterCorrection(input,colon);
+	input = ScatterCorrection(input_original,colon);
 	Write(input,"scatter.nii");
 
-	gradient_magnitude = FloatImageType::New();
-	vmap = VoxelImageType::New();
+	pfile << "filterP:\t" << filterP << std::endl;
+	pfile << "scaleP:\t" << scaleP << std::endl;
 
-	// Initial segmentation 
-	SingleMaterialClassification(input, gradient_magnitude, vmap, colon);
+	//gradient_magnitude = FloatImageType::New();
+	//vmap = VoxelImageType::New();
 
-	Write(gradient_magnitude,"SCATTER_gradient_magnitude.nii");
-	Write(vmap,"SCATTER_vmap.nii");
+	//// Initial segmentation 
+	//SingleMaterialClassification(input, gradient_magnitude, vmap, colon);
+
+	//Write(gradient_magnitude,"SCATTER_gradient_magnitude.nii");
+	//Write(vmap,"SCATTER_vmap.nii");
 
 	
+	pfile.close();
 
 	system("pause");
 	return 0;

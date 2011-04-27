@@ -447,7 +447,7 @@ void compute_scale_image(PixelType *lat16BitCTVolume, float* VoxelSize, SSlice* 
 	  }
 
 	  // Write histogram to text file
-	 /* std::ofstream file;
+	  std::ofstream file;
 
 	  std::stringstream ss;
 	  ss << "histogram_" << SCALE << ".csv";
@@ -459,7 +459,7 @@ void compute_scale_image(PixelType *lat16BitCTVolume, float* VoxelSize, SSlice* 
 	  for(j=0;j<=largest_density_value;j++)
 		  file << j << "," << histogram[0][j] << "\n";
 
-	  file.close();*/
+	  file.close();
 
       printf("Histogram threshold computation is done \n");
       printf("Features Threshold %d : %f \n", i,(double)feature_thr[0]); 
@@ -693,7 +693,7 @@ void gaussFilter(int size_sf, float std_sf, float *scatterFilter)
 	}
 	
 }
-void scatter_correction(PixelType *lat16BitCTVolume, SSlice* DAB, int NI, int NJ, int NK)
+void scatterCorrection(PixelType *lat16BitCTVolume, SSlice* DAB, int NI, int NJ, int NK)
 {
 
 	short i,j,k,l,index=0;
@@ -850,6 +850,8 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::
 		input2_iter.Set( input_iter.Get() );
 	}
 
+	Write(input2,"input2.nii");
+
 	PixelType *img = input2->GetBufferPointer();
 
 	// Create tagmask
@@ -870,7 +872,7 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::
 		}
 	}
 
-	//WriteITK(tag_mask,"tagmask.nii");
+	Write(tag_mask,"tagmask.nii");
 
 	tag_mask_iter.GoToBegin();
 	input_iter.GoToBegin();
@@ -889,33 +891,43 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::
 	// Compute object scale
 	compute_scale_image(img, VoxelSize, DAB, size[0], size[1], size[2], HIST_THRESHOLD,0);
 
-	//// Copy and rescale scale image
-	//typedef itk::ImageDuplicator< ByteImageType > ImageDuplicatorByteType;
-	//ImageDuplicatorByteType::Pointer duplicator = ImageDuplicatorByteType::New();
-	//duplicator->SetInputImage( scale_image_itk );
-	//duplicator->Update();
+	// Copy and rescale scale image
+	typedef itk::ImageDuplicator<ByteImageType> ImageDuplicatorByteType;
+	ImageDuplicatorByteType::Pointer duplicator = ImageDuplicatorByteType::New();
+	duplicator->SetInputImage( scale_image_itk );
+	duplicator->Update();
 
-	//typedef itk::RescaleIntensityImageFilter< ByteImageType > RescaleIntensityImageFilterByteType;
-	//RescaleIntensityImageFilterByteType::Pointer rescaler = RescaleIntensityImageFilterByteType::New();
-	//rescaler->SetInput( duplicator->GetOutput() );
-	//rescaler->SetOutputMinimum(0);
-	//rescaler->SetOutputMaximum(255);
-	//rescaler->Update();
+	typedef itk::RescaleIntensityImageFilter<ByteImageType> RescaleIntensityImageFilterByteType;
+	RescaleIntensityImageFilterByteType::Pointer rescaler = RescaleIntensityImageFilterByteType::New();
+	rescaler->SetInput( duplicator->GetOutput() );
+	rescaler->SetOutputMinimum(0);
+	rescaler->SetOutputMaximum(255);
+	rescaler->Update();
 
-	//std::stringstream ss;
-	//ss << "scale_image" << "_SCALE_" << SCALE << "_filterP_" << filterP << ".nii";
-	//WriteITK(rescaler->GetOutput(), ss.str());
+	std::stringstream ss;
+	ss << "scale_image" << "_SCALE_" << SCALE << "_filterP_" << filterP << ".nii";
+
+	Write(rescaler->GetOutput(), ss.str());
 
 	// Scatter correction
-	scatter_correction(img,DAB,size[0],size[1],size[2]);
+	scatterCorrection(img,DAB,size[0],size[1],size[2]);
 
-	// Write scatter change image
-	typedef itk::SubtractImageFilter< ImageType > SubtractImageFilterType;
-	SubtractImageFilterType::Pointer subtracter = SubtractImageFilterType::New();
-	subtracter->SetInput1( input );
-	subtracter->SetInput2( input2 );
-	subtracter->Update();
-	Write(subtracter->GetOutput(),"scatter_change.nii");
+	// Save image
+	ss.str("");
+	ss << "input_corrected" << "_SCALE_" << SCALE << "_filterP_" << filterP << ".nii";
+	Write(input2,ss.str());
+
+	//// Write change only image
+
+	//for(input_iter.GoToBegin(), input2_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++input2_iter)
+	//{
+	//	input2_iter.Set( input_iter.Get() - input2_iter.Get() );	
+	//}
+
+	//ss.str("");
+	////ss << "scatter_change" << "_SCALE_" << SCALE << "_filterP_" << filterP << ".nii";
+	//ss << "scatter_change.nii";
+	//WriteITK(input2,ss.str());
 
 	return input2;
 }

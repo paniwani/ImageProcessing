@@ -11,6 +11,7 @@
 #include "itkRegularExpressionSeriesFileNames.h"
 #include "itkOrientImageFilter.h"
 #include "itkColonSegmentationFilter.h"
+#include "itkCastImageFilter.h"
 
 typedef int Int4;
 typedef unsigned char SSlice[512][512];
@@ -38,8 +39,8 @@ unsigned short *data_scale16;
 unsigned char *scale_image;
 
 
-bool truncateOn = false;
-unsigned int truncate_ar[2] = {280, 320};
+bool truncateOn = true;
+unsigned int truncate_ar[2] = {85, 90};
 
 PixelType getValueFromImageArray(Int4 Counter, PixelType *lattice);
 void putValueInImageArray(Int4 Counter, float val, PixelType *lattice);
@@ -85,7 +86,7 @@ int main(int argc, char * argv[])
 
 	std::string dataset = argv[1];
 
-	std::vector<std::string> datasetArr = explode( "/", dataset );
+	std::vector<std::string> datasetArr = explode( "\\", dataset );
 	std::string dsname = datasetArr[ datasetArr.size() - 2 ];
 	std::cout << "Dataset: " << dsname << std::endl;
 
@@ -94,13 +95,25 @@ int main(int argc, char * argv[])
 
 	ImageType::Pointer input = ReadDicom( argv[1] );
 
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	IteratorType input_iter(input,region);
+
+	// Shift image so that air is 0
+	typedef itk::MinimumMaximumImageCalculator< ImageType > MinimumMaximumImageCalculatorType;
+	MinimumMaximumImageCalculatorType::Pointer minMaxCalc = MinimumMaximumImageCalculatorType::New();
+	minMaxCalc->SetImage( input );
+	minMaxCalc->ComputeMinimum();
+	PixelType min = minMaxCalc->GetMinimum();
+
+	for (input_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter)
+	{
+		input_iter.Set( input_iter.Get() + abs(min) );
+	}
+
 	// Set parameters
 	SCALE = atoi ( argv[2] );
 	filterP = atof( argv[3] );
-	
-
-
-
 
 	ImageType::SpacingType spacing = input->GetSpacing();
 	
@@ -117,10 +130,6 @@ int main(int argc, char * argv[])
 	VoxelSize[1] = spacing[1];
 	VoxelSize[2] = spacing[2];
 	ImageType::SizeType size = input->GetLargestPossibleRegion().GetSize();
-
-	ImageType::RegionType region = input->GetLargestPossibleRegion();
-
-	IteratorType input_iter(input,region);
 
 	WriteITK(input,"input.nii");
 
@@ -144,7 +153,7 @@ int main(int argc, char * argv[])
 	segmenter->SetInput( input );
 	segmenter->SetBackgroundValue(0);
 	segmenter->SetForegroundValue(255);
-	segmenter->SetRemoveBoneLung(true);
+	segmenter->SetRemoveBoneLung(false);
 	segmenter->Update();
 
 	ByteImageType::Pointer colon = segmenter->GetOutput();
@@ -152,18 +161,6 @@ int main(int argc, char * argv[])
 
 	WriteITK(colon,"colon.nii");
 
-
-	// Shift image so that air is 0
-	typedef itk::MinimumMaximumImageCalculator< ImageType > MinimumMaximumImageCalculatorType;
-	MinimumMaximumImageCalculatorType::Pointer minMaxCalc = MinimumMaximumImageCalculatorType::New();
-	minMaxCalc->SetImage( input );
-	minMaxCalc->ComputeMinimum();
-	PixelType min = minMaxCalc->GetMinimum();
-
-	for (input_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter)
-	{
-		input_iter.Set( input_iter.Get() + abs(min) );
-	}
 
 	PixelType *img = input->GetBufferPointer();
 
@@ -209,34 +206,40 @@ int main(int argc, char * argv[])
 	// Compute object scale
 	compute_scale_image(img, VoxelSize, DAB, size[0], size[1], size[2], HIST_THRESHOLD,0);
 
-	// Copy and rescale scale image
-	typedef itk::ImageDuplicator<ByteImageType> ImageDuplicatorByteType;
-	ImageDuplicatorByteType::Pointer duplicator = ImageDuplicatorByteType::New();
-	duplicator->SetInputImage( scale_image_itk );
-	duplicator->Update();
+	typedef itk::CastImageFilter<ByteImageType,ImageType> CastImageFilterType;
+	CastImageFilterType::Pointer caster = CastImageFilterType::New();
+	caster->SetInput( scale_image_itk );
+	caster->Update();
+	WriteITK(caster->GetOutput(),"scale_image.nii");
 
-	typedef itk::RescaleIntensityImageFilter<ByteImageType> RescaleIntensityImageFilterByteType;
-	RescaleIntensityImageFilterByteType::Pointer rescaler = RescaleIntensityImageFilterByteType::New();
-	rescaler->SetInput( duplicator->GetOutput() );
-	rescaler->SetOutputMinimum(0);
-	rescaler->SetOutputMaximum(255);
-	rescaler->Update();
+	//// Copy and rescale scale image
+	//typedef itk::ImageDuplicator<ByteImageType> ImageDuplicatorByteType;
+	//ImageDuplicatorByteType::Pointer duplicator = ImageDuplicatorByteType::New();
+	//duplicator->SetInputImage( scale_image_itk );
+	//duplicator->Update();
+
+	//typedef itk::RescaleIntensityImageFilter<ByteImageType> RescaleIntensityImageFilterByteType;
+	//RescaleIntensityImageFilterByteType::Pointer rescaler = RescaleIntensityImageFilterByteType::New();
+	//rescaler->SetInput( duplicator->GetOutput() );
+	//rescaler->SetOutputMinimum(0);
+	//rescaler->SetOutputMaximum(255);
+	//rescaler->Update();
 
 	std::stringstream ss;
-	ss << "scale_image" << "_SCALE_" << SCALE << "_filterP_" << filterP << ".nii";
+	/*ss << "scale_image" << "_SCALE_" << SCALE << "_filterP_" << filterP << ".nii";
 
-	WriteITK(rescaler->GetOutput(), ss.str());
+	WriteITK(rescaler->GetOutput(), ss.str());*/
 
 	// Scatter correction
 	scatterCorrection(img,DAB,size[0],size[1],size[2]);
 
-	// Shift output back to air as -1024
-	input_iter = IteratorType(input,region);
+	//// Shift output back to air as -1024
+	//input_iter = IteratorType(input,region);
 
-	for (input_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter)
-	{
-		input_iter.Set( input_iter.Get() - abs(min) );
-	}
+	//for (input_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter)
+	//{
+	//	input_iter.Set( input_iter.Get() - abs(min) );
+	//}
 
 	// Save image
 	ss.str("");
