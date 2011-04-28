@@ -447,7 +447,7 @@ void compute_scale_image(PixelType *lat16BitCTVolume, float* VoxelSize, SSlice* 
 	  }
 
 	  // Write histogram to text file
-	  std::ofstream file;
+	 /* std::ofstream file;
 
 	  std::stringstream ss;
 	  ss << "histogram_" << SCALE << ".csv";
@@ -459,7 +459,7 @@ void compute_scale_image(PixelType *lat16BitCTVolume, float* VoxelSize, SSlice* 
 	  for(j=0;j<=largest_density_value;j++)
 		  file << j << "," << histogram[0][j] << "\n";
 
-	  file.close();
+	  file.close();*/
 
       printf("Histogram threshold computation is done \n");
       printf("Features Threshold %d : %f \n", i,(double)feature_thr[0]); 
@@ -730,6 +730,10 @@ void scatterCorrection(PixelType *lat16BitCTVolume, SSlice* DAB, int NI, int NJ,
 			}
 		}
 	}
+
+	//std::cout << zMin << std::endl;
+	//std::cout << zMax << std::endl;
+
 	float inputValue;
 	float scatterValue;
 
@@ -821,7 +825,7 @@ float  do_conv (const int         width,
     return weight_pixel_sum;
 } // do_conv()
 
-ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::Pointer &colon)
+ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap)
 {	
 	// Get size and spacing
 	ImageType::SpacingType spacing = input->GetSpacing();
@@ -850,7 +854,7 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::
 		input2_iter.Set( input_iter.Get() );
 	}
 
-	Write(input2,"input2.nii");
+	//Write(input2,"input2.nii");
 
 	PixelType *img = input2->GetBufferPointer();
 
@@ -891,43 +895,49 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::
 	// Compute object scale
 	compute_scale_image(img, VoxelSize, DAB, size[0], size[1], size[2], HIST_THRESHOLD,0);
 
-	// Copy and rescale scale image
-	typedef itk::ImageDuplicator<ByteImageType> ImageDuplicatorByteType;
-	ImageDuplicatorByteType::Pointer duplicator = ImageDuplicatorByteType::New();
-	duplicator->SetInputImage( scale_image_itk );
-	duplicator->Update();
-
-	typedef itk::RescaleIntensityImageFilter<ByteImageType> RescaleIntensityImageFilterByteType;
-	RescaleIntensityImageFilterByteType::Pointer rescaler = RescaleIntensityImageFilterByteType::New();
-	rescaler->SetInput( duplicator->GetOutput() );
-	rescaler->SetOutputMinimum(0);
-	rescaler->SetOutputMaximum(255);
-	rescaler->Update();
+	typedef itk::CastImageFilter<ByteImageType,FloatImageType> CastImageFilterType;
+	CastImageFilterType::Pointer caster = CastImageFilterType::New();
+	caster->SetInput( scale_image_itk );
+	caster->Update();
 
 	std::stringstream ss;
-	ss << "scale_image" << "_SCALE_" << SCALE << "_filterP_" << filterP << ".nii";
+	ss << "scale_image" << "_SCALE_" << SCALE << ".nii";
 
-	Write(rescaler->GetOutput(), ss.str());
+	Write(caster->GetOutput(), ss.str());
 
 	// Scatter correction
 	scatterCorrection(img,DAB,size[0],size[1],size[2]);
 
-	// Save image
+	// Only make changes inside colon, inside tag mask, if voxel was unclassified or stool
+	VoxelIteratorType vmap_iter(vmap,region);
+
+	for (input_iter.GoToBegin(), input2_iter.GoToBegin(), colon_iter.GoToBegin(), tag_mask_iter.GoToBegin(), vmap_iter.GoToBegin(); !input_iter.IsAtEnd();
+		++input_iter, ++input2_iter, ++colon_iter, ++tag_mask_iter, ++vmap_iter)
+	{
+		if ( ! (colon_iter.Get() == 255 && tag_mask_iter.Get() == 255 && (vmap_iter.Get() == Unclassified || vmap_iter.Get() == Stool) ) )
+			input2_iter.Set( input_iter.Get() );
+	}
+
+	// Write change only image
+	typedef itk::SubtractImageFilter<ImageType,ImageType> SubtractImageFilterType;
+	SubtractImageFilterType::Pointer subtracter = SubtractImageFilterType::New();
+	subtracter->SetInput1(input);
+	subtracter->SetInput2(input2);
+	subtracter->Update();
+
 	ss.str("");
-	ss << "input_corrected" << "_SCALE_" << SCALE << "_filterP_" << filterP << ".nii";
-	Write(input2,ss.str());
+	//ss << "scatter_change" << "_SCALE_" << SCALE << "_filterP_" << filterP << ".nii";
+	ss << "scatter_change.nii";
+	Write(subtracter->GetOutput(),ss.str());
 
-	//// Write change only image
+	// Mask scatter corrected output with colon
+	typedef itk::MaskImageFilter<ImageType,ByteImageType,ImageType> MaskImageFilterType;
+	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
+	masker->SetInput1(input2);
+	masker->SetInput2(colon);
+	masker->Update();
 
-	//for(input_iter.GoToBegin(), input2_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++input2_iter)
-	//{
-	//	input2_iter.Set( input_iter.Get() - input2_iter.Get() );	
-	//}
+	Write(masker->GetOutput(),"scatter.nii");
 
-	//ss.str("");
-	////ss << "scatter_change" << "_SCALE_" << SCALE << "_filterP_" << filterP << ".nii";
-	//ss << "scatter_change.nii";
-	//WriteITK(input2,ss.str());
-
-	return input2;
+	return masker->GetOutput();
 }

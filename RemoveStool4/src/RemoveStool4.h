@@ -1,6 +1,5 @@
-#include <itkImage.h>
-
 // IO 
+#include <itkImage.h>
 #include <itkImageRegionIteratorWithIndex.h>
 #include <itkImageRegionIterator.h>
 #include <itkImageFileReader.h>
@@ -33,6 +32,10 @@
 #include <itkGradientMagnitudeRecursiveGaussianImageFilter.h>
 #include <itkOtsuThresholdImageCalculatorModified.h>
 #include <itkImageDuplicator.h>
+#include <itkSubtractImageFilter.h>
+#include <itkCannyEdgeDetectionImageFilterModified.h>
+#include <itkBinaryDilateImageFilter.h>
+
 
 #define CDF_SIGMA 0.27
 
@@ -49,21 +52,28 @@ enum VoxelType {
 
 typedef float			                                                            PixelType;
 typedef unsigned char																BytePixelType;
+typedef itk::BinaryBallStructuringElement<PixelType, 3>								StructuringElementType;
+typedef itk::CovariantVector<float,3>												VectorType;
 
 typedef itk::Image<PixelType, 3>													ImageType;
 typedef itk::Image<BytePixelType, 3>												ByteImageType;
 typedef itk::Image< short int, 3>													ShortImageType;
 typedef itk::Image< float, 3>														FloatImageType;
 typedef itk::Image< VoxelType, 3>													VoxelImageType;
-
+typedef itk::Image< VectorType, 3>													VectorImageType;
+	
 typedef itk::ImageRegionIteratorWithIndex<ImageType>							    IteratorType;
 typedef itk::ImageRegionIteratorWithIndex<ByteImageType>							ByteIteratorType;
 typedef itk::ImageRegionIteratorWithIndex<ShortImageType>							ShortIteratorType;
 typedef itk::ImageRegionIteratorWithIndex<FloatImageType>							FloatIteratorType;
 typedef itk::ImageRegionIteratorWithIndex<VoxelImageType>							VoxelIteratorType;
+typedef itk::ImageRegionIteratorWithIndex<VectorImageType>							VectorIteratorType;
 
 void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::Pointer &input, ByteImageType::Pointer &colon);
-void SingleMaterialClassification(ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon);
+PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon);
+void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissue_stool_threshold );
+void QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap);
+ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer &input, VoxelImageType::Pointer &v, ByteIteratorType &mask_iter);
 
 // Global vars
 ImageType::RegionType region;

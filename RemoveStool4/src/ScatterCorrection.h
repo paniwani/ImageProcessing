@@ -3,7 +3,7 @@
 
 #define FEATURES 1
 #define FILTER  1
-#define SCALE 12
+#define SCALE 5
 #define HIST_THRESHOLD 0.95
 #define tolerance 13.0
 
