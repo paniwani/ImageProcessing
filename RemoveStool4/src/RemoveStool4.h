@@ -35,6 +35,10 @@
 #include <itkSubtractImageFilter.h>
 #include <itkCannyEdgeDetectionImageFilterModified.h>
 #include <itkBinaryDilateImageFilter.h>
+#include <itkGradientImageFilter.h>
+#include <itkBSplineInterpolateImageFunction.h>
+#include <itkGradientMagnitudeImageFilter.h>
+#include <itkSobelEdgeDetectionImageFilter.h>
 
 
 #define CDF_SIGMA 0.27
@@ -50,7 +54,7 @@ enum VoxelType {
     ThinStool=8
 };
 
-typedef float			                                                            PixelType;
+typedef unsigned short	                                                            PixelType;
 typedef unsigned char																BytePixelType;
 typedef itk::BinaryBallStructuringElement<PixelType, 3>								StructuringElementType;
 typedef itk::CovariantVector<float,3>												VectorType;
@@ -72,13 +76,14 @@ typedef itk::ImageRegionIteratorWithIndex<VectorImageType>							VectorIteratorT
 void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::Pointer &input, ByteImageType::Pointer &colon);
 PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon);
 void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissue_stool_threshold );
-void QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap);
-ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer &input, VoxelImageType::Pointer &v, ByteIteratorType &mask_iter);
+void QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, FloatImageType::Pointer &gradient_magnitude);
+void Dilate(ByteImageType::Pointer &img, unsigned int radius);
 
 // Global vars
 ImageType::RegionType region;
-bool write_num = true;
+bool write_num = false;
 int write_count = 1;
 bool truncate_on = true;
 unsigned int truncate_ar[2] = {85,90};
 std::string note;
+short BACKGROUND = 0;

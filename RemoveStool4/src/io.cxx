@@ -60,7 +60,7 @@ void Write(ShortImageType::Pointer image, std::string name) {
 	std::cout<<"Writing: "<<ss.str()<<std::endl;
 	writer->Update();
 }
-/*
+
 void Write(FloatImageType::Pointer image, std::string name) {
 	typedef itk::ImageFileWriter< FloatImageType >  WriterType;
     WriterType::Pointer writer = WriterType::New();
@@ -81,7 +81,6 @@ void Write(FloatImageType::Pointer image, std::string name) {
 	std::cout<<"Writing: "<<ss.str()<<std::endl;
 	writer->Update();
 } 
-*/
 
 void Write(VoxelImageType::Pointer vmap, std::string name) 
 {
@@ -125,16 +124,12 @@ void Write(VoxelImageType::Pointer vmap, std::string name)
                 break;
         }
 		
-		 //tit.Set( floor( (float) tit.Get() * 255/8 ) );
+		//tit.Set( floor( (float) tit.Get() * 255/8 ) );
 	}
 
 	Write(temp, name);
 
 }
-
-
-
-
 
 std::vector<std::string> explode( const std::string &delimiter, const std::string &str)
 {
