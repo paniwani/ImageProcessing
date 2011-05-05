@@ -1,6 +1,6 @@
 #include <ScatterCorrection.h>
 
-void ConvertByteImageTo3DArray(SSlice *& DAB, ByteImageType::Pointer img) 
+void ConvertByteImageTo3DArray(SSlice *& DAB, ByteImageType::Pointer &img) 
 {
 	ByteImageType::SizeType size = img->GetLargestPossibleRegion().GetSize();
 	BytePixelType *imgPtr = img->GetBufferPointer();
@@ -825,8 +825,67 @@ float  do_conv (const int         width,
     return weight_pixel_sum;
 } // do_conv()
 
-ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap)
+PixelType * GetImageArray ( ImageType::Pointer& img)
+{
+	ImageType::RegionType region = img->GetLargestPossibleRegion();
+	ImageType::SizeType size = region.GetSize();;
+
+	PixelType *imgArray;
+	imgArray = new PixelType[size[0]*size[1]*size[2]];
+
+	IteratorType img_iter(img,region);
+
+	int count = 0;
+	for (img_iter.GoToBegin(); !img_iter.IsAtEnd(); ++img_iter)
+	{
+		imgArray[count++] = img_iter.Get();
+	}
+
+	return imgArray;
+}
+
+ImageType::Pointer ScatterCorrection( ImageType::Pointer &input_full, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap)
 {	
+	//********************* NOTE *********************
+	// Scatter correction code requires that sizeX = sizeY
+	// Use extract image filter to perform scatter correction in symmetric XY plane,
+	// and then extract appropriate global region afterwards
+	//************************************************
+	typedef itk::ExtractImageFilter<ImageType,ImageType> ExtractImageFilterType;
+	ExtractImageFilterType::Pointer extracter = ExtractImageFilterType::New();
+	extracter->SetInput( input_full );
+
+	ImageType::RegionType region = REGION;
+	ImageType::SizeType esize = region.GetSize();
+	esize[1] = esize[0];
+	region.SetSize(esize);
+
+	extracter->SetExtractionRegion( region );
+	extracter->Update();
+	ImageType::Pointer input = extracter->GetOutput();
+
+	/*
+
+	typedef itk::RegionOfInterestImageFilter<ImageType,ImageType> RegionOfInterestImageFilterType;
+	RegionOfInterestImageFilterType::Pointer extracter = RegionOfInterestImageFilterType::New();
+	extracter->SetInput( input_full );
+	extracter->SetRegionOfInterest( REGION );
+	extracter->Update();
+	ImageType::Pointer input = extracter->GetOutput();
+	Write(input,"input_scatter.nii");
+
+	*/
+
+	/*
+	ImageType::DirectionType direction;
+	direction.Fill(0);
+	direction[0][0] = 1;
+	direction[1][1] = 1;
+	direction[2][2] = 1;
+
+	input->SetDirection(direction);
+	*/
+	
 	// Get size and spacing
 	ImageType::SpacingType spacing = input->GetSpacing();
 
@@ -836,8 +895,6 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::
 	VoxelSize[2] = spacing[2];
 
 	ImageType::SizeType size = input->GetLargestPossibleRegion().GetSize();
-
-	ImageType::RegionType region = input->GetLargestPossibleRegion();
 
 	// Copy input image
 	ImageType::Pointer input2 = ImageType::New();
@@ -856,7 +913,7 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::
 
 	//Write(input2,"input2.nii");
 
-	PixelType *img = input2->GetBufferPointer();
+	PixelType *img = input2->GetBufferPointer();	
 
 	// Create tagmask
 	ByteImageType::Pointer tag_mask = ByteImageType::New();
@@ -865,8 +922,10 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::
 	tag_mask->Allocate();
 	tag_mask->FillBuffer(0);
 
-	ByteIteratorType colon_iter(colon,region);
-	ByteIteratorType tag_mask_iter(tag_mask,region);
+	ByteIteratorType colon_iter(colon,REGION);
+	ByteIteratorType tag_mask_iter(tag_mask,REGION);
+
+	input2_iter = IteratorType(input2,REGION);
 
 	for(input2_iter.GoToBegin(), tag_mask_iter.GoToBegin(), colon_iter.GoToBegin(); !input2_iter.IsAtEnd(); ++input2_iter, ++tag_mask_iter, ++colon_iter)
 	{
@@ -876,7 +935,7 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::
 		}
 	}
 
-	Write(tag_mask,"tagmask.nii");
+	//Write(tag_mask,"tagmask.nii");
 
 	tag_mask_iter.GoToBegin();
 	input_iter.GoToBegin();
@@ -909,7 +968,11 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::
 	scatterCorrection(img,DAB,size[0],size[1],size[2]);
 
 	// Only make changes inside colon, inside tag mask, if voxel was unclassified or stool
-	VoxelIteratorType vmap_iter(vmap,region);
+	VoxelIteratorType vmap_iter(vmap,REGION);
+	input_iter = IteratorType(input,REGION);
+	input2_iter = IteratorType(input2,REGION);
+	colon_iter = ByteIteratorType(colon,REGION);
+	tag_mask_iter = ByteIteratorType(colon,REGION);
 
 	for (input_iter.GoToBegin(), input2_iter.GoToBegin(), colon_iter.GoToBegin(), tag_mask_iter.GoToBegin(), vmap_iter.GoToBegin(); !input_iter.IsAtEnd();
 		++input_iter, ++input2_iter, ++colon_iter, ++tag_mask_iter, ++vmap_iter)
@@ -923,17 +986,27 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::
 	SubtractImageFilterType::Pointer subtracter = SubtractImageFilterType::New();
 	subtracter->SetInput1(input);
 	subtracter->SetInput2(input2);
-	subtracter->Update();
+
+	extracter = ExtractImageFilterType::New();
+	extracter->SetInput(subtracter->GetOutput());
+	extracter->SetExtractionRegion(REGION);
+
+	extracter->Update();
 
 	ss.str("");
 	//ss << "scatter_change" << "_SCALE_" << SCALE << "_filterP_" << filterP << ".nii";
 	ss << "scatter_change.nii";
-	Write(subtracter->GetOutput(),ss.str());
+	Write(extracter->GetOutput(),ss.str());
+
+	// Extract
+	extracter = ExtractImageFilterType::New();
+	extracter->SetInput(input2);
+	extracter->SetExtractionRegion(REGION);
 
 	// Mask scatter corrected output with colon
 	typedef itk::MaskImageFilter<ImageType,ByteImageType,ImageType> MaskImageFilterType;
 	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
-	masker->SetInput1(input2);
+	masker->SetInput1(extracter->GetOutput());
 	masker->SetInput2(colon);
 	masker->Update();
 

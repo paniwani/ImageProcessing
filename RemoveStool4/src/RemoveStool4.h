@@ -39,6 +39,8 @@
 #include <itkBSplineInterpolateImageFunction.h>
 #include <itkGradientMagnitudeImageFilter.h>
 #include <itkSobelEdgeDetectionImageFilter.h>
+#include <itkExtractImageFilter.h>
+#include <itkRegionOfInterestImageFilter.h>
 
 
 #define CDF_SIGMA 0.27
@@ -59,12 +61,14 @@ typedef unsigned char																BytePixelType;
 typedef itk::BinaryBallStructuringElement<PixelType, 3>								StructuringElementType;
 typedef itk::CovariantVector<float,3>												VectorType;
 
+
 typedef itk::Image<PixelType, 3>													ImageType;
 typedef itk::Image<BytePixelType, 3>												ByteImageType;
 typedef itk::Image< short int, 3>													ShortImageType;
 typedef itk::Image< float, 3>														FloatImageType;
 typedef itk::Image< VoxelType, 3>													VoxelImageType;
 typedef itk::Image< VectorType, 3>													VectorImageType;
+typedef itk::BSplineInterpolateImageFunction<FloatImageType>::ContinuousIndexType   ContinuousIndexType;
 	
 typedef itk::ImageRegionIteratorWithIndex<ImageType>							    IteratorType;
 typedef itk::ImageRegionIteratorWithIndex<ByteImageType>							ByteIteratorType;
@@ -80,8 +84,8 @@ void QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colo
 void Dilate(ByteImageType::Pointer &img, unsigned int radius);
 
 // Global vars
-ImageType::RegionType region;
-bool write_num = false;
+ImageType::RegionType REGION;
+bool write_num = true;
 int write_count = 1;
 bool truncate_on = true;
 unsigned int truncate_ar[2] = {85,90};

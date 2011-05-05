@@ -1,64 +1,83 @@
-#include "itkImage.h"
-#include <iostream>
-#include <itkImageFileReader.h>
-#include <itkImageRegionIteratorWithIndex.h>
+#include <itkImage.h>
+#include <utils.h>
 #include <itkGradientImageFilter.h>
-#include <itkGradientMagnitudeImageFilter.h>
-
-typedef itk::Image< float, 3 > ImageType;
-typedef itk::CovariantVector< float,3> CovariantVectorType;
-typedef itk::Image< CovariantVectorType, 3> ImageVectorType;
-
-typedef itk::ImageRegionIteratorWithIndex<ImageType> IteratorTypeFloat4WithIndex;
-typedef itk::ImageRegionIterator<ImageVectorType>    IteratorImageVectorType;
-
-typedef itk::GradientImageFilter<ImageType> GradientFilterType;
-typedef itk::GradientMagnitudeImageFilter<ImageType,ImageType> GradientMagnitudeFilterType;
-
-void ReadITK(ImageType::Pointer &image, char * fileName);
+#include <itkCovariantVector.h>
 
 int main()
 {
-	// Read input
-	ImageType::Pointer input = ImageType::New();
-	ReadITK(input, "C:/ImageData/mr10_092_13p.i0344_100-105.hdr");
+	// Create fake image
+	ImageType2D::Pointer input = ImageType2D::New();
 
-	GradientMagnitudeFilterType::Pointer gmFilter = GradientMagnitudeFilterType::New();
-	gmFilter->SetInput(input);
-	gmFilter->Update();
-	ImageType::Pointer gm = gmFilter->GetOutput();
-	gmFilter.~SmartPointer();
-	IteratorTypeFloat4WithIndex gm_iter(gm, gm->GetLargestPossibleRegion() );
+	ImageType2D::IndexType index;
+	index[0] = 0;
+	index[1] = 0;
 
-	GradientFilterType::Pointer gradientFilter = GradientFilterType::New();
-	gradientFilter->SetInput(input);
-	gradientFilter->Update();
-	ImageVectorType::Pointer gradient = gradientFilter->GetOutput();
-	IteratorImageVectorType gradient_iter(gradient, gm->GetLargestPossibleRegion() );
+	ImageType2D::SizeType size;
+	size[0] = 3;
+	size[1] = 3;
 
-	std::ofstream myfile;
-	myfile.open("gradient.txt");
-	myfile << "gradient_magnitude\tgradient\n";
+	ImageType2D::RegionType region;
+	region.SetIndex( index );
+	region.SetSize( size );
 
-	for (gm_iter.GoToBegin(), gradient_iter.GoToBegin();
-		 !gm_iter.IsAtEnd() && !gradient_iter.IsAtEnd();
-		 ++gm_iter, ++gradient_iter)
+	ImageType2D::DirectionType direction;
+	direction.Fill(0);
+	direction[0][0] = 1;
+	direction[1][1] = 1;
+	
+
+	input->SetDirection( direction );
+	input->SetRegions( region );
+	input->Allocate();
+
+	input->FillBuffer(0);
+
+	ImageType2D::DirectionType d = input->GetDirection();
+	std::cout << "Direction: " << d[0][0] << " " << d[1][1] << std::endl;
+
+	IteratorType2D input_iter(input,region);
+	
+	int count = 0;
+
+	for (input_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter)
 	{
-		CovariantVectorType grad = gradient_iter.Get();
-		myfile << gm_iter.Get() << "\t" << grad.GetNorm() << "\n";
+		input_iter.Set( count++ );
 	}
 
-	myfile.close();
+	input->SetPixel(index,100);
 
-	//system("pause");
+	WriteITK <ImageType2D> (input,"input.nii");
+
+	typedef itk::GradientImageFilter<ImageType2D> GradientImageFilterType;
+	GradientImageFilterType::Pointer gradientFilter = GradientImageFilterType::New();
+	gradientFilter->SetInput( input );
+	//gradientFilter->SetUseImageSpacingOff();
+	//gradientFilter->SetUseImageDirection(false);
+	gradientFilter->Update();
+
+	typedef itk::CovariantVector<float,2> VectorType;
+	typedef itk::Image<VectorType,2> VectorImageType;
+	typedef itk::ImageRegionIteratorWithIndex<VectorImageType> VectorIteratorType;
+
+	VectorImageType::Pointer grad = gradientFilter->GetOutput();
+
+	VectorIteratorType grad_iter(grad,region);
+
+	for (input_iter.GoToBegin(), grad_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter)
+	{
+		ImageType2D::IndexType idx = input_iter.GetIndex();
+
+		VectorType g = grad_iter.Get();
+
+		std::cout << idx[0] << "\t" << idx[1] << "\t" << input_iter.Get() << "\t" << g[0] << "\t" << g[1] << std::endl;
+	}
+
+	typedef itk::ImageFileWriter<VectorImageType> WriterType;
+	WriterType::Pointer writer = WriterType::New();
+	writer->SetInput(grad);
+	writer->SetFileName("grad.mhd");
+	writer->Update();
+
+	system("pause");
 	return 0;
-}
-
-void ReadITK(ImageType::Pointer &image, char * fileName) {
-	std::cout << "Reading " <<  fileName << std::endl;
-	typedef itk::ImageFileReader< ImageType > ReaderType;
-	ReaderType::Pointer reader = ReaderType::New();
-	reader->SetFileName( fileName );
-	reader->Update();
-	image = reader->GetOutput();
 }

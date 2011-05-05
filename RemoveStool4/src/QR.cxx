@@ -79,44 +79,44 @@ float ComputeSmaxFit(PixelType intensity[], float gradient_magnitude[], PixelTyp
 
 	return R;
 }
-float AverageTissueAirDist(PixelType intensity[], float gradient_magnitude[]) 
+float AverageTissueAirDist(std::vector<double> intensity, std::vector<double> gradient_magnitude) 
 {
 	double coefficients[3]={-4.0/1000,-4.0,0};
 
 	vnl_real_polynomial poly(coefficients,3);
     double average=0;
-    for(int i=0;i<5;i++) 
+	for(int i=0;i<intensity.size();i++) 
 	{
         average+=PolyMinDist(poly,intensity[i],gradient_magnitude[i]);
     }
-    return average/5;
+    return average/intensity.size();
 }
-float AverageTissueStoolDist(PixelType Smax, PixelType intensity[], float gradient_magnitude[]) 
+float AverageTissueStoolDist(double Smax, std::vector<double> intensity, std::vector<double> gradient_magnitude) 
 {
     double coefficients[3] ={-4.0/Smax,4.0,0};
     vnl_real_polynomial poly(coefficients,3);
     double average=0;
     
-	for(int i=0;i<5;i++) 
+	for(int i=0;i<intensity.size();i++) 
 	{
         average+=PolyMinDist(poly,intensity[i],gradient_magnitude[i]);
     }
 
-    return average/5;
+    return average/intensity.size();
 }
 
-float AverageStoolAirDist(PixelType Smax, PixelType intensity[], float gradient_magnitude[]) 
+float AverageStoolAirDist(double Smax, std::vector<double> intensity, std::vector<double> gradient_magnitude) 
 {
     double coefficients[3] ={-4/(Smax+1000),-4*(1000-Smax)/(Smax+1000),4000*Smax/(Smax+1000)};
     vnl_real_polynomial poly(coefficients,3);
     double average=0;
     
-	for(int i=0;i<5;i++) 
+	for(int i=0;i<intensity.size();i++) 
 	{
         average+=PolyMinDist(poly,intensity[i],gradient_magnitude[i]);
     }
 
-    return average/5;
+    return average/intensity.size();
 }
 
 
@@ -126,16 +126,14 @@ ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer &input, VoxelImage
 	ImageType::Pointer smax = ImageType::New();
 	smax->SetSpacing( input->GetSpacing() );
 	smax->SetDirection( input->GetDirection() );
-	smax->SetRegions( region );
+	smax->SetRegions( REGION );
 	smax->CopyInformation( input );
 	smax->Allocate();
 	smax->FillBuffer(0);
 
-
-
-	IteratorType smax_iter(smax,region);
-	IteratorType input_iter(input,region);
-	ByteIteratorType mask_iter(mask,region);
+	IteratorType smax_iter(smax,REGION);
+	IteratorType input_iter(input,REGION);
+	ByteIteratorType mask_iter(mask,REGION);
 
 	typedef itk::NeighborhoodIterator<VoxelImageType> NeighborhoodIteratorVoxelType;
 	NeighborhoodIteratorVoxelType::RadiusType radius;
@@ -166,7 +164,7 @@ ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer &input, VoxelImage
 			
 				VoxelImageType::IndexType idx = nit.GetIndex(i);
 				
-				if ( region.IsInside( idx ) )
+				if ( REGION.IsInside( idx ) )
 				{
 					PixelType val = input->GetPixel(idx);
 					
@@ -194,4 +192,22 @@ ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer &input, VoxelImage
 	}
 
 	return smax;
+}
+
+bool checkBounds(ImageType::RegionType &region, ContinuousIndexType &index)
+{
+	ImageType::IndexType idx1 = region.GetIndex();
+	ImageType::SizeType size = region.GetSize();
+	
+	ImageType::IndexType idx2;
+
+	for (int i=0; i<3; i++)
+	{
+		idx2[i] = idx1[i] + size[i] - 1;
+
+		if ( index[i] < idx1[i] || index[i] > idx2[i] )
+			return false;
+	}
+
+	return true;
 }
