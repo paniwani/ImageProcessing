@@ -17,7 +17,8 @@ float PolyMinDist(vnl_real_polynomial poly, float x, float y)
     //rooter.compute();
     vnl_vector<double> rRoots = rooter.realroots(0.0005);
     int size = rRoots.size();
-    float distance = PolyDist(rRoots(0),poly,x,y);
+
+	float distance = PolyDist(rRoots(0),poly,x,y);
     for(int i=1;i<size;i++) {
         float temp_dist=PolyDist(rRoots(i),poly,x,y);
         if (distance>temp_dist) {
@@ -79,44 +80,38 @@ float ComputeSmaxFit(PixelType intensity[], float gradient_magnitude[], PixelTyp
 
 	return R;
 }
-float AverageTissueAirDist(std::vector<double> intensity, std::vector<double> gradient_magnitude) 
-{
+
+float AverageTissueAirDist(float intensity[], float gradient_magnitude[]) {
+//	std::cerr<<"TissueAir"<<std::endl;
 	double coefficients[3]={-4.0/1000,-4.0,0};
 
 	vnl_real_polynomial poly(coefficients,3);
     double average=0;
-	for(int i=0;i<intensity.size();i++) 
-	{
+    for(int i=0;i<5;i++) {
         average+=PolyMinDist(poly,intensity[i],gradient_magnitude[i]);
     }
-    return average/intensity.size();
+    return average/5;
 }
-float AverageTissueStoolDist(double Smax, std::vector<double> intensity, std::vector<double> gradient_magnitude) 
-{
+float AverageTissueStoolDist(float Smax, float intensity[], float gradient_magnitude[]) {
+//	std::cerr<<"TissueStool"<<std::endl;
     double coefficients[3] ={-4.0/Smax,4.0,0};
     vnl_real_polynomial poly(coefficients,3);
     double average=0;
-    
-	for(int i=0;i<intensity.size();i++) 
-	{
+    for(int i=0;i<5;i++) {
         average+=PolyMinDist(poly,intensity[i],gradient_magnitude[i]);
     }
-
-    return average/intensity.size();
+    return average/5;
 }
 
-float AverageStoolAirDist(double Smax, std::vector<double> intensity, std::vector<double> gradient_magnitude) 
-{
+float AverageStoolAirDist(float Smax, float intensity[], float gradient_magnitude[]) {
+//	std::cerr<<"StoolAir"<<std::endl;
     double coefficients[3] ={-4/(Smax+1000),-4*(1000-Smax)/(Smax+1000),4000*Smax/(Smax+1000)};
     vnl_real_polynomial poly(coefficients,3);
     double average=0;
-    
-	for(int i=0;i<intensity.size();i++) 
-	{
+    for(int i=0;i<5;i++) {
         average+=PolyMinDist(poly,intensity[i],gradient_magnitude[i]);
     }
-
-    return average/intensity.size();
+    return average/5;
 }
 
 

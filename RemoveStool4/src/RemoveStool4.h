@@ -41,6 +41,7 @@
 #include <itkSobelEdgeDetectionImageFilter.h>
 #include <itkExtractImageFilter.h>
 #include <itkRegionOfInterestImageFilter.h>
+#include <itkAddConstantToImageFilter.h>
 
 
 #define CDF_SIGMA 0.27

@@ -62,310 +62,209 @@ types to edge voxels
 *********************************************************/
 void QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, FloatImageType::Pointer &gradient_magnitude)
 {
-	//----------------------------------------------
-	// 1. Determine egdes using canny
-	//----------------------------------------------
-
-	//typedef itk::CastImageFilter<ImageType, FloatImageType> CastImageFilterType;
-	//CastImageFilterType::Pointer caster = CastImageFilterType::New();
-	//caster->SetInput( input );
-
-	//typedef itk::CannyEdgeDetectionImageFilterModified<FloatImageType,FloatImageType> CannyEdgeDetectionImageFilterType;
-	//CannyEdgeDetectionImageFilterType::Pointer cannyFilter = CannyEdgeDetectionImageFilterType::New();
-	//cannyFilter->SetInput( caster->GetOutput() );
-	//cannyFilter->SetLowerThreshold(0); // minimum gradient threshold
-	//cannyFilter->SetVariance(1);	
-	//cannyFilter->Update();
-
-	//Write(cannyFilter->GetOutput(), "canny.nii");
-
-	/*typedef itk::CastImageFilter<FloatImageType, ByteImageType> CastImageFilterType;
-	CastImageFilterType::Pointer caster = CastImageFilterType::New();
-	caster->SetInput( cannyFilter->GetOutput() );
-	caster->Update();
-	
-	ByteImageType::Pointer canny = caster->GetOutput();
-
-	Dilate(canny, 1);*/
-
-	//----------------------------------------------
-	// 2. Get normalized gradient vector 
-	//----------------------------------------------
-
-
-	// output gradient vector to text file
-	std::ofstream file;
-	file.open("grad.txt");
-
-
+	// get gradient vector 
 	typedef itk::GradientImageFilter<ImageType> GradientImageFilterType;
 	GradientImageFilterType::Pointer gradientFilter = GradientImageFilterType::New();
 	gradientFilter->SetInput( input );
+	gradientFilter->SetUseImageDirection(false);
 	gradientFilter->Update();
 	VectorImageType::Pointer gradient = gradientFilter->GetOutput();
 	VectorIteratorType gradient_iter(gradient,REGION);
 
-	ImageType::SpacingType spacing = input->GetSpacing();
-	IteratorType input_iter(input,REGION);
-
-	for (gradient_iter.GoToBegin(), input_iter.GoToBegin(); !gradient_iter.IsAtEnd(); ++gradient_iter, ++input_iter)
+	// normalize
+	for (gradient_iter.GoToBegin(); !gradient_iter.IsAtEnd(); ++gradient_iter)
 	{
-		VectorType grad = gradient_iter.Get();
+		VectorType g = gradient_iter.Get();
 
-		float norm = grad.GetNorm();
-		
-		if (norm > 0)
+		float norm = g.GetNorm();
+
+		if ( norm > 0 )
 		{
-			grad[0] /= norm;
-			grad[1] /= norm;
-			grad[2] /= norm;
+			for (int i=0; i<3; i++)
+				g[i] /= norm;
 		}
-		
-		// Set tolerance
+
+		// tolerance
+
 		for (int i=0; i<3; i++)
-			grad[i] = abs(grad[i]) > 0.001 ? grad[i] : 0;
+			g[i] = abs(g[i]) > 0.001 ? g[i] : 0; 
 
-		gradient_iter.Set(grad);
-
-		ImageType::IndexType idx = gradient_iter.GetIndex();
-		idx[0] -= REGION.GetIndex()[0];
-		idx[1] -= REGION.GetIndex()[1];
-		idx[2] -= REGION.GetIndex()[2];
-
-		if (input_iter.Get() == 721)
-		{
-
-			file << idx[0]*spacing[0] << "\t" << idx[1]*spacing[1] << "\t" << idx[2]*spacing[2] << "\t";
-			file << input_iter.Get() << "\t";
-			file << grad[0] << "\t" << grad[1] << "\t" << grad[2] << "\n";
-		
-		}
+		gradient_iter.Set(g);
 	}
 
-	file.close();
+	// interp grad
+	typedef itk::BSplineInterpolateImageFunction<FloatImageType> InterpolatorFloatType;
+	InterpolatorFloatType::Pointer grad_interp = InterpolatorFloatType::New();
+	grad_interp->SetSplineOrder(3);
+	grad_interp->SetInputImage( gradient_magnitude );
 
-	// write grad as .mhd
-	typedef itk::ImageFileWriter<VectorImageType> WriterType;
-	WriterType::Pointer writer = WriterType::New();
-	writer->SetInput(gradient);
-	writer->SetFileName("gradient.mhd");
-	writer->Update();
+	// shift input to air -1024 and cast to short
+	typedef itk::CastImageFilter<ImageType,ShortImageType> CastImageFilterType;
+	CastImageFilterType::Pointer caster = CastImageFilterType::New();
+	caster->SetInput( input );
 
-	Write(input,"input.mhd");
+	typedef itk::AddConstantToImageFilter< ShortImageType, short, ShortImageType > AddConstantToImageFilterType;
+	AddConstantToImageFilterType::Pointer adder = AddConstantToImageFilterType::New();
+	adder->SetInput( caster->GetOutput() );
+	adder->SetConstant( BACKGROUND );
+	adder->Update();
 
-
-	//----------------------------------------------
-	// 3. Interpolate input and gradient magnitude
-	//----------------------------------------------
-	
-	// Convert input to short because B spline interp does not work well with unsigned data
-	// Shift back to air at -1024
-	ShortImageType::Pointer input_short = ShortImageType::New();
-	input_short->SetRegions(REGION);
-	input_short->SetSpacing(input->GetSpacing());
-	input_short->SetDirection(input->GetDirection());
-	input_short->CopyInformation(input);
-	input_short->Allocate();
-	ShortIteratorType input_short_iter(input_short,REGION);
-
-	for (input_iter.GoToBegin(), input_short_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++input_short_iter)
-	{
-		input_short_iter.Set( input_iter.Get()+BACKGROUND );
-	}
-
+	ShortImageType::Pointer input_short = adder->GetOutput();
 	Write(input_short,"input_short.nii");
 
-	typedef itk::BSplineInterpolateImageFunction<ShortImageType> BSplineInterpolateImageFunctionImageType;
-	BSplineInterpolateImageFunctionImageType::Pointer input_interp = BSplineInterpolateImageFunctionImageType::New();
+	// interp input
+	typedef itk::BSplineInterpolateImageFunction<ShortImageType> InterpolatorShortType;
+	InterpolatorShortType::Pointer input_interp = InterpolatorShortType::New();
 	input_interp->SetSplineOrder(3);
-	input_interp->SetInputImage(input_short);
+	input_interp->SetInputImage( input_short );
 
-	ShortImageType::IndexType index = input_interp->GetStartIndex();
-	std::cout << index[0] << " " << index[1] << " " << index[2] << std::endl;
+	InterpolatorShortType::ContinuousIndexType startIndex = input_interp->GetStartIndex();
+	
+	std::cout << "start: " << startIndex[0] << " " << startIndex[1] << " " << startIndex[2] << std::endl;
 
-	typedef itk::BSplineInterpolateImageFunction<FloatImageType> BSplineInterpolateImageFunctionFloatImageType;
-	BSplineInterpolateImageFunctionFloatImageType::Pointer gradient_magnitude_interp = BSplineInterpolateImageFunctionFloatImageType::New();
-	gradient_magnitude_interp->SetSplineOrder(3);
-	gradient_magnitude_interp->SetInputImage(gradient_magnitude);
+	InterpolatorShortType::ContinuousIndexType endIndex = input_interp->GetEndIndex();
+	
+	std::cout << "start: " << endIndex[0] << " " << endIndex[1] << " " << endIndex[2] << std::endl;
 
-	//----------------------------------------------
-	// 4. Compute local stool maximum
-	//----------------------------------------------
+
+	InterpolatorShortType::ContinuousIndexType index;
+	index[0] = 93;
+	index[1] = 299;
+	index[2] = 0;
+
+	std::cout << input_interp->EvaluateAtContinuousIndex(index) << std::endl;
+
+	// get local stool max
 	ImageType::Pointer smax = ComputeNeighborhoodSmax(input,vmap,colon);
+	Write(smax,"smax.nii");
+
+	// ve
 	IteratorType smax_iter(smax,REGION);
-
-	//----------------------------------------------
-	// 5. Run voxel edge classification
-	//----------------------------------------------
-
-	// Perform QR over several distance pairs
-	float d1[3] = {1.0,0.5,0.3};
-	float d2[3] = {1.5,1.0,0.6};
-
-	VoxelIteratorType vmap_iter(vmap,REGION);
 	ByteIteratorType colon_iter(colon,REGION);
-	//IteratorType input_iter(input,REGION);
+	VoxelIteratorType vmap_iter(vmap,REGION);
 
-	ContinuousIndexType idx1 = input_interp->GetStartContinuousIndex();
-	ContinuousIndexType idx2 = input_interp->GetEndContinuousIndex();
-
-	std::cout << idx1[0] << " " << idx1[1] << " " << idx1[2] << std::endl;
-	std::cout << idx2[0] << " " << idx2[1] << " " << idx2[2] << std::endl;
+	float d[3][2];
+	d[0][0] = 1.5; d[0][1] = 1.0;
+	d[1][0] = 1.0; d[1][1] = 0.5;
+	d[2][0] = 0.6; d[2][1] = 0.3;
 
 	int count=0;
 
-	for (vmap_iter.GoToBegin(), smax_iter.GoToBegin(), gradient_iter.GoToBegin(), colon_iter.GoToBegin(), input_short_iter.GoToBegin(); !vmap_iter.IsAtEnd();
-		++vmap_iter, ++smax_iter, ++gradient_iter, ++colon_iter, ++input_short_iter)
+	for (smax_iter.GoToBegin(), gradient_iter.GoToBegin(), colon_iter.GoToBegin(), vmap_iter.GoToBegin(); !smax_iter.IsAtEnd(); 
+		++smax_iter, ++gradient_iter, ++colon_iter, ++vmap_iter)
 	{
+
 		if (colon_iter.Get() == 255 && vmap_iter.Get() == Unclassified)
 		{
-			ImageType::IndexType index		=	input_short_iter.GetIndex();
-			VectorType grad					=	gradient_iter.Get();
 
-			VoxelType voxel = Unclassified;
+			std::cout << ++count << std::endl;
 
-			if (count > 1756)
-			{
-				std::cout << "stop here" << std::endl;
-
-				ImageType::IndexType sx = REGION.GetIndex();
-				std::cout << index[0]-sx[0] << " " << index[1]-sx[1] << " " << index[2]-sx[2] << std::endl;
-			}
+			ImageType::IndexType idx = gradient_iter.GetIndex();
 			
+			ImageType::IndexType sx = REGION.GetIndex();
+					
+			std::cout << idx[0]-sx[0] << " " << idx[1]-sx[1] << " " << idx[2]-sx[2] << " ";
+			std::cout << "smax: " << smax_iter.Get() << std::endl;
+
+			VectorType g = gradient_iter.Get();
+
+			std::cout << g[0] << " " << g[1] << " " << g[2] << std::endl;
+
+			VoxelType v;
+
 			if (smax_iter.Get() > 0)
 			{
+				
 
-				//std::cout << grad[0] << "\t" << grad[1] << "\t" << grad[2] << std::endl;
-
-
-				float distance = -1;
-
-				for (int i=0; i<3; i++)
+				if (count == 2333)
 				{
-					// Compute average orthogonal distance to each parabola
-					
-					// Create offset index
-					BSplineInterpolateImageFunctionFloatImageType::ContinuousIndexType offset_index;
-					offset_index[0]=index[0];
-					offset_index[1]=index[1];
-					offset_index[2]=index[2];
-					
-					// Store intensity and gradient magnitude for 5 locations
-					std::vector< double > temp_intensity;
-					std::vector< double > temp_gradient_magnitude;
+					std::cout << "stop" << std::endl;
+				}
 
-					temp_intensity.push_back( input_interp->EvaluateAtContinuousIndex(offset_index) );
-					temp_gradient_magnitude.push_back( gradient_magnitude_interp->EvaluateAtContinuousIndex(offset_index) );
-					
-					// Add values in positive direction,
-					// +d1
-					offset_index[0]=index[0]+grad[0]*d1[i];
-					offset_index[1]=index[1]+grad[1]*d1[i];
-					offset_index[2]=index[2]+grad[2]*d1[i];
+				float dist = 0;
 
-					if ( checkBounds(REGION, offset_index) )
+				for (int i=0; i<3; i++) // iterate through each set of distances
+				{
+					float in[5];
+					float gr[5];
+			
+					for (int j=0; j<5; j++) // iterate through each distance
 					{
-						temp_intensity.push_back( input_interp->EvaluateAtContinuousIndex(offset_index) );
-						temp_gradient_magnitude.push_back( gradient_magnitude_interp->EvaluateAtContinuousIndex(offset_index) );
+						ContinuousIndexType odx = idx;
+						
+						// shift by gradient
+						if (j < 2) // -ve
+						{
+							for (int k=0; k<3; k++)
+								odx[k] -= gradient_iter.Get()[k]*d[i][k];
+						
+						} else if (j > 2) { // +ve
 
-						// +d2
-						offset_index[0]=index[0]+grad[0]*d2[i];
-						offset_index[1]=index[1]+grad[1]*d2[i];
-						offset_index[2]=index[2]+grad[2]*d2[i];
-
-						if ( checkBounds(REGION, offset_index) )
-						{	
-							temp_intensity.push_back( input_interp->EvaluateAtContinuousIndex(offset_index) );
-							temp_gradient_magnitude.push_back( gradient_magnitude_interp->EvaluateAtContinuousIndex(offset_index) );
+							for (int k=0; k<3; k++)
+								odx[k] += gradient_iter.Get()[k]*d[i][k];
 						}
+						
+						if ( !checkBounds(REGION,odx) )
+							odx = idx;
+						
+						in[j] = input_interp->EvaluateAtContinuousIndex(odx);
+						gr[j] = grad_interp->EvaluateAtContinuousIndex(odx);
+						
+						
 					}
 
-					// Add values in negative direction
-					// -d1
-					offset_index[0]=index[0]-grad[0]*d1[i];
-					offset_index[1]=index[1]-grad[1]*d1[i];
-					offset_index[2]=index[2]-grad[2]*d1[i];
-
-					if ( checkBounds(REGION, offset_index) )
-					{
-						temp_intensity.push_back( input_interp->EvaluateAtContinuousIndex(offset_index) );
-						temp_gradient_magnitude.push_back( gradient_magnitude_interp->EvaluateAtContinuousIndex(offset_index) );
-
-						// -d2
-						offset_index[0]=index[0]-grad[0]*d2[i];
-						offset_index[1]=index[1]-grad[1]*d2[i];
-						offset_index[2]=index[2]-grad[2]*d2[i];
-
-						if ( checkBounds(REGION, offset_index) )
-						{	
-							//std::cout << offset_index[0] << " " << offset_index[1] << " " << offset_index[2] << std::endl;
-							//std::cout << input_interp->EvaluateAtContinuousIndex(offset_index) << std::endl;
-
-							temp_intensity.push_back( input_interp->EvaluateAtContinuousIndex(offset_index) );
-							temp_gradient_magnitude.push_back( gradient_magnitude_interp->EvaluateAtContinuousIndex(offset_index) );
-						}
-					}
-
-					/*for (int j=0; j < temp_intensity.size(); j++)
-					{
-						std::cout << temp_intensity[j] << " ";
-					}
-					std::cout << std::endl;*/
-
-					// Calculate distances to each parabola
 					float distanceTS=0;
 					float distanceSA=0;
 					float distanceTA=0;
-					float shortest_distance=0;
-					VoxelType shortest_voxel=Unclassified;
 
-					distanceTS=AverageTissueStoolDist(smax_iter.Get(),temp_intensity,temp_gradient_magnitude);
-					distanceSA=AverageStoolAirDist(smax_iter.Get(),temp_intensity,temp_gradient_magnitude); 
-					distanceTA=AverageTissueAirDist(temp_intensity,temp_gradient_magnitude);
-
-					// Keep shortest one and compare to previous iterations
-					if (distanceSA<=distanceTS && distanceSA<=distanceTA) {
-						shortest_distance=distanceSA;
-						shortest_voxel=StoolAir;
+					float localDist=0;
+					VoxelType localV=Unclassified;
 					
+					distanceTS=AverageTissueStoolDist(smax_iter.Get(),in,gr);
+					distanceSA=AverageStoolAirDist(smax_iter.Get(),in,gr);
+					distanceTA=AverageTissueAirDist(in,gr);
+
+					if (distanceSA<=distanceTS && distanceSA<=distanceTA) 
+					{
+						localDist = distanceSA;
+						localV = StoolAir;
+
 					} else if (distanceTS<=distanceTA && distanceTS<=distanceSA) {
-						shortest_distance=distanceTS;
-						shortest_voxel=TissueStool;
-					
+						localDist = distanceTS;
+						localV = TissueStool;
+
 					} else {
-						shortest_distance=distanceTA;
-						shortest_voxel=TissueAir;
+						localDist = distanceTA;
+						localV = TissueAir;
 					}
 
-					if ( i==0 ) // initial iteration
+					if ( i == 0 )
 					{
-						
-						distance = shortest_distance;
-						voxel = shortest_voxel;
-					
+						dist = localDist;
+						v = localV;
 					} else {
-						
-						if ( shortest_distance < distance )
+						if ( localDist < dist )
 						{
-							distance = shortest_distance;
-							voxel = shortest_voxel;
+							dist = localDist;
+							v = localV;
 						}
-					
 					}
 				}
-
-			} else { // If no stool nearby, assume boundary is Tissue-Air
-				voxel = TissueAir;
+			} else {
+				v = TissueAir;
 			}
 
-			vmap_iter.Set( voxel );
+			vmap_iter.Set(v);
 
-			std::cout << count++ << std::endl;
-		}
-
+		}		
 	}
 
-	Write(vmap,"qr.nii");
+
+
+
+
+
+
 }
 
 void Dilate(ByteImageType::Pointer &img, unsigned int radius)
@@ -505,64 +404,64 @@ void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::
 	// 5. Crop input and colon in XY plane
 	//----------------------------------------------
 	
-	input_iter = IteratorType(input,REGION);
+	//input_iter = IteratorType(input,REGION);
 
-	ImageType::SizeType size = REGION.GetSize();
+	//ImageType::SizeType size = REGION.GetSize();
 
-	long minX=size[0],minY=size[1],maxX=0,maxY=0;
-	unsigned short paddingXY = 5;
+	//long minX=size[0],minY=size[1],maxX=0,maxY=0;
+	//unsigned short paddingXY = 10;
 
-	for (input_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter)
-	{
-		if ( input_iter.Get() != 0 )
-		{
-			ImageType::IndexType idx = input_iter.GetIndex();
+	//for (input_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter)
+	//{
+	//	if ( input_iter.Get() != 0 )
+	//	{
+	//		ImageType::IndexType idx = input_iter.GetIndex();
 
-			if (idx[0] < minX)
-				minX = idx[0];
-			if (idx[0] > maxX)
-				maxX = idx[0];
-			if (idx[1] < minY)
-				minY = idx[1];
-			if (idx[1] > maxY)
-				maxY = idx[1];
-		}
-	}
+	//		if (idx[0] < minX)
+	//			minX = idx[0];
+	//		if (idx[0] > maxX)
+	//			maxX = idx[0];
+	//		if (idx[1] < minY)
+	//			minY = idx[1];
+	//		if (idx[1] > maxY)
+	//			maxY = idx[1];
+	//	}
+	//}
 
-	ImageType::IndexType edx;
-	
-	edx[0] = (minX-paddingXY) > 0 ? minX-paddingXY : 0;
-	edx[1] = (minY-paddingXY) > 0 ? minY-paddingXY : 0;
-	edx[2] = 0;
+	//ImageType::IndexType edx;
+	//
+	//edx[0] = (minX-paddingXY) > 0 ? minX-paddingXY : 0;
+	//edx[1] = (minY-paddingXY) > 0 ? minY-paddingXY : 0;
+	//edx[2] = 0;
 
-	ImageType::SizeType esize;
-	esize[0] = maxX-minX+2*paddingXY+1 < size[0] ? maxX-minX+2*paddingXY+1 : size[0];
-	esize[1] = maxY-minY+2*paddingXY+1 < size[1] ? maxY-minY+2*paddingXY+1 : size[1];
-	esize[2] = size[2];
+	//ImageType::SizeType esize;
+	//esize[0] = maxX-minX+2*paddingXY+1 < size[0] ? maxX-minX+2*paddingXY+1 : size[0];
+	//esize[1] = maxY-minY+2*paddingXY+1 < size[1] ? maxY-minY+2*paddingXY+1 : size[1];
+	//esize[2] = size[2];
 
-	ImageType::RegionType extractRegion;
-	extractRegion.SetIndex( edx );
-	extractRegion.SetSize( esize );
+	//ImageType::RegionType extractRegion;
+	//extractRegion.SetIndex( edx );
+	//extractRegion.SetSize( esize );
 
-	// Set global REGION as new colon REGION
-	REGION = extractRegion;
+	//// Set global REGION as new colon REGION
+	//REGION = extractRegion;
 
-	typedef itk::ExtractImageFilter<ImageType,ImageType> ExtractImageFilterType;
-	ExtractImageFilterType::Pointer extracter = ExtractImageFilterType::New();
-	extracter->SetInput( input );
-	extracter->SetExtractionRegion( REGION );
-	extracter->Update();
-	input = extracter->GetOutput();
+	//typedef itk::ExtractImageFilter<ImageType,ImageType> ExtractImageFilterType;
+	//ExtractImageFilterType::Pointer extracter = ExtractImageFilterType::New();
+	//extracter->SetInput( input );
+	//extracter->SetExtractionRegion( REGION );
+	//extracter->Update();
+	//input = extracter->GetOutput();
 
-	typedef itk::ExtractImageFilter<ByteImageType,ByteImageType> ExtractImageFilterByteType;
-	ExtractImageFilterByteType::Pointer extracterByte = ExtractImageFilterByteType::New();
-	extracterByte->SetInput( colon );
-	extracterByte->SetExtractionRegion( REGION );
-	extracterByte->Update();
-	colon = extracterByte->GetOutput();
+	//typedef itk::ExtractImageFilter<ByteImageType,ByteImageType> ExtractImageFilterByteType;
+	//ExtractImageFilterByteType::Pointer extracterByte = ExtractImageFilterByteType::New();
+	//extracterByte->SetInput( colon );
+	//extracterByte->SetExtractionRegion( REGION );
+	//extracterByte->Update();
+	//colon = extracterByte->GetOutput();
 
-	Write(input,"input.nii");
-	Write(colon,"colon.nii");
+	//Write(input,"input.nii");
+	//Write(colon,"colon.nii");
 }
 
 /*********************************************************
