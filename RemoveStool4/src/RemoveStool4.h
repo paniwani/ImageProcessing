@@ -42,6 +42,7 @@
 #include <itkExtractImageFilter.h>
 #include <itkRegionOfInterestImageFilter.h>
 #include <itkAddConstantToImageFilter.h>
+#include <itkMultiplyByConstantImageFilter.h>
 
 
 #define CDF_SIGMA 0.27
@@ -85,6 +86,7 @@ void QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colo
 void Dilate(ByteImageType::Pointer &img, unsigned int radius);
 
 // Global vars
+ImageType::RegionType OLDREGION;
 ImageType::RegionType REGION;
 bool write_num = true;
 int write_count = 1;

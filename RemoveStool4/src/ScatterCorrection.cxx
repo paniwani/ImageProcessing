@@ -851,43 +851,22 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input_full, ByteImageT
 	// Use extract image filter to perform scatter correction in symmetric XY plane,
 	// and then extract appropriate global region afterwards
 	//************************************************
-	typedef itk::ExtractImageFilter<ImageType,ImageType> ExtractImageFilterType;
-	ExtractImageFilterType::Pointer extracter = ExtractImageFilterType::New();
-	extracter->SetInput( input_full );
+	typedef itk::RegionOfInterestImageFilter<ImageType,ImageType> RegionOfInterestImageFilterType;
+	RegionOfInterestImageFilterType::Pointer cropper = RegionOfInterestImageFilterType::New();
+	cropper->SetInput( input_full );
 
-	ImageType::RegionType region = REGION;
+	ImageType::RegionType region = OLDREGION;
 	ImageType::SizeType esize = region.GetSize();
 	esize[1] = esize[0];
 	region.SetSize(esize);
 
-	extracter->SetExtractionRegion( region );
-	extracter->Update();
-	ImageType::Pointer input = extracter->GetOutput();
-
-	/*
-
-	typedef itk::RegionOfInterestImageFilter<ImageType,ImageType> RegionOfInterestImageFilterType;
-	RegionOfInterestImageFilterType::Pointer extracter = RegionOfInterestImageFilterType::New();
-	extracter->SetInput( input_full );
-	extracter->SetRegionOfInterest( REGION );
-	extracter->Update();
-	ImageType::Pointer input = extracter->GetOutput();
-	Write(input,"input_scatter.nii");
-
-	*/
-
-	/*
-	ImageType::DirectionType direction;
-	direction.Fill(0);
-	direction[0][0] = 1;
-	direction[1][1] = 1;
-	direction[2][2] = 1;
-
-	input->SetDirection(direction);
-	*/
+	cropper->SetRegionOfInterest( region );
+	cropper->Update();
+	ImageType::Pointer input = cropper->GetOutput();
 	
 	// Get size and spacing
 	ImageType::SpacingType spacing = input->GetSpacing();
+	region = input->GetLargestPossibleRegion();
 
 	float VoxelSize[3];
 	VoxelSize[0] = spacing[0];
@@ -924,7 +903,6 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input_full, ByteImageT
 
 	ByteIteratorType colon_iter(colon,REGION);
 	ByteIteratorType tag_mask_iter(tag_mask,REGION);
-
 	input2_iter = IteratorType(input2,REGION);
 
 	for(input2_iter.GoToBegin(), tag_mask_iter.GoToBegin(), colon_iter.GoToBegin(); !input2_iter.IsAtEnd(); ++input2_iter, ++tag_mask_iter, ++colon_iter)
@@ -987,30 +965,29 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input_full, ByteImageT
 	subtracter->SetInput1(input);
 	subtracter->SetInput2(input2);
 
-	extracter = ExtractImageFilterType::New();
-	extracter->SetInput(subtracter->GetOutput());
-	extracter->SetExtractionRegion(REGION);
-
-	extracter->Update();
+	cropper = RegionOfInterestImageFilterType::New();
+	cropper->SetInput(subtracter->GetOutput());
+	cropper->SetRegionOfInterest(REGION);
+	cropper->Update();
 
 	ss.str("");
 	//ss << "scatter_change" << "_SCALE_" << SCALE << "_filterP_" << filterP << ".nii";
 	ss << "scatter_change.nii";
-	Write(extracter->GetOutput(),ss.str());
+	Write(cropper->GetOutput(),ss.str());
 
 	// Extract
-	extracter = ExtractImageFilterType::New();
-	extracter->SetInput(input2);
-	extracter->SetExtractionRegion(REGION);
+	cropper = RegionOfInterestImageFilterType::New();
+	cropper->SetInput(input2);
+	cropper->SetRegionOfInterest(REGION);
 
 	// Mask scatter corrected output with colon
 	typedef itk::MaskImageFilter<ImageType,ByteImageType,ImageType> MaskImageFilterType;
 	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
-	masker->SetInput1(extracter->GetOutput());
+	masker->SetInput1(cropper->GetOutput());
 	masker->SetInput2(colon);
 	masker->Update();
 
-	Write(masker->GetOutput(),"scatter.nii");
+	Write(masker->GetOutput(),"input_scatter.nii");
 
 	return masker->GetOutput();
 }
