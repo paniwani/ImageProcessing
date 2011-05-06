@@ -92,6 +92,7 @@
 #include <itkOtsuThresholdImageCalculatorModified.h>
 #include <itkImageDuplicator.h>
 #include <itkCannyEdgeDetectionImageFilterModified.h>
+#include <itkAddConstantToImageFilter.h>
 
 
 #include <fstream>

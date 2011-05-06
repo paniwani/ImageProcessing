@@ -62,6 +62,7 @@ typedef unsigned short	                                                         
 typedef unsigned char																BytePixelType;
 typedef itk::BinaryBallStructuringElement<PixelType, 3>								StructuringElementType;
 typedef itk::CovariantVector<float,3>												VectorType;
+typedef itk::FixedArray<float,3>													ArrayType;
 
 
 typedef itk::Image<PixelType, 3>													ImageType;
@@ -70,6 +71,7 @@ typedef itk::Image< short int, 3>													ShortImageType;
 typedef itk::Image< float, 3>														FloatImageType;
 typedef itk::Image< VoxelType, 3>													VoxelImageType;
 typedef itk::Image< VectorType, 3>													VectorImageType;
+typedef itk::Image< ArrayType, 3>													ArrayImageType;
 typedef itk::BSplineInterpolateImageFunction<FloatImageType>::ContinuousIndexType   ContinuousIndexType;
 	
 typedef itk::ImageRegionIteratorWithIndex<ImageType>							    IteratorType;
@@ -78,11 +80,11 @@ typedef itk::ImageRegionIteratorWithIndex<ShortImageType>							ShortIteratorTyp
 typedef itk::ImageRegionIteratorWithIndex<FloatImageType>							FloatIteratorType;
 typedef itk::ImageRegionIteratorWithIndex<VoxelImageType>							VoxelIteratorType;
 typedef itk::ImageRegionIteratorWithIndex<VectorImageType>							VectorIteratorType;
+typedef itk::ImageRegionIteratorWithIndex<ArrayImageType>							ArrayIteratorType;
 
-void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::Pointer &input, ByteImageType::Pointer &colon);
+void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::Pointer &input, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradient_magnitude);
 PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon);
 void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissue_stool_threshold );
-void QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, FloatImageType::Pointer &gradient_magnitude);
 void Dilate(ByteImageType::Pointer &img, unsigned int radius);
 
 // Global vars

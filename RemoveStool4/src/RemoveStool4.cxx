@@ -27,9 +27,10 @@ int main(int argc, char * argv[])
 	ByteImageType::Pointer			colon					= ByteImageType::New();
 	FloatImageType::Pointer			gradient_magnitude		= FloatImageType::New();
 	VoxelImageType::Pointer			vmap					= VoxelImageType::New();
+	ArrayImageType::Pointer			partial					= ArrayImageType::New();
 
 	// Load images and segment colon
-	Setup(argv[1],input_original,input,colon);
+	Setup(argv[1],input_original,input,colon,gradient_magnitude);
 
 	// Initial segmentation, save tissue stool threshold
 	PixelType tst = SingleMaterialClassification(input, gradient_magnitude, vmap, colon);
@@ -43,212 +44,10 @@ int main(int argc, char * argv[])
 	Write(vmap,"scatter_vmap.nii");
 
 	// Determine boundary types
-	QuadraticRegression(input,colon,vmap,gradient_magnitude);
+	partial = QuadraticRegression(input,colon,vmap,gradient_magnitude);
 
 	system("pause");
 	return 0;
-}
-
-/*********************************************************
-Using intensity vs gradient relationship, assign boundary
-types to edge voxels
-
-1. Determine egdes using canny
-2. Get normalized gradient vector
-3. Interpolate input and gradient magnitude
-4. Compute local stool maximum
-5. Run voxel edge classification
-
-*********************************************************/
-void QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, FloatImageType::Pointer &gradient_magnitude)
-{
-	ImageType::SpacingType spacing = input->GetSpacing();
-
-	// get gradient vector
-	typedef itk::DiscreteGaussianImageFilter<ImageType, ImageType> DiscreteGaussianImageFilterType;
-	DiscreteGaussianImageFilterType::Pointer smoother = DiscreteGaussianImageFilterType::New();
-	smoother->SetInput( input );
-	smoother->SetVariance( spacing[0]*spacing[0] );
-	smoother->Update();
-
-	typedef itk::GradientImageFilter<ImageType> GradientImageFilterType;
-	GradientImageFilterType::Pointer gradientFilter = GradientImageFilterType::New();
-	gradientFilter->SetInput( smoother->GetOutput() );
-	gradientFilter->SetUseImageDirection(false);
-	gradientFilter->Update();
-	VectorImageType::Pointer gradient = gradientFilter->GetOutput();
-	VectorIteratorType gradient_iter(gradient,REGION);
-
-	// normalize
-	for (gradient_iter.GoToBegin(); !gradient_iter.IsAtEnd(); ++gradient_iter)
-	{
-		VectorType g = gradient_iter.Get();
-
-		float norm = g.GetNorm();
-
-		if ( norm > 0 )
-		{
-			for (int i=0; i<3; i++)
-				g[i] /= norm;
-		}
-
-		// tolerance
-
-		for (int i=0; i<3; i++)
-			g[i] = abs(g[i]) > 0.001 ? g[i] : 0; 
-
-		gradient_iter.Set(g);
-	}
-
-	// interp grad, use 2x gradient magnitude
-	typedef itk::MultiplyByConstantImageFilter<FloatImageType, int, FloatImageType> MultiplyByConstantImageFilterType;
-	MultiplyByConstantImageFilterType::Pointer multiplier = MultiplyByConstantImageFilterType::New();
-	multiplier->SetInput( gradient_magnitude );
-	multiplier->SetConstant( 2 );
-	multiplier->Update();
-
-	typedef itk::BSplineInterpolateImageFunction<FloatImageType> InterpolatorFloatType;
-	InterpolatorFloatType::Pointer grad_interp = InterpolatorFloatType::New();
-	grad_interp->SetSplineOrder(3);
-	grad_interp->SetInputImage( multiplier->GetOutput() );
-
-	// shift input to air -1024 and cast to short
-	typedef itk::CastImageFilter<ImageType,ShortImageType> CastImageFilterType;
-	CastImageFilterType::Pointer caster = CastImageFilterType::New();
-	caster->SetInput( input );
-
-	typedef itk::AddConstantToImageFilter< ShortImageType, short, ShortImageType > AddConstantToImageFilterType;
-	AddConstantToImageFilterType::Pointer adder = AddConstantToImageFilterType::New();
-	adder->SetInput( caster->GetOutput() );
-	adder->SetConstant( BACKGROUND );
-	adder->Update();
-
-	ShortImageType::Pointer input_short = adder->GetOutput();
-	Write(input_short,"input_short.nii");
-
-	// interp input
-	typedef itk::BSplineInterpolateImageFunction<ShortImageType> InterpolatorShortType;
-	InterpolatorShortType::Pointer input_interp = InterpolatorShortType::New();
-	input_interp->SetSplineOrder(3);
-	input_interp->SetInputImage( input_short );
-
-	InterpolatorShortType::ContinuousIndexType startIndex = input_interp->GetStartIndex();
-	
-	std::cout << "Start QR Index: " << startIndex[0] << " " << startIndex[1] << " " << startIndex[2] << std::endl;
-
-	InterpolatorShortType::ContinuousIndexType endIndex = input_interp->GetEndIndex();
-	
-	std::cout << "End QR Index: " << endIndex[0] << " " << endIndex[1] << " " << endIndex[2] << std::endl;
-
-	// get local stool max
-	ImageType::Pointer smax = ComputeNeighborhoodSmax(input,vmap,colon);
-	Write(smax,"smax.nii");
-
-	// ve
-	IteratorType smax_iter(smax,REGION);
-	ByteIteratorType colon_iter(colon,REGION);
-	VoxelIteratorType vmap_iter(vmap,REGION);
-
-	float d[3][2];
-	d[0][0] = 1.5; d[0][1] = 1.0;
-	d[1][0] = 1.0; d[1][1] = 0.5;
-	d[2][0] = 0.6; d[2][1] = 0.3;
-
-	int count=0;
-
-	for (smax_iter.GoToBegin(), gradient_iter.GoToBegin(), colon_iter.GoToBegin(), vmap_iter.GoToBegin(); !smax_iter.IsAtEnd(); 
-		++smax_iter, ++gradient_iter, ++colon_iter, ++vmap_iter)
-	{
-
-		if (colon_iter.Get() == 255 && vmap_iter.Get() == Unclassified)
-		{
-			if (count++ % 1000 == 0)
-				std::cout << count << std::endl;
-
-			ImageType::IndexType idx = gradient_iter.GetIndex();
-
-			VoxelType v;
-
-			if (smax_iter.Get() > 0)
-			{
-
-				float dist = 0;
-
-				for (int i=0; i<3; i++) // iterate through each set of distances
-				{
-					float in[5];
-					float gr[5];
-			
-					for (int j=0; j<5; j++) // iterate through each distance
-					{
-						ContinuousIndexType odx = idx;
-						
-						// shift by gradient
-						if (j < 2) // -ve
-						{
-							for (int k=0; k<3; k++)
-								odx[k] -= gradient_iter.Get()[k]*d[i][k];
-						
-						} else if (j > 2) { // +ve
-
-							for (int k=0; k<3; k++)
-								odx[k] += gradient_iter.Get()[k]*d[i][k];
-						}
-						
-						if ( !checkBounds(REGION,odx) )
-							odx = idx;
-						
-						in[j] = input_interp->EvaluateAtContinuousIndex(odx);
-						gr[j] = grad_interp->EvaluateAtContinuousIndex(odx);
-					}
-
-					float distanceTS=0;
-					float distanceSA=0;
-					float distanceTA=0;
-
-					float localDist=0;
-					VoxelType localV=Unclassified;
-					
-					distanceTS=AverageTissueStoolDist(smax_iter.Get()+BACKGROUND,in,gr);
-					distanceSA=AverageStoolAirDist(smax_iter.Get()+BACKGROUND,in,gr);
-					distanceTA=AverageTissueAirDist(in,gr);
-
-					if (distanceSA<=distanceTS && distanceSA<=distanceTA) 
-					{
-						localDist = distanceSA;
-						localV = StoolAir;
-
-					} else if (distanceTS<=distanceTA && distanceTS<=distanceSA) {
-						localDist = distanceTS;
-						localV = TissueStool;
-
-					} else {
-						localDist = distanceTA;
-						localV = TissueAir;
-					}
-
-					if ( i == 0 )
-					{
-						dist = localDist;
-						v = localV;
-					} else {
-						if ( localDist < dist )
-						{
-							dist = localDist;
-							v = localV;
-						}
-					}
-				}
-			} else {
-				v = TissueAir;
-			}
-
-			vmap_iter.Set(v);
-
-		}		
-	}
-	
-	Write(vmap,"qr.nii");
 }
 
 void Dilate(ByteImageType::Pointer &img, unsigned int radius)
@@ -276,16 +75,16 @@ void Dilate(ByteImageType::Pointer &img, unsigned int radius)
 
 
 /*********************************************************
-1. Load image
-2. Shift input so that air is 0 HU
-3. Segment colon
-4. Mask input with colon
-5. Crop input and colon in XY plane
+- Load image
+- Shift input so that air is 0 HU
+- Segment colon
+- Mask input with colon
+- Crop input and colon in XY plane
 *********************************************************/
-void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::Pointer &input, ByteImageType::Pointer &colon)
+void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::Pointer &input, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradient_magnitude)
 {
 	//----------------------------------------------
-	// 1. Load image
+	// Load image
 	//----------------------------------------------
 	std::vector<std::string> dataset_ar = explode( "\\", dataset );
 	std::string dsname = dataset_ar[ dataset_ar.size() - 2 ];
@@ -319,7 +118,7 @@ void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::
 	ShortIteratorType input_s_iter( input_s, input_s->GetLargestPossibleRegion() );
 
 	//----------------------------------------------
-	// 2. Shift input so that air is 0 HU
+	// Shift input so that air is 0 HU
 	//----------------------------------------------
 
 	// Shift and cast to 16-bit unsigned short
@@ -352,11 +151,11 @@ void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::
 
 	input_s.~SmartPointer();
 
-	// Set global REGION
+	// Set global region
 	REGION = input_original->GetLargestPossibleRegion();
 
 	//----------------------------------------------
-	// 3. Segment colon
+	// Segment colon
 	//----------------------------------------------
 	typedef itk::ColonSegmentationFilter< ImageType, ByteImageType > ColonSegmentationFilterType;
 	ColonSegmentationFilterType::Pointer colon_segmenter = ColonSegmentationFilterType::New();
@@ -372,7 +171,7 @@ void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::
 	colon = colon_segmenter->GetOutput();
 
 	//----------------------------------------------
-	// 4. Mask input with colon
+	// Mask input with colon
 	//----------------------------------------------
 	typedef itk::MaskImageFilter< ImageType, ByteImageType, ImageType > MaskImageFilterType;
 	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
@@ -385,7 +184,20 @@ void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::
 	Write(input_original,"input_original.nii");
 
 	//----------------------------------------------
-	// 5. Crop input and colon in XY plane
+	// Calculate gradient magnitude and mask with colon
+	//----------------------------------------------
+	typedef itk::GradientMagnitudeRecursiveGaussianImageFilter<ImageType,FloatImageType> GradientMagnitudeImageFilterType;
+	
+	GradientMagnitudeImageFilterType::Pointer gradient_magnitude_filter = GradientMagnitudeImageFilterType::New();
+	gradient_magnitude_filter->SetInput( input_original );
+
+	gradient_magnitude_filter->SetSigma( input_original->GetSpacing()[0] );
+
+	gradient_magnitude_filter->Update();
+	gradient_magnitude = gradient_magnitude_filter->GetOutput();
+
+	//----------------------------------------------
+	// Crop images in XY plane
 	//----------------------------------------------
 	
 	input_iter = IteratorType(input,REGION);
@@ -429,13 +241,19 @@ void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::
 
 	OLDREGION = extractRegion;
 
-	// Set global REGION as new colon REGION
 	typedef itk::RegionOfInterestImageFilter<ImageType,ImageType> RegionOfInterestImageFilterType;
 	RegionOfInterestImageFilterType::Pointer cropper = RegionOfInterestImageFilterType::New();
 	cropper->SetInput( input );
 	cropper->SetRegionOfInterest( extractRegion );
 	cropper->Update();
 	input = cropper->GetOutput();
+
+	typedef itk::RegionOfInterestImageFilter<FloatImageType,FloatImageType> RegionOfInterestImageFilterFloatType;
+	RegionOfInterestImageFilterFloatType::Pointer cropperFloat = RegionOfInterestImageFilterFloatType::New();
+	cropperFloat->SetInput( gradient_magnitude );
+	cropperFloat->SetRegionOfInterest( extractRegion );
+	cropperFloat->Update();
+	gradient_magnitude = cropperFloat->GetOutput();
 
 	typedef itk::RegionOfInterestImageFilter<ByteImageType,ByteImageType> RegionOfInterestImageFilterByteType;
 	RegionOfInterestImageFilterByteType::Pointer cropperByte = RegionOfInterestImageFilterByteType::New();
@@ -446,24 +264,9 @@ void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::
 
 	REGION = colon->GetLargestPossibleRegion();
 
-	/*
-	typedef itk::ExtractImageFilter<ImageType,ImageType> ExtractImageFilterType;
-	ExtractImageFilterType::Pointer extracter = ExtractImageFilterType::New();
-	extracter->SetInput( input );
-	extracter->SetExtractionRegion( REGION );
-	extracter->Update();
-	input = extracter->GetOutput();
-
-	typedef itk::ExtractImageFilter<ByteImageType,ByteImageType> ExtractImageFilterByteType;
-	ExtractImageFilterByteType::Pointer extracterByte = ExtractImageFilterByteType::New();
-	extracterByte->SetInput( colon );
-	extracterByte->SetExtractionRegion( REGION );
-	extracterByte->Update();
-	colon = extracterByte->GetOutput();
-	*/
-
 	Write(input,"input.nii");
 	Write(colon,"colon.nii");
+	Write(gradient_magnitude,"gradient_magnitude.nii");
 }
 
 /*********************************************************
@@ -474,25 +277,13 @@ void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::
 *********************************************************/
 PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon) 
 {
-	//----------------------------------------------
-	// 1. Calculate gradient magnitude
-	//----------------------------------------------
-	//typedef itk::GradientMagnitudeImageFilter<ImageType,FloatImageType> GradientMagnitudeImageFilterType;
-	typedef itk::GradientMagnitudeRecursiveGaussianImageFilter<ImageType,FloatImageType> GradientMagnitudeImageFilterType;
 	
-	GradientMagnitudeImageFilterType::Pointer gradient_magnitude_filter = GradientMagnitudeImageFilterType::New();
-	gradient_magnitude_filter->SetInput( input );
 
-	gradient_magnitude_filter->SetSigma( input->GetSpacing()[0] );
-
-	gradient_magnitude_filter->Update();
-	gradient_magnitude = gradient_magnitude_filter->GetOutput();
-
-	typedef itk::CastImageFilter<ImageType,FloatImageType> CastImageFilterType;
+	/*typedef itk::CastImageFilter<ImageType,FloatImageType> CastImageFilterType;
 	CastImageFilterType::Pointer caster = CastImageFilterType::New();
 	caster->SetInput(input);
 	caster->Update();
-	
+	*/
 	//// No smoothing
 	//typedef itk::GradientMagnitudeImageFilter<FloatImageType,FloatImageType> GradientMagnitudeImageFilterNoSmoothingType;
 	//GradientMagnitudeImageFilterNoSmoothingType::Pointer grad_no_smooth_filter = GradientMagnitudeImageFilterNoSmoothingType::New();
@@ -546,7 +337,6 @@ PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType
 	//----------------------------------------------
 	ApplyThresholdRules( input, gradient_magnitude, vmap, colon, tissue_stool_threshold );
 
-	Write(gradient_magnitude,"gradient_magnitude.nii");
 	Write(vmap,"vmap.nii");
 
 	return tissue_stool_threshold;

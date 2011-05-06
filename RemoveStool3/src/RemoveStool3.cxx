@@ -90,10 +90,16 @@ int main(int argc, char * argv[])
 
 	IteratorTypeFloat4WithIndex input_iter(input,fullRegion);
 
+	typedef itk::AddConstantToImageFilter<ImageType,short,ImageType> AddConstantToImageFilterType;
+	AddConstantToImageFilterType::Pointer adder = AddConstantToImageFilterType::New();
+	adder->SetInput(input);
+	adder->SetConstant(1025);
+	adder->Update();
+
 	// Segment colon
 	typedef itk::ColonSegmentationFilter<ImageType, ByteImageType> ColonSegmentationFilterType;
 	ColonSegmentationFilterType::Pointer colon_segmenter = ColonSegmentationFilterType::New();
-	colon_segmenter->SetInput( input );
+	colon_segmenter->SetInput( adder->GetOutput() );
 
 	if (truncateOn)
 		colon_segmenter->SetRemoveBoneLung( false );

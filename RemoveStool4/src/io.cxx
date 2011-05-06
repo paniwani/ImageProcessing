@@ -1,3 +1,34 @@
+std::vector<std::string> explode( const std::string &delimiter, const std::string &str)
+{
+	std::vector<std::string> arr;
+
+    int strleng = str.length();
+    int delleng = delimiter.length();
+    if (delleng==0)
+        return arr;//no change
+
+    int i=0; 
+    int k=0;
+    while( i<strleng )
+    {
+        int j=0;
+        while (i+j<strleng && j<delleng && str[i+j]==delimiter[j])
+            j++;
+        if (j==delleng)//found delimiter
+        {
+            arr.push_back(  str.substr(k, i-k) );
+            i+=delleng;
+            k=i;
+        }
+        else
+        {
+            i++;
+        }
+    }
+    arr.push_back(  str.substr(k, i-k) );
+    return arr;
+}
+
 void Write(ImageType::Pointer image, std::string name) {
 	typedef itk::ImageFileWriter< ImageType >  WriterType;
     WriterType::Pointer writer = WriterType::New();
@@ -131,35 +162,34 @@ void Write(VoxelImageType::Pointer vmap, std::string name)
 
 }
 
-std::vector<std::string> explode( const std::string &delimiter, const std::string &str)
+void Write(ArrayImageType::Pointer &v, std::string name)
 {
-	std::vector<std::string> arr;
+	std::vector<std::string> name_ar = explode( ".", name );
 
-    int strleng = str.length();
-    int delleng = delimiter.length();
-    if (delleng==0)
-        return arr;//no change
+	ArrayImageType::RegionType region = v->GetLargestPossibleRegion();
 
-    int i=0; 
-    int k=0;
-    while( i<strleng )
-    {
-        int j=0;
-        while (i+j<strleng && j<delleng && str[i+j]==delimiter[j])
-            j++;
-        if (j==delleng)//found delimiter
-        {
-            arr.push_back(  str.substr(k, i-k) );
-            i+=delleng;
-            k=i;
-        }
-        else
-        {
-            i++;
-        }
-    }
-    arr.push_back(  str.substr(k, i-k) );
-    return arr;
+	ArrayIteratorType v_iter(v,region);
+
+	for (int i=0; i < ArrayImageType::ImageDimension ; i++)
+	{
+		FloatImageType::Pointer image = FloatImageType::New();
+		image->SetRegions( region );
+		image->SetSpacing( v->GetSpacing() );
+		image->SetDirection( v->GetDirection() );
+		image->CopyInformation( v );
+		image->Allocate();
+		image->FillBuffer(0);
+		FloatIteratorType image_iter(image,region);
+
+		for (v_iter.GoToBegin(), image_iter.GoToBegin(); !v_iter.IsAtEnd(); ++v_iter, ++image_iter)
+			image_iter.Set( 255 * v_iter.Get()[i] );
+
+
+		std::stringstream ss;
+		ss << name_ar[0] << "_" << i << "." << name_ar[1];
+		
+		Write( image, ss.str() );
+	}
 }
 
 template <typename T>
