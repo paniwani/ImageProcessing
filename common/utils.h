@@ -27,7 +27,7 @@ typename T::Pointer ReadITK(char * fileName) {
 		reader->Update();
 	} catch( itk::ExceptionObject & err ) {
 		std::cerr << "Error reading image: " << err << std::endl;
-		return EXIT_FAILURE;
+		return NULL;
 	}
 
 	return reader->GetOutput();

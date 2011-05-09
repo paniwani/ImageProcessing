@@ -7,11 +7,11 @@
 
 int main()
 {
-	ImageType::Pointer input = ReadDicom <ImageType> ("C:/ImageData/mr9/mr2_002_13p.i0393/dcm",5,6);
+	ImageType::Pointer input = ReadDicom <ImageType> ("C:/ImageData/mr9/mr2_002_13p.i0393/dcm",5,8);
 
 	WriteITK <ImageType> (input, "input.nii");
 
-	/*ImageType::SizeType radius;
+	ImageType::SizeType radius;
 	radius.Fill(1);
 
 	typedef itk::NeighborhoodIterator<ImageType> NeighborhoodIteratorType;
@@ -22,20 +22,32 @@ int main()
 	mask->SetSpacing(input->GetSpacing());
 	mask->Allocate();
 
-	for (nit.GoToBegin(); !nit.IsAtEnd(); ++nit)
-	{*/
-		/*mask->FillBuffer(0);
+	ImageType::Pointer texture = ImageType::New();
+	texture->SetRegions(input->GetLargestPossibleRegion());
+	texture->SetSpacing(input->GetSpacing());
+	texture->Allocate();
+	texture->FillBuffer(0);
+
+	IteratorType texture_iter(texture,input->GetLargestPossibleRegion());
+
+	for (nit.GoToBegin(),texture_iter.GoToBegin(); !nit.IsAtEnd(); ++nit,++texture_iter)
+	{
+		mask->FillBuffer(0);
 
 		for (int i=0; i<nit.Size()-1; i++)
 		{
-			mask->SetPixel(nit.GetIndex(i),1);
-		}*/
+			bool isInBounds;
+			PixelType val = nit.GetPixel(i,isInBounds);
+
+			if (isInBounds)
+				mask->SetPixel(nit.GetIndex(i),1);
+		}	
 
 		typedef itk::Statistics::ScalarImageToTextureFeaturesFilter<ImageType> ScalarImageToTextureFeaturesFilterType;
 		ScalarImageToTextureFeaturesFilterType::Pointer textureFilter = ScalarImageToTextureFeaturesFilterType::New();
 
 		textureFilter->SetInput(input);
-		//textureFilter->SetMaskImage(mask);
+		textureFilter->SetMaskImage(mask);
 		
 		ScalarImageToTextureFeaturesFilterType::FeatureNameVectorPointer requestedFeatures = ScalarImageToTextureFeaturesFilterType::FeatureNameVector::New();
 		requestedFeatures->push_back(ScalarImageToTextureFeaturesFilterType::TextureFeaturesFilterType::Energy);
@@ -47,11 +59,17 @@ int main()
 		//WriteITK <ImageType> (textureFilter->GetOutput(0),"one.nii");
 
 		const ScalarImageToTextureFeaturesFilterType::FeatureValueVectorDataObjectType * mean = textureFilter->GetFeatureMeansOutput();
+		const ScalarImageToTextureFeaturesFilterType::FeatureValueVector * _mean = mean->Get();
+		//std::cout << _mean->ElementAt(0) << std::endl;
 
-		std::cout << "stop" << std::endl;
+		//std::cout << "stop" << std::endl;
+
+		texture_iter.Set( _mean->ElementAt(0) );
 
 
-	//}
+	}
+
+	WriteITK <ImageType> (texture,"texture.nii");
 
 	system("pause");
 	return 0;
