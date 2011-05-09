@@ -459,11 +459,12 @@ ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 					float localDist=0;
 					VoxelType localV=Unclassified;
 					
-					//distanceTS=AverageTissueStoolDist(smax_iter.Get()+BACKGROUND,in,gr);
-					//distanceSA=AverageStoolAirDist(smax_iter.Get()+BACKGROUND,in,gr);
+					distanceTS=AverageTissueStoolDist(smax_iter.Get()+BACKGROUND,in,gr);
+					distanceSA=AverageStoolAirDist(smax_iter.Get()+BACKGROUND,in,gr);
 
-					distanceTS=AverageTissueStoolDist( ComputeSmax(in,gr,5) , in, gr );
-					distanceSA=AverageStoolAirDist( Stool_Air_ComputeSmax(in,gr,5) , in, gr );
+					//distanceTS=AverageTissueStoolDist( ComputeSmax(in,gr,5) , in, gr );
+					//distanceSA=AverageStoolAirDist( Stool_Air_ComputeSmax(in,gr,5) , in, gr );
+					
 					distanceTA=AverageTissueAirDist(in,gr);
 
 					if (distanceSA<=distanceTS && distanceSA<=distanceTA) 
