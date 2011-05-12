@@ -27,7 +27,7 @@ int main(int argc, char * argv[])
 	ByteImageType::Pointer			colon					= ByteImageType::New();
 	FloatImageType::Pointer			gradient_magnitude		= FloatImageType::New();
 	VoxelImageType::Pointer			vmap					= VoxelImageType::New();
-	ArrayImageType::Pointer			partial					= ArrayImageType::New();
+	FloatImageType::Pointer			pt						= FloatImageType::New();
 
 	// Load images and segment colon
 	Setup(argv[1],input_original,input,colon,gradient_magnitude);
@@ -43,8 +43,13 @@ int main(int argc, char * argv[])
 
 	Write(vmap,"scatter_vmap.nii");
 
+	// Local neighborhood boundary
+	//LocalBoundary(vmap,colon);
+
 	// Determine boundary types
-	partial = QuadraticRegression(input,colon,vmap,gradient_magnitude);
+	pt = QuadraticRegression(input,colon,vmap,gradient_magnitude);
+
+	Write(pt,"pt.nii");
 
 	system("pause");
 	return 0;
@@ -186,13 +191,11 @@ void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::
 	//----------------------------------------------
 	// Calculate gradient magnitude and mask with colon
 	//----------------------------------------------
-	typedef itk::GradientMagnitudeRecursiveGaussianImageFilter<ImageType,FloatImageType> GradientMagnitudeImageFilterType;
+	typedef itk::GradientMagnitudeRecursiveGaussianImageFilter<ImageType,FloatImageType> GradientMagnitudeRecursiveGaussianImageFilterType;
 	
-	GradientMagnitudeImageFilterType::Pointer gradient_magnitude_filter = GradientMagnitudeImageFilterType::New();
+	GradientMagnitudeRecursiveGaussianImageFilterType::Pointer gradient_magnitude_filter = GradientMagnitudeRecursiveGaussianImageFilterType::New();
 	gradient_magnitude_filter->SetInput( input_original );
-
 	gradient_magnitude_filter->SetSigma( input_original->GetSpacing()[0] );
-
 	gradient_magnitude_filter->Update();
 	gradient_magnitude = gradient_magnitude_filter->GetOutput();
 
@@ -264,7 +267,38 @@ void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::
 
 	REGION = colon->GetLargestPossibleRegion();
 
+	// TESTTTTTTTT
+
+	typedef itk::CastImageFilter<ImageType,ShortImageType> CastImageFilterType;
+	CastImageFilterType::Pointer caster = CastImageFilterType::New();
+	caster->SetInput(input);
+
+	typedef itk::AddConstantToImageFilter<ShortImageType,short,ShortImageType> AddConstantToImageFilterType;
+	AddConstantToImageFilterType::Pointer adder = AddConstantToImageFilterType::New();
+	adder->SetConstant(BACKGROUND);
+	adder->SetInput(caster->GetOutput());
+	adder->Update();
+
+	typedef itk::GradientMagnitudeImageFilter<ImageType,FloatImageType> GradientMagnitudeImageFilterType;
+	GradientMagnitudeImageFilterType::Pointer gmFilter = GradientMagnitudeImageFilterType::New();
+	gmFilter->SetInput(input);
+	gmFilter->Update();
+	Write(gmFilter->GetOutput(),"gm_no_smoothing.nii");
+
+	typedef itk::CastImageFilter<ImageType,FloatImageType> CastImageFilterType2;
+	CastImageFilterType2::Pointer caster2 = CastImageFilterType2::New();
+	caster2->SetInput(input);
+
+	typedef itk::CannyEdgeDetectionImageFilterModified<FloatImageType,FloatImageType> CannyEdgeDetectionImageFilterType;
+	CannyEdgeDetectionImageFilterType::Pointer cannyFilter = CannyEdgeDetectionImageFilterType::New();
+	cannyFilter->SetInput( caster2->GetOutput() );
+	cannyFilter->SetLowerThreshold(0); // minimum gradient threshold
+	cannyFilter->SetVariance(0);	
+	cannyFilter->Update();
+
+	Write(cannyFilter->GetOutput(), "canny.nii");
 	Write(input,"input.nii");
+	Write(adder->GetOutput(),"input_scale.nii");
 	Write(colon,"colon.nii");
 	Write(gradient_magnitude,"gradient_magnitude.nii");
 }
