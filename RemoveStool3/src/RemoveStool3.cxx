@@ -149,7 +149,6 @@ int main(int argc, char * argv[])
 
 	std::cout << std::endl << std::endl;
 
-
 	//RemoveStool5(input,chamfer_colon);
 
 	/*
@@ -294,6 +293,12 @@ int main(int argc, char * argv[])
 	SingleMaterialClassification(input, gradient_magnitude, voxel_type, chamfer_colon);
 
 	WriteITK(voxel_type, "voxel_type_start.nii");
+
+	input = ScatterCorrection(input,chamfer_colon, voxel_type);
+
+	SingleMaterialClassification(input, gradient_magnitude, voxel_type, chamfer_colon);
+
+	WriteITK(voxel_type, "voxel_type_scatter.nii");
 
 	// Clean up stool voxels
 	CleanIsolatedStool( voxel_type );

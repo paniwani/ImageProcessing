@@ -87,6 +87,8 @@ PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType
 void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissue_stool_threshold );
 void Dilate(ByteImageType::Pointer &img, unsigned int radius);
 
+vnl_matrix<float> GetNeighbor(ArrayImageType::Pointer partialVector, ImageType::IndexType index);
+
 // Global vars
 ImageType::RegionType OLDREGION;
 ImageType::RegionType REGION;
@@ -96,3 +98,5 @@ bool truncate_on = true;
 unsigned int truncate_ar[2] = {85,90};
 std::string note;
 short BACKGROUND = 0;
+double PI=3.1415926;
+double neighbor_weight[3]={1,1,.5};

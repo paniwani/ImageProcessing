@@ -25,19 +25,22 @@
 
 namespace otb
 {
-template <class TInputImage, class TOutputImage>
-ScalarImageToTexturesFilter<TInputImage, TOutputImage>
+template <class TInputImage, class TOutputImage, class TMaskImage>
+ScalarImageToTexturesFilter<TInputImage, TOutputImage, TMaskImage>
 ::ScalarImageToTexturesFilter() : m_Radius(),
   m_Offset(),
   m_NumberOfBinsPerAxis(8),
   m_InputImageMinimum(0),
-  m_InputImageMaximum(256)
+  m_InputImageMaximum(256),
+  m_Feature("Energy")
 {
   // There are 8 outputs corresponding to the 8 textures indices
-  this->SetNumberOfOutputs(8);
+  this->SetNumberOfOutputs(1);
+
+  this->SetNthOutput(0, OutputImageType::New());
 
   // Create the 8 outputs
-  this->SetNthOutput(0, OutputImageType::New());
+  //this->SetNthOutput(0, OutputImageType::New());
  /* this->SetNthOutput(1, OutputImageType::New());
   this->SetNthOutput(2, OutputImageType::New());
   this->SetNthOutput(3, OutputImageType::New());
@@ -47,23 +50,23 @@ ScalarImageToTexturesFilter<TInputImage, TOutputImage>
   this->SetNthOutput(7, OutputImageType::New());*/
 }
 
-template <class TInputImage, class TOutputImage>
-ScalarImageToTexturesFilter<TInputImage, TOutputImage>
+template <class TInputImage, class TOutputImage, class TMaskImage>
+ScalarImageToTexturesFilter<TInputImage, TOutputImage, TMaskImage>
 ::~ScalarImageToTexturesFilter()
 {}
 
-template <class TInputImage, class TOutputImage>
-typename ScalarImageToTexturesFilter<TInputImage, TOutputImage>
-::OutputImageType *
-ScalarImageToTexturesFilter<TInputImage, TOutputImage>
-::GetEnergyOutput()
-{
-  if (this->GetNumberOfOutputs() < 1)
-    {
-    return 0;
-    }
-  return static_cast<OutputImageType *>(this->GetOutput(0));
-}
+//template <class TInputImage, class TOutputImage, class TMaskImage>
+//typename ScalarImageToTexturesFilter<TInputImage, TOutputImage, TMaskImage>
+//::OutputImageType *
+//ScalarImageToTexturesFilter<TInputImage, TOutputImage, TMaskImage>
+//::GetEnergyOutput()
+//{
+//  if (this->GetNumberOfOutputs() < 1)
+//    {
+//    return 0;
+//    }
+//  return static_cast<OutputImageType *>(this->GetOutput(0));
+//}
 
 //template <class TInputImage, class TOutputImage>
 //typename ScalarImageToTexturesFilter<TInputImage, TOutputImage>
@@ -156,9 +159,45 @@ ScalarImageToTexturesFilter<TInputImage, TOutputImage>
 //  return static_cast<OutputImageType *>(this->GetOutput(7));
 //}
 
-template <class TInputImage, class TOutputImage>
+// Validate feature input
+template <class TInputImage, class TOutputImage, class TMaskImage>
 void
-ScalarImageToTexturesFilter<TInputImage, TOutputImage>
+ScalarImageToTexturesFilter<TInputImage, TOutputImage, TMaskImage>
+::SetFeature(std::string f)
+{
+	if (f == "Energy" || f == "Entropy" || f == "Correlation" || f == "InverseDifferenceMoment" || f == "Intertia" || f == "ClusterShade" || f == "ClusterProminence" || f == "HaralickCorrelation")
+	{
+		m_Feature = f;
+	} else {
+		std::cout << "Feature not recognized. Default feature (Energy) set.";
+		m_Feature = "Energy";
+	}
+}
+
+template <class TInputImage, class TOutputImage, class TMaskImage>
+void
+ScalarImageToTexturesFilter<TInputImage, TOutputImage, TMaskImage>
+::SetFeature(unsigned int i)
+{
+	if (i >=0 && i<8)
+	{
+		if		( i==0)		{ m_Feature = "Energy"; }
+		else if ( i==1 )	{ m_Feature = "Correlation"; }
+		else if ( i==2 )	{ m_Feature = "InverseDifferenceMoment"; }
+		else if ( i==3 )	{ m_Feature = "Intertia"; }
+		else if ( i==4 )	{ m_Feature = "ClusterShade"; }
+		else if ( i==5 )	{ m_Feature = "Correlation"; }
+		else if ( i==6 )	{ m_Feature = "ClusterProminence"; }
+		else if ( i==7 )	{ m_Feature = "HaralickCorrelation"; }
+	} else {
+		std::cout << "Feature not recognized. Default feature (Energy) set.";
+		m_Feature = "Energy";
+	}
+}
+
+template <class TInputImage, class TOutputImage, class TMaskImage>
+void
+ScalarImageToTexturesFilter<TInputImage, TOutputImage, TMaskImage>
 ::GenerateInputRequestedRegion()
 {
   // First, call superclass implementation
@@ -214,17 +253,28 @@ ScalarImageToTexturesFilter<TInputImage, TOutputImage>
     e.SetDataObject(inputPtr);
     throw e;
     }
+
+  MaskImagePointer mask = const_cast<MaskImageType *>(this->GetMaskImage());
+  if (mask)
+    {
+    mask->SetRequestedRegion( inputRequestedRegion );
+    }
 }
 
-template <class TInputImage, class TOutputImage>
+template <class TInputImage, class TOutputImage, class TMaskImage>
 void
-ScalarImageToTexturesFilter<TInputImage, TOutputImage>
+ScalarImageToTexturesFilter<TInputImage, TOutputImage, TMaskImage>
 ::ThreadedGenerateData(const OutputRegionType& outputRegionForThread, int threadId)
 {
+	typename TMaskImage::ConstPointer mask = this->GetMaskImage();
+	itk::ImageRegionConstIteratorWithIndex<MaskImageType> maskIt(mask, outputRegionForThread);
+
   // Retrieve the input and output pointers
   InputImagePointerType  inputPtr             =      const_cast<InputImageType *>(this->GetInput());
-  OutputImagePointerType energyPtr            =      this->GetEnergyOutput();
-  /*OutputImagePointerType entropyPtr           =      this->GetEntropyOutput();
+  OutputImagePointerType outputPtr			  =		 this->GetOutput();
+  
+  /*OutputImagePointerType energyPtr            =      this->GetEnergyOutput();
+  OutputImagePointerType entropyPtr           =      this->GetEntropyOutput();
   OutputImagePointerType correlationPtr       =      this->GetCorrelationOutput();
   OutputImagePointerType invDiffMomentPtr     =      this->GetInverseDifferenceMomentOutput();
   OutputImagePointerType inertiaPtr           =      this->GetInertiaOutput();
@@ -233,8 +283,9 @@ ScalarImageToTexturesFilter<TInputImage, TOutputImage>
   OutputImagePointerType haralickCorPtr       =      this->GetHaralickCorrelationOutput();*/
 
   // Build output iterators
-  itk::ImageRegionIteratorWithIndex<OutputImageType> energyIt(energyPtr, outputRegionForThread);
- /* itk::ImageRegionIterator<OutputImageType>          entropyIt(entropyPtr, outputRegionForThread);
+  itk::ImageRegionIteratorWithIndex<OutputImageType> outputIt(outputPtr, outputRegionForThread);
+  /*itk::ImageRegionIteratorWithIndex<OutputImageType> energyIt(energyPtr, outputRegionForThread);
+  itk::ImageRegionIterator<OutputImageType>          entropyIt(entropyPtr, outputRegionForThread);
   itk::ImageRegionIterator<OutputImageType>          correlationIt(correlationPtr, outputRegionForThread);
   itk::ImageRegionIterator<OutputImageType>          invDiffMomentIt(invDiffMomentPtr, outputRegionForThread);
   itk::ImageRegionIterator<OutputImageType>          inertiaIt(inertiaPtr, outputRegionForThread);
@@ -243,7 +294,8 @@ ScalarImageToTexturesFilter<TInputImage, TOutputImage>
   itk::ImageRegionIterator<OutputImageType>          haralickCorIt(haralickCorPtr, outputRegionForThread);*/
 
   // Go to begin
-  energyIt.GoToBegin();
+  maskIt.GoToBegin();
+  outputIt.GoToBegin();
   /*entropyIt.GoToBegin();
   correlationIt.GoToBegin();
   invDiffMomentIt.GoToBegin();
@@ -266,8 +318,10 @@ ScalarImageToTexturesFilter<TInputImage, TOutputImage>
   itk::ProgressReporter progress(this, threadId, outputRegionForThread.GetNumberOfPixels());
 
   // Iterate on outputs to compute textures
-  while (!energyIt.IsAtEnd()
-         /*&& !entropyIt.IsAtEnd()
+  while (!maskIt.IsAtEnd()
+	     && !outputIt.IsAtEnd() 
+		/*&& !energyIt.IsAtEnd()
+         && !entropyIt.IsAtEnd()
          && !correlationIt.IsAtEnd()
          && !invDiffMomentIt.IsAtEnd()
          && !inertiaIt.IsAtEnd()
@@ -275,51 +329,65 @@ ScalarImageToTexturesFilter<TInputImage, TOutputImage>
          && !clusterProminenceIt.IsAtEnd()
          && !haralickCorIt.IsAtEnd()*/)
     {
-    // Compute the region on which co-occurence will be estimated
-    typename InputRegionType::IndexType inputIndex = energyIt.GetIndex() - m_Radius;
-    typename InputRegionType::SizeType  inputSize;
+		if (maskIt.Get() != 0)
+		{
+			// Compute the region on which co-occurence will be estimated
+			typename InputRegionType::IndexType inputIndex = outputIt.GetIndex() - m_Radius;
+			typename InputRegionType::SizeType  inputSize;
 
-    // First, apply offset
-    for (unsigned int dim = 0; dim < InputImageType::ImageDimension; ++dim)
-      {
-      inputSize[dim] = 2 * m_Radius[dim] + 1;
-      }
+			// First, apply offset
+			for (unsigned int dim = 0; dim < InputImageType::ImageDimension; ++dim)
+			  {
+			  inputSize[dim] = 2 * m_Radius[dim] + 1;
+			  }
 
-    // Build the input  region
-    InputRegionType inputRegion;
-    inputRegion.SetIndex(inputIndex);
-    inputRegion.SetSize(inputSize);
+			// Build the input  region
+			InputRegionType inputRegion;
+			inputRegion.SetIndex(inputIndex);
+			inputRegion.SetSize(inputSize);
 
-    // Compute the co-occurence matrix
-    coOccurenceMatrixGenerator->SetRegion(inputRegion);
-    coOccurenceMatrixGenerator->Update();
+			// Compute the co-occurence matrix
+			coOccurenceMatrixGenerator->SetRegion(inputRegion);
+			coOccurenceMatrixGenerator->Update();
 
-    // Compute textures indices
-    texturesCalculator->SetInput(coOccurenceMatrixGenerator->GetOutput());
-    texturesCalculator->Update();
+			// Compute textures indices
+			texturesCalculator->SetInput(coOccurenceMatrixGenerator->GetOutput());
+			texturesCalculator->Update();
 
-    // Fill outputs
-    energyIt.Set(texturesCalculator->GetEnergy());
-   /* entropyIt.Set(texturesCalculator->GetEntropy());
-    correlationIt.Set(texturesCalculator->GetCorrelation());
-    invDiffMomentIt.Set(texturesCalculator->GetInverseDifferenceMoment());
-    inertiaIt.Set(texturesCalculator->GetInertia());
-    clusterShadeIt.Set(texturesCalculator->GetClusterShade());
-    clusterProminenceIt.Set(texturesCalculator->GetClusterProminence());
-    haralickCorIt.Set(texturesCalculator->GetHaralickCorrelation());*/
+			// Fill outputs
+			if      (m_Feature == "Energy")						{ outputIt.Set( texturesCalculator->GetEnergy() ); }
+			else if (m_Feature == "Entropy")					{ outputIt.Set( texturesCalculator->GetEntropy() ); }
+			else if (m_Feature == "Correlation")				{ outputIt.Set( texturesCalculator->GetCorrelation() ); }
+			else if (m_Feature == "InverseDifferenceMoment")	{ outputIt.Set( texturesCalculator->GetInverseDifferenceMoment() ); }
+			else if (m_Feature == "Intertia")					{ outputIt.Set( texturesCalculator->GetInertia() ); }
+			else if (m_Feature == "ClusterShade")				{ outputIt.Set( texturesCalculator->GetClusterShade() ); }
+			else if (m_Feature == "ClusterProminence")			{ outputIt.Set( texturesCalculator->GetClusterProminence() ); }
+			else if (m_Feature == "HaralickCorrelation")		{ outputIt.Set( texturesCalculator->GetHaralickCorrelation() ); }
 
-    // Update progress
-    progress.CompletedPixel();
+			/*energyIt.Set(texturesCalculator->GetEnergy());
+		    entropyIt.Set(texturesCalculator->GetEntropy());
+			correlationIt.Set(texturesCalculator->GetCorrelation());
+			invDiffMomentIt.Set(texturesCalculator->GetInverseDifferenceMoment());
+			inertiaIt.Set(texturesCalculator->GetInertia());
+			clusterShadeIt.Set(texturesCalculator->GetClusterShade());
+			clusterProminenceIt.Set(texturesCalculator->GetClusterProminence());
+			haralickCorIt.Set(texturesCalculator->GetHaralickCorrelation());*/
+		}
 
-    // Increment iterators
-    ++energyIt;
-   /* ++entropyIt;
-    ++correlationIt;
-    ++invDiffMomentIt;
-    ++inertiaIt;
-    ++clusterShadeIt;
-    ++clusterProminenceIt;
-    ++haralickCorIt;*/
+		// Update progress
+		progress.CompletedPixel();
+
+		// Increment iterators
+		++maskIt;
+		++outputIt;
+		/*++energyIt;
+	    ++entropyIt;
+		++correlationIt;
+		++invDiffMomentIt;
+		++inertiaIt;
+		++clusterShadeIt;
+		++clusterProminenceIt;
+		++haralickCorIt;*/
     }
 
 }

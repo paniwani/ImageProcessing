@@ -821,7 +821,7 @@ float  do_conv (const int         width,
     return weight_pixel_sum;
 } // do_conv()
 
-ImageType::Pointer ScatterCorrection( ImageType::Pointer input, ByteImageType::Pointer colon)
+ImageType::Pointer ScatterCorrection( ImageType::Pointer input, ByteImageType::Pointer colon, VoxelTypeImage::Pointer vmap)
 {	
 	// Get size and spacing
 	ImageType::SpacingType spacing = input->GetSpacing();
@@ -928,9 +928,21 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer input, ByteImageType::P
 		input2_iter.Set( input2_iter.Get() - abs(min) );
 	}
 
+	// Only make changes inside colon, inside tag mask, if voxel was unclassified or stool
+	IteratorTypeVoxelType vmap_iter(vmap,region);
+
+	for (input_iter.GoToBegin(), input2_iter.GoToBegin(), colon_iter.GoToBegin(), tag_mask_iter.GoToBegin(), vmap_iter.GoToBegin(); !input_iter.IsAtEnd();
+		++input_iter, ++input2_iter, ++colon_iter, ++tag_mask_iter, ++vmap_iter)
+	{
+		if ( ! (colon_iter.Get() == 1 && tag_mask_iter.Get() == 255 && (vmap_iter.Get() == Unclassified || vmap_iter.Get() == Stool) ) )
+			input2_iter.Set( input_iter.Get() );
+	}
+
+
+
 	// Save image
-	ss.str("");
-	ss << "input_corrected" << "_SCALE_" << SCALE << "_filterP_" << filterP << ".nii";
+	//ss.str("");
+	//ss << "input_corrected" << "_SCALE_" << SCALE << "_filterP_" << filterP << ".nii";
 	//WriteITK(input2,ss.str());
 
 	//// Write change only image

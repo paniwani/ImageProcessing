@@ -178,11 +178,11 @@ void Write(ArrayImageType::Pointer &v, std::string name)
 		image->SetDirection( v->GetDirection() );
 		image->CopyInformation( v );
 		image->Allocate();
-		image->FillBuffer(0);
+		
 		FloatIteratorType image_iter(image,region);
 
 		for (v_iter.GoToBegin(), image_iter.GoToBegin(); !v_iter.IsAtEnd(); ++v_iter, ++image_iter)
-			image_iter.Set( 255 * v_iter.Get()[i] );
+			image_iter.Set( /*255 **/ v_iter.Get()[i] );
 
 
 		std::stringstream ss;

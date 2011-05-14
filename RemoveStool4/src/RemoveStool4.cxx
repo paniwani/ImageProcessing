@@ -2,6 +2,7 @@
 #include "io.cxx"
 #include "scattercorrection.cxx"
 #include "QR.cxx"
+#include "EM.cxx"
 //#include "HessianFunctions.cxx"
 
 int main(int argc, char * argv[])
@@ -27,7 +28,7 @@ int main(int argc, char * argv[])
 	ByteImageType::Pointer			colon					= ByteImageType::New();
 	FloatImageType::Pointer			gradient_magnitude		= FloatImageType::New();
 	VoxelImageType::Pointer			vmap					= VoxelImageType::New();
-	FloatImageType::Pointer			pt						= FloatImageType::New();
+	ArrayImageType::Pointer			partial					= ArrayImageType::New();
 
 	// Load images and segment colon
 	Setup(argv[1],input_original,input,colon,gradient_magnitude);
@@ -47,9 +48,12 @@ int main(int argc, char * argv[])
 	//LocalBoundary(vmap,colon);
 
 	// Determine boundary types
-	pt = QuadraticRegression(input,colon,vmap,gradient_magnitude);
+	partial = QuadraticRegression(input,colon,vmap,gradient_magnitude,tst);
 
-	Write(pt,"pt.nii");
+	Write(partial,"partial.nii");
+
+	// EM
+	EM(partial,colon,input);
 
 	system("pause");
 	return 0;

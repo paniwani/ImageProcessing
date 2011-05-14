@@ -178,6 +178,25 @@ ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer &input, VoxelImage
 	return smax;
 }
 
+bool checkBounds(ImageType::RegionType &region, ImageType::IndexType &index)
+{
+	ImageType::IndexType idx1 = region.GetIndex();
+	ImageType::SizeType size = region.GetSize();
+	
+	ImageType::IndexType idx2;
+
+	for (int i=0; i<3; i++)
+	{
+		idx2[i] = idx1[i] + size[i] - 1;
+
+		if ( index[i] < idx1[i] || index[i] > idx2[i] )
+			return false;
+	}
+
+	return true;
+}
+
+
 bool checkBounds(ImageType::RegionType &region, ContinuousIndexType &index)
 {
 	ImageType::IndexType idx1 = region.GetIndex();
@@ -196,15 +215,20 @@ bool checkBounds(ImageType::RegionType &region, ContinuousIndexType &index)
 	return true;
 }
 
-FloatImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, ImageType::Pointer &smax)
+ArrayImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, ImageType::Pointer &smax)
 {
-	FloatImageType::Pointer partial = FloatImageType::New();
+	ArrayImageType::Pointer partial = ArrayImageType::New();
 	partial->SetRegions( REGION );
 	partial->SetSpacing( input->GetSpacing() );
 	partial->Allocate();
-	partial->FillBuffer(0);
 	
-	FloatIteratorType partial_iter(partial,REGION);
+	float zeros[3] = {0,0,0};
+	partial->FillBuffer(ArrayType(zeros));
+
+	Write(partial,"init_partial.nii");
+	
+	ArrayIteratorType partial_iter(partial,REGION);
+
 	IteratorType input_iter(input,REGION);
 	VoxelIteratorType vmap_iter(vmap,REGION);
 	ByteIteratorType colon_iter(colon,REGION);
@@ -216,7 +240,7 @@ FloatImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageTyp
 
 		if ( colon_iter.Get() == 255 )
 		{
-			float value = 0;
+			float value[3] = {0,0,0};
 
 			float I = (float) input_iter.Get() + BACKGROUND;
 			float S = (float) smax_iter.Get() + BACKGROUND;
@@ -225,53 +249,71 @@ FloatImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageTyp
 			{
 				case Air:
 
-					value=0;
+					value[0]=1;					
+					value[1]=0;
+					value[2]=0;
 
 					break;
 
 				case Tissue:
 
-					value=1;
+					value[0]=0;
+					value[1]=1;					
+					value[2]=0;
 
 					break;
 
 				case Stool:
 
-					value=0;
+					value[0]=0;
+					value[1]=0;
+					value[2]=1;
 
 					break;
 
 				case TissueAir:
 
-					value=1+(I/1000);
-					
-					if (value <= 0) { value = 0; }
-					if (value >= 1) { value = 1; }
+					value[1]=1+(I/1000);
+
+					if (value[1] <= 0) { value[1] = 0; }
+					if (value[1] >= 1) { value[1] = 1; }
+
+					value[0]=1-value[1];
+					value[2]=0;
 
 					break;
 
 				case TissueStool:
 
-					float value2;
-					value2=I/S;
-				
-					if (value2 <= 0) { value2 = 0; }
-					if (value2 >= 1) { value2 = 1; }
+					value[0]=0;
+					value[2]=I/S;
 
-					value = 1-value2;
+					if (value[2] <= 0) { value[2] = 0; }
+					if (value[2] >= 1) { value[2] = 1; }
+
+					value[1]=1-value[2];
 
 					break; 
 
 				case StoolAir:
 
-					value=0;
+					value[2]=(I+1000)/(S+1000);
+
+					if (value[2] <= 0) { value[2] = 0; }
+					if (value[2] >= 1) { value[2] = 1; }
+
+					value[0]=1-value[2];
+					value[1]=0;
 
 					break;
 			}   
-			
-			partial_iter.Set(value);
+
+			ArrayType data(value);
+			partial_iter.Set( data );
 		}
 	}
+
+	Write(partial,"partial.nii");
 
 	return partial;
 }
@@ -287,7 +329,7 @@ types to edge voxels
 5. Run voxel edge classification
 
 *********************************************************/
-FloatImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, FloatImageType::Pointer &gradient_magnitude)
+ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, FloatImageType::Pointer &gradient_magnitude, PixelType tissueStoolThreshold)
 {
 	ImageType::SpacingType spacing = input->GetSpacing();
 
@@ -392,8 +434,22 @@ FloatImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 	std::ofstream file;
 	file.open("qr.txt");
 
-	for (smax_iter.GoToBegin(), gradient_iter.GoToBegin(), colon_iter.GoToBegin(), vmap_iter.GoToBegin(); !smax_iter.IsAtEnd(); 
-		++smax_iter, ++gradient_iter, ++colon_iter, ++vmap_iter)
+	// keep track of TS smax and SA smax
+	FloatImageType::Pointer TS_smax_image = FloatImageType::New();
+	TS_smax_image->SetRegions(REGION);
+	TS_smax_image->Allocate();
+	TS_smax_image->FillBuffer(0);
+	FloatIteratorType TS_smax_image_iter(TS_smax_image,REGION);
+
+	FloatImageType::Pointer SA_smax_image = FloatImageType::New();
+	SA_smax_image->SetRegions(REGION);
+	SA_smax_image->Allocate();
+	SA_smax_image->FillBuffer(0);
+	FloatIteratorType SA_smax_image_iter(SA_smax_image,REGION);	
+
+	for (smax_iter.GoToBegin(), gradient_iter.GoToBegin(), colon_iter.GoToBegin(), vmap_iter.GoToBegin(), TS_smax_image_iter.GoToBegin(), SA_smax_image_iter.GoToBegin(); 
+		!smax_iter.IsAtEnd(); 
+		++smax_iter, ++gradient_iter, ++colon_iter, ++vmap_iter, ++TS_smax_image_iter, ++SA_smax_image_iter)
 	{
 
 		if (colon_iter.Get() == 255 && vmap_iter.Get() == Unclassified)
@@ -439,19 +495,40 @@ FloatImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 					//distanceTS=AverageTissueStoolDist(smax_iter.Get()+BACKGROUND,in,gr);
 					//distanceSA=AverageStoolAirDist(smax_iter.Get()+BACKGROUND,in,gr);
 
-					float TS_smax = ComputeSmax(in,gr,5);
-					float SA_smax = Stool_Air_ComputeSmax(in,gr,5);
+					// Compute smax and validate by setting bounds of parabola
 
-					distanceTS=AverageTissueStoolDist( TS_smax, in, gr );
-					distanceSA=AverageStoolAirDist( SA_smax , in, gr );
+					//float smaxTS = ComputeSmax(in,gr,5);
+					//float smaxSA = Stool_Air_ComputeSmax(in,gr,5);
+
+					float smax = Stool_Air_ComputeSmax(in,gr,5);
+
+					//smaxTS = smaxSA;
+					//TS_smax_image_iter.Set(smaxTS);
+					//SA_smax_image_iter.Set(smaxSA);
+
+					bool useTS = true;
+					bool useSA = true;
+
+					if (smaxTS < (tissueStoolThreshold+BACKGROUND) || smaxTS > 1500)
+						useTS = false;
+
+					if (smaxSA < (tissueStoolThreshold+BACKGROUND) || smaxSA > 1500)
+						useSA = false;
+
+					if (useTS)
+						distanceTS=AverageTissueStoolDist( smaxTS, in, gr );
+
+					if (useSA)
+						distanceSA=AverageStoolAirDist( smaxSA , in, gr );
+
 					distanceTA=AverageTissueAirDist(in,gr);
 
-					if (distanceSA<=distanceTS && distanceSA<=distanceTA) 
+					if (useSA && distanceSA<=distanceTS && distanceSA<=distanceTA) 
 					{
 						localDist = distanceSA;
 						localV = StoolAir;
 
-					} else if (distanceTS<=distanceTA && distanceTS<=distanceSA) {
+					} else if (useTS && distanceTS<=distanceTA && distanceTS<=distanceSA) {
 						localDist = distanceTS;
 						localV = TissueStool;
 
@@ -512,6 +589,9 @@ FloatImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 	}
 
 	file.close();
+
+	Write(TS_smax_image,"TS_smax.nii");
+	Write(SA_smax_image,"SA_smax.nii");
 	
 	Write(vmap,"qr.nii");
 

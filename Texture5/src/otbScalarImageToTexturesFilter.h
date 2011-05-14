@@ -22,6 +22,7 @@
 
 #include "otbMaskedScalarImageToGreyLevelCoocurenceMatrixGenerator.h"
 #include "itkHistogramToTextureFeaturesFilter.h"
+#include "itkExceptionObject.h"
 
 namespace otb
 {
@@ -67,7 +68,7 @@ namespace otb
  * \ingroup Threaded
  *
  */
-template<class TInpuImage, class TOutputImage>
+template<class TInpuImage, class TOutputImage, class TMaskImage=TInpuImage>
 class ScalarImageToTexturesFilter : public itk::ImageToImageFilter
   <TInpuImage, TOutputImage>
 {
@@ -86,6 +87,7 @@ public:
 
   /** Template class typedefs */
   typedef TInpuImage                           InputImageType;
+  typedef TMaskImage						   MaskImageType;
   typedef typename InputImageType::Pointer     InputImagePointerType;
   typedef typename InputImageType::PixelType   InputPixelType;
   typedef typename InputImageType::RegionType  InputRegionType;
@@ -93,6 +95,7 @@ public:
   typedef TOutputImage                         OutputImageType;
   typedef typename OutputImageType::Pointer    OutputImagePointerType;
   typedef typename OutputImageType::RegionType OutputRegionType;
+  typedef typename MaskImageType::Pointer      MaskImagePointer;
 
   /** Co-occurence matrix and textures calculator */
   typedef otb::MaskedScalarImageToGreyLevelCooccurrenceMatrixGenerator
@@ -103,6 +106,19 @@ public:
   typedef itk::Statistics::HistogramToTextureFeaturesFilter
   <HistogramType>                                                TextureCoefficientsCalculatorType;
   typedef typename TextureCoefficientsCalculatorType::Pointer TextureCoefficientsCalculatorPointerType;
+
+  void SetMaskImage(TMaskImage* mask)
+    {
+    this->SetNthInput(1, const_cast<TMaskImage *>( mask ));
+    }
+
+  const TMaskImage* GetMaskImage() const
+    {
+    return (static_cast<const TMaskImage*>(this->ProcessObject::GetInput(1)));
+    }
+
+  void SetFeature(std::string f);
+  void SetFeature(unsigned int i);
 
   /** Set the radius of the window on which textures will be computed */
   itkSetMacro(Radius, SizeType);
@@ -133,8 +149,11 @@ public:
   /** Get the input image maximum */
   itkGetMacro(InputImageMaximum, InputPixelType);
 
+  /** Get the feature */
+  itkGetMacro(Feature, std::string);
+
   /** Get the energy output image */
-  OutputImageType * GetEnergyOutput();
+  //OutputImageType * GetEnergyOutput();
 
   ///** Get the entropy output image */
   //OutputImageType * GetEntropyOutput();
@@ -188,6 +207,8 @@ private:
 
   /** Input image maximum */
   InputPixelType m_InputImageMaximum;
+
+  std::string m_Feature;
 };
 } // End namespace otb
 
