@@ -115,9 +115,9 @@ ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer &input, VoxelImage
 	smax->Allocate();
 	smax->FillBuffer(0);
 
-	IteratorType smax_iter(smax,REGION);
-	IteratorType input_iter(input,REGION);
-	ByteIteratorType mask_iter(mask,REGION);
+	IteratorType smaxIt(smax,REGION);
+	IteratorType inputIt(input,REGION);
+	ByteIteratorType maskIt(mask,REGION);
 
 	typedef itk::NeighborhoodIterator<VoxelImageType> NeighborhoodIteratorVoxelType;
 	NeighborhoodIteratorVoxelType::RadiusType radius;
@@ -131,15 +131,15 @@ ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer &input, VoxelImage
 	int n = size[0]*size[1]*size[2] - 1;
 
 	nit.GoToBegin();
-	mask_iter.GoToBegin();
-	smax_iter.GoToBegin();
-	input_iter.GoToBegin();
+	maskIt.GoToBegin();
+	smaxIt.GoToBegin();
+	inputIt.GoToBegin();
 
 	PixelType max=0;
 
 	while (!nit.IsAtEnd())
 	{
-		if (mask_iter.Get() == 255 && nit.GetCenterPixel()==Unclassified)
+		if (maskIt.Get() == 255 && nit.GetCenterPixel()==Unclassified)
 		{
 			max = 0;
 
@@ -163,16 +163,16 @@ ImageType::Pointer ComputeNeighborhoodSmax(ImageType::Pointer &input, VoxelImage
 				}
 			}
 
-			smax_iter.Set( max );
+			smaxIt.Set( max );
 		
 		} else {
-			smax_iter.Set( 0 );
+			smaxIt.Set( 0 );
 		}
 
 		++nit;
-		++mask_iter;
-		++smax_iter;
-		++input_iter;
+		++maskIt;
+		++smaxIt;
+		++inputIt;
 	}
 
 	return smax;
@@ -215,7 +215,7 @@ bool checkBounds(ImageType::RegionType &region, ContinuousIndexType &index)
 	return true;
 }
 
-ArrayImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, ImageType::Pointer &smax)
+ArrayImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, FloatImageType::Pointer &smax)
 {
 	ArrayImageType::Pointer partial = ArrayImageType::New();
 	partial->SetRegions( REGION );
@@ -224,28 +224,26 @@ ArrayImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageTyp
 	
 	float zeros[3] = {0,0,0};
 	partial->FillBuffer(ArrayType(zeros));
-
-	Write(partial,"init_partial.nii");
 	
-	ArrayIteratorType partial_iter(partial,REGION);
+	ArrayIteratorType partialIt(partial,REGION);
 
-	IteratorType input_iter(input,REGION);
-	VoxelIteratorType vmap_iter(vmap,REGION);
-	ByteIteratorType colon_iter(colon,REGION);
-	IteratorType smax_iter(smax,REGION);
+	IteratorType inputIt(input,REGION);
+	VoxelIteratorType vmapIt(vmap,REGION);
+	ByteIteratorType colonIt(colon,REGION);
+	FloatIteratorType smaxIt(smax,REGION);
 
-	for (partial_iter.GoToBegin(), input_iter.GoToBegin(), vmap_iter.GoToBegin(), colon_iter.GoToBegin(), smax_iter.GoToBegin(); !partial_iter.IsAtEnd();
-		++partial_iter, ++input_iter, ++vmap_iter, ++colon_iter, ++smax_iter)
+	for (partialIt.GoToBegin(), inputIt.GoToBegin(), vmapIt.GoToBegin(), colonIt.GoToBegin(), smaxIt.GoToBegin(); !partialIt.IsAtEnd();
+		++partialIt, ++inputIt, ++vmapIt, ++colonIt, ++smaxIt)
 	{
 
-		if ( colon_iter.Get() == 255 )
+		if ( colonIt.Get() == 255 )
 		{
 			float value[3] = {0,0,0};
 
-			float I = (float) input_iter.Get() + BACKGROUND;
-			float S = (float) smax_iter.Get() + BACKGROUND;
+			float I = (float) inputIt.Get();
+			float S = (float) smaxIt.Get();
 
-			switch ( vmap_iter.Get() ) 
+			switch ( vmapIt.Get() ) 
 			{
 				case Air:
 
@@ -309,7 +307,7 @@ ArrayImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageTyp
 			}   
 
 			ArrayType data(value);
-			partial_iter.Set( data );
+			partialIt.Set( data );
 		}
 	}
 
@@ -329,21 +327,9 @@ types to edge voxels
 5. Run voxel edge classification
 
 *********************************************************/
-ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, FloatImageType::Pointer &gradient_magnitude, PixelType tissueStoolThreshold)
+ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, FloatImageType::Pointer &gradientMagnitude, PixelType tissueStoolThreshold)
 {
 	ImageType::SpacingType spacing = input->GetSpacing();
-
-	// get gradient vector
-	/*
-	typedef itk::DiscreteGaussianImageFilter<ImageType, FloatImageType> DiscreteGaussianImageFilterType;
-	DiscreteGaussianImageFilterType::Pointer smoother = DiscreteGaussianImageFilterType::New();
-	smoother->SetInput( input );
-	smoother->SetVariance( spacing[0]*spacing[0] );
-	smoother->SetMaximumKernelWidth( 3 );
-	smoother->Update();
-
-	Write(smoother->GetOutput(),"smoothed.nii");
-	*/
 
 	typedef itk::GradientImageFilter<ImageType> GradientImageFilterType;
 	GradientImageFilterType::Pointer gradientFilter = GradientImageFilterType::New();
@@ -351,12 +337,12 @@ ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 	gradientFilter->SetUseImageDirection(false);
 	gradientFilter->Update();
 	VectorImageType::Pointer gradient = gradientFilter->GetOutput();
-	VectorIteratorType gradient_iter(gradient,REGION);
+	VectorIteratorType gradientIt(gradient,REGION);
 
 	// normalize
-	for (gradient_iter.GoToBegin(); !gradient_iter.IsAtEnd(); ++gradient_iter)
+	for (gradientIt.GoToBegin(); !gradientIt.IsAtEnd(); ++gradientIt)
 	{
-		VectorType g = gradient_iter.Get();
+		VectorType g = gradientIt.Get();
 
 		float norm = g.GetNorm();
 
@@ -370,234 +356,154 @@ ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 		for (int i=0; i<3; i++)
 			g[i] = abs(g[i]) > 0.001 ? g[i] : 0; 
 
-		gradient_iter.Set(g);
+		gradientIt.Set(g);
 	}
 
 	// interp grad, use 2x gradient magnitude
 	typedef itk::MultiplyByConstantImageFilter<FloatImageType, int, FloatImageType> MultiplyByConstantImageFilterType;
 	MultiplyByConstantImageFilterType::Pointer multiplier = MultiplyByConstantImageFilterType::New();
-	multiplier->SetInput( gradient_magnitude );
+	multiplier->SetInput( gradientMagnitude );
 	multiplier->SetConstant( 2 );
 	multiplier->Update();
-
 	Write(multiplier->GetOutput(),"gradient2x.nii");
 
 	typedef itk::BSplineInterpolateImageFunction<FloatImageType> InterpolatorFloatType;
-	InterpolatorFloatType::Pointer grad_interp = InterpolatorFloatType::New();
-	grad_interp->SetSplineOrder(3);
-	grad_interp->SetInputImage( multiplier->GetOutput() );
-
-	// shift input to air -1024 and cast to short
-	typedef itk::CastImageFilter<ImageType,ShortImageType> CastImageFilterType;
-	CastImageFilterType::Pointer caster = CastImageFilterType::New();
-	caster->SetInput( input );
-
-	typedef itk::AddConstantToImageFilter< ShortImageType, short, ShortImageType > AddConstantToImageFilterType;
-	AddConstantToImageFilterType::Pointer adder = AddConstantToImageFilterType::New();
-	adder->SetInput( caster->GetOutput() );
-	adder->SetConstant( BACKGROUND );
-	adder->Update();
-
-	ShortImageType::Pointer input_short = adder->GetOutput();
-	Write(input_short,"input_short.nii");
+	InterpolatorFloatType::Pointer gradInterp = InterpolatorFloatType::New();
+	gradInterp->SetSplineOrder(3);
+	gradInterp->SetInputImage( multiplier->GetOutput() );
 
 	// interp input
-	typedef itk::BSplineInterpolateImageFunction<ShortImageType> InterpolatorShortType;
-	InterpolatorShortType::Pointer input_interp = InterpolatorShortType::New();
-	input_interp->SetSplineOrder(3);
-	input_interp->SetInputImage( input_short );
+	typedef itk::BSplineInterpolateImageFunction<ImageType> InterpolatorType;
+	InterpolatorType::Pointer inputInterp = InterpolatorType::New();
+	inputInterp->SetSplineOrder(3);
+	inputInterp->SetInputImage( input );
 
-	InterpolatorShortType::ContinuousIndexType startIndex = input_interp->GetStartIndex();
-	
-	std::cout << "Start QR Index: " << startIndex[0] << " " << startIndex[1] << " " << startIndex[2] << std::endl;
-
-	InterpolatorShortType::ContinuousIndexType endIndex = input_interp->GetEndIndex();
-	
-	std::cout << "End QR Index: " << endIndex[0] << " " << endIndex[1] << " " << endIndex[2] << std::endl;
-
-	// get local stool max
-	ImageType::Pointer smax = ComputeNeighborhoodSmax(input,vmap,colon);
-	Write(smax,"smax.nii");
-
-	// ve
-	IteratorType smax_iter(smax,REGION);
-	ByteIteratorType colon_iter(colon,REGION);
-	VoxelIteratorType vmap_iter(vmap,REGION);
+	// assign voxel boundaries to transition types
+	ByteIteratorType colonIt(colon,REGION);
+	VoxelIteratorType vmapIt(vmap,REGION);
 
 	float d[3][5];
 	d[0][0] = -1.5; d[0][1] = -1.0; d[0][2] = 0; d[0][3] = 1.0; d[0][4] = 1.5;
 	d[1][0] = -1.0; d[1][1] = -0.5; d[1][2] = 0; d[1][3] = 0.5; d[1][4] = 1.0;
 	d[2][0] = -0.6; d[2][1] = -0.3; d[2][2] = 0; d[2][3] = 0.3; d[2][4] = 0.6;
 
+	// save smax to image
+	FloatImageType::Pointer smaxImage = FloatImageType::New();
+	smaxImage->SetRegions(REGION);
+	smaxImage->SetSpacing(input->GetSpacing());
+	smaxImage->Allocate();
+	smaxImage->FillBuffer(0);
+	FloatIteratorType smaxIt(smaxImage,REGION);
+
 	int count=0;
 
-	std::ofstream file;
-	file.open("qr.txt");
-
-	// keep track of TS smax and SA smax
-	FloatImageType::Pointer TS_smax_image = FloatImageType::New();
-	TS_smax_image->SetRegions(REGION);
-	TS_smax_image->Allocate();
-	TS_smax_image->FillBuffer(0);
-	FloatIteratorType TS_smax_image_iter(TS_smax_image,REGION);
-
-	FloatImageType::Pointer SA_smax_image = FloatImageType::New();
-	SA_smax_image->SetRegions(REGION);
-	SA_smax_image->Allocate();
-	SA_smax_image->FillBuffer(0);
-	FloatIteratorType SA_smax_image_iter(SA_smax_image,REGION);	
-
-	for (smax_iter.GoToBegin(), gradient_iter.GoToBegin(), colon_iter.GoToBegin(), vmap_iter.GoToBegin(), TS_smax_image_iter.GoToBegin(), SA_smax_image_iter.GoToBegin(); 
-		!smax_iter.IsAtEnd(); 
-		++smax_iter, ++gradient_iter, ++colon_iter, ++vmap_iter, ++TS_smax_image_iter, ++SA_smax_image_iter)
+	for (smaxIt.GoToBegin(), gradientIt.GoToBegin(), colonIt.GoToBegin(), vmapIt.GoToBegin(); !smaxIt.IsAtEnd(); 
+		++smaxIt, ++gradientIt, ++colonIt, ++vmapIt)
 	{
 
-		if (colon_iter.Get() == 255 && vmap_iter.Get() == Unclassified)
+		if (colonIt.Get() == 255 && vmapIt.Get() == Unclassified)
 		{
 			if (count++ % 1000 == 0)
 				std::cout << count << std::endl;
 
-			ImageType::IndexType idx = gradient_iter.GetIndex();
+			ImageType::IndexType idx = gradientIt.GetIndex();
 
 			VoxelType v;
 
-			//if (smax_iter.Get() > 0)
-			//{
+			float dist = 0;
 
-				float dist = 0;
-
-				for (int i=0; i<3; i++) // iterate through each set of distances
+			for (int i=0; i<3; i++) // iterate through each set of distances
+			{
+				float in[5];
+				float gr[5];
+				
+				for (int j=0; j<5; j++) // iterate through each distance
 				{
-					float in[5];
-					float gr[5];
+					ContinuousIndexType odx = idx;
+
+					for (int k=0; k<3; k++)
+						odx[k] += gradientIt.Get()[k]*d[i][j];
 					
-					for (int j=0; j<5; j++) // iterate through each distance
-					{
-						ContinuousIndexType odx = idx;
-
-						for (int k=0; k<3; k++)
-							odx[k] += gradient_iter.Get()[k]*d[i][j];
-						
-						//if ( !checkBounds(REGION,odx) )
-						//	odx = idx;
-						
-						in[j] = input_interp->EvaluateAtContinuousIndex(odx);
-						gr[j] = grad_interp->EvaluateAtContinuousIndex(odx);
-					}
-
-					float distanceTS=0;
-					float distanceSA=0;
-					float distanceTA=0;
-
-					float localDist=0;
-					VoxelType localV=Unclassified;
+					if ( !checkBounds(REGION,odx) )
+						odx = idx;
 					
-					//distanceTS=AverageTissueStoolDist(smax_iter.Get()+BACKGROUND,in,gr);
-					//distanceSA=AverageStoolAirDist(smax_iter.Get()+BACKGROUND,in,gr);
+					in[j] = inputInterp->EvaluateAtContinuousIndex(odx);
+					gr[j] = gradInterp->EvaluateAtContinuousIndex(odx);
+				}
 
-					// Compute smax and validate by setting bounds of parabola
+				float distanceTS=0;
+				float distanceSA=0;
+				float distanceTA=0;
 
-					//float smaxTS = ComputeSmax(in,gr,5);
-					//float smaxSA = Stool_Air_ComputeSmax(in,gr,5);
+				float localDist=0;
+				VoxelType localV=Unclassified;
 
-					float smax = Stool_Air_ComputeSmax(in,gr,5);
+				// Compute smax and validate by setting bounds of parabola
+				
+				float smaxSA = Stool_Air_ComputeSmax(in,gr,5);
+				//float smaxTS = ComputeSmax(in,gr,5);
+				float smaxTS=smaxSA; // enforce same smax
 
-					//smaxTS = smaxSA;
-					//TS_smax_image_iter.Set(smaxTS);
-					//SA_smax_image_iter.Set(smaxSA);
+				smaxIt.Set(smaxSA);
 
-					bool useTS = true;
-					bool useSA = true;
+				bool useTS = true;
+				bool useSA = true;
 
-					if (smaxTS < (tissueStoolThreshold+BACKGROUND) || smaxTS > 1500)
-						useTS = false;
+				if (smaxTS < tissueStoolThreshold || smaxTS > 1500)
+				{
+					useTS = false;
+				} else {
+					distanceTS=AverageTissueStoolDist( smaxTS, in, gr );
+				}
 
-					if (smaxSA < (tissueStoolThreshold+BACKGROUND) || smaxSA > 1500)
-						useSA = false;
+				if (smaxSA < tissueStoolThreshold || smaxSA > 1500)
+				{
+					useSA = false;
+				} else {
+					distanceSA=AverageStoolAirDist( smaxSA, in, gr );
+				}
 
-					if (useTS)
-						distanceTS=AverageTissueStoolDist( smaxTS, in, gr );
+				distanceTA=AverageTissueAirDist(in,gr);				
+				
+				if (useSA && distanceSA<=distanceTS && distanceSA<=distanceTA) 
+				{
+					localDist = distanceSA;
+					localV = StoolAir;
 
-					if (useSA)
-						distanceSA=AverageStoolAirDist( smaxSA , in, gr );
+				} else if (useTS && distanceTS<=distanceTA && distanceTS<=distanceSA) {
+					localDist = distanceTS;
+					localV = TissueStool;
 
-					distanceTA=AverageTissueAirDist(in,gr);
+				} else {
+					localDist = distanceTA;
+					localV = TissueAir;
+				}
 
-					if (useSA && distanceSA<=distanceTS && distanceSA<=distanceTA) 
-					{
-						localDist = distanceSA;
-						localV = StoolAir;
-
-					} else if (useTS && distanceTS<=distanceTA && distanceTS<=distanceSA) {
-						localDist = distanceTS;
-						localV = TissueStool;
-
-					} else {
-						localDist = distanceTA;
-						localV = TissueAir;
-					}
-
-					if ( i == 0 )
+				if ( i == 0 )
+				{
+					dist = localDist;
+					v = localV;
+				} else {
+					if ( localDist < dist )
 					{
 						dist = localDist;
 						v = localV;
-					} else {
-						if ( localDist < dist )
-						{
-							dist = localDist;
-							v = localV;
-						}
 					}
-
-					/*std::cout << "iteration: " << i << std::endl;
-					for (int k=0; k<5;k++)
-						std::cout << in[k] << " ";
-					std::cout << std::endl;
-					for (int k=0; k<5;k++)
-						std::cout << gr[k] << " ";
-					std::cout << std::endl;
-					*/
-					/*std::cout << std::endl;
-					std::cout << "Distances (TS,SA,TA)" << std::endl;
-					std::cout << distanceTS << " " << distanceSA << " " << distanceTA << std::endl;*/
-
-					ImageType::SpacingType spacing = input->GetSpacing();
-
-					file << "\n";
-					file << idx[0]*spacing[0] << " " << idx[1]*spacing[1] << " " << idx[2]*spacing[2] << "\n";
-					for (int k=0; k<5; k++)
-						file << in[k] << " ";
-					file << "\n";
-
-					for (int k=0; k<5; k++)
-						file << gr[k] << " ";
-					file << "\n";
-
-					file << distanceTS << " " << distanceSA << " " << distanceTA << "\n";
-
-
-
-
 				}
-			//} else {
-			//	v = TissueAir;
-			//}
+			}
 
-			vmap_iter.Set(v);
+			vmapIt.Set(v);
 
 		}		
 	}
-
-	file.close();
-
-	Write(TS_smax_image,"TS_smax.nii");
-	Write(SA_smax_image,"SA_smax.nii");
 	
+	Write(smaxImage,"smax.nii");
 	Write(vmap,"qr.nii");
 
-	return ComputePartials(input,vmap,colon,smax);
+	return ComputePartials(input,vmap,colon,smaxImage);
 }
 
+/*
 void LocalBoundary(VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon)
 {
 	typedef itk::NeighborhoodIterator<VoxelImageType> NeighborhoodIteratorType;
@@ -608,7 +514,7 @@ void LocalBoundary(VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon)
 	radius[1]=2;
 
 	NeighborhoodIteratorType nit(radius,vmap,REGION);
-	ByteIteratorType colon_iter(colon,REGION);
+	ByteIteratorType colonIt(colon,REGION);
 
 	int n = nit.Size();
 
@@ -616,9 +522,9 @@ void LocalBoundary(VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon)
 
 	unsigned int voxelCount[3] = {0,0,0}; // air/tissue/stool
 
-	for (nit.GoToBegin(), colon_iter.GoToBegin(); !nit.IsAtEnd(); ++nit, ++colon_iter)
+	for (nit.GoToBegin(), colonIt.GoToBegin(); !nit.IsAtEnd(); ++nit, ++colonIt)
 	{
-		if (colon_iter.Get() == 255)
+		if (colonIt.Get() == 255)
 		{
 			VoxelType centerVoxel = nit.GetCenterPixel();
 
@@ -653,14 +559,14 @@ void LocalBoundary(VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon)
 					nit.SetCenterPixel(TissueAir);
 				}
 
-				/*if (voxelCount[0] > voxelCount[2] && voxelCount[1] > voxelCount[2])
-				{
-					nit.SetCenterPixel(TissueAir);
-				} else if (voxelCount[1] > voxelCount[0] && voxelCount[2] > voxelCount[0]) {
-					nit.SetCenterPixel(TissueStool);
-				} else if (voxelCount[0] > voxelCount[1] && voxelCount[2] > voxelCount[1]) {
-					nit.SetCenterPixel(StoolAir);
-				}*/
+				//if (voxelCount[0] > voxelCount[2] && voxelCount[1] > voxelCount[2])
+				//{
+				//	nit.SetCenterPixel(TissueAir);
+				//} else if (voxelCount[1] > voxelCount[0] && voxelCount[2] > voxelCount[0]) {
+				//	nit.SetCenterPixel(TissueStool);
+				//} else if (voxelCount[0] > voxelCount[1] && voxelCount[2] > voxelCount[1]) {
+				//	nit.SetCenterPixel(StoolAir);
+				//}
 			}
 		}
 		
@@ -668,4 +574,4 @@ void LocalBoundary(VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon)
 
 	Write(vmap,"local_vmap.nii");
 }	
-
+*/

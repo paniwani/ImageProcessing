@@ -58,7 +58,7 @@ enum VoxelType {
     ThinStool=8
 };
 
-typedef unsigned short	                                                            PixelType;
+typedef short			                                                            PixelType;
 typedef unsigned char																BytePixelType;
 typedef itk::BinaryBallStructuringElement<PixelType, 3>								StructuringElementType;
 typedef itk::CovariantVector<float,3>												VectorType;
@@ -67,7 +67,7 @@ typedef itk::FixedArray<float,3>													ArrayType;
 
 typedef itk::Image<PixelType, 3>													ImageType;
 typedef itk::Image<BytePixelType, 3>												ByteImageType;
-typedef itk::Image< short int, 3>													ShortImageType;
+//typedef itk::Image< short int, 3>													ShortImageType;
 typedef itk::Image< float, 3>														FloatImageType;
 typedef itk::Image< VoxelType, 3>													VoxelImageType;
 typedef itk::Image< VectorType, 3>													VectorImageType;
@@ -76,7 +76,7 @@ typedef itk::BSplineInterpolateImageFunction<FloatImageType>::ContinuousIndexTyp
 	
 typedef itk::ImageRegionIteratorWithIndex<ImageType>							    IteratorType;
 typedef itk::ImageRegionIteratorWithIndex<ByteImageType>							ByteIteratorType;
-typedef itk::ImageRegionIteratorWithIndex<ShortImageType>							ShortIteratorType;
+//typedef itk::ImageRegionIteratorWithIndex<ShortImageType>							ShortIteratorType;
 typedef itk::ImageRegionIteratorWithIndex<FloatImageType>							FloatIteratorType;
 typedef itk::ImageRegionIteratorWithIndex<VoxelImageType>							VoxelIteratorType;
 typedef itk::ImageRegionIteratorWithIndex<VectorImageType>							VectorIteratorType;
@@ -94,9 +94,9 @@ ImageType::RegionType OLDREGION;
 ImageType::RegionType REGION;
 bool write_num = true;
 int write_count = 1;
-bool truncate_on = true;
-unsigned int truncate_ar[2] = {85,90};
+bool truncateOn = true;
+unsigned int truncateArray[2] = {85,90};
 std::string note;
-short BACKGROUND = 0;
+PixelType BACKGROUND = 0;
 double PI=3.1415926;
 double neighbor_weight[3]={1,1,.5};

@@ -17,7 +17,7 @@ vnl_matrix<float> GetNeighbor(ArrayImageType::Pointer partialVector, ImageType::
             data_2 = partialVector->GetPixel(temp_index_2);
         } 
 
-		std::cout << "pause" << std::endl;
+		//std::cout << "pause" << std::endl;
 
         for (int j=0;j<3;j++) {
             temp_return.put(j,i,data_1[j]);
@@ -25,19 +25,7 @@ vnl_matrix<float> GetNeighbor(ArrayImageType::Pointer partialVector, ImageType::
         }
     }
 
-	for (int i=0; i<3; i++)
-	{
-		for (int j=0; j<6; j++)
-		{
-			std::cout << temp_return.get(i,j) << " ";
-		}
-	}
-	std::cout << std::endl;
-
-
     return temp_return;
-
-
 }
 
 /*vnl_matrix<float> GetNeighbor(ArrayImageType::Pointer partialVector, ImageType::IndexType index) {
@@ -80,14 +68,16 @@ vnl_matrix<float> GetNeighbor(ArrayImageType::Pointer partialVector, ImageType::
 }*/
 
 double Probability(double Y, double mean, double variance,  double current_partial, double local_variance, double local_mean) {  
-	if (variance>0.01) {
-		if (local_variance>0.01) { //?
-		//return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance))*exp(-beta*total_neighbor);
-			//return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance))*exp(-vnl_math_sqr(current_partial-local_mean)/(2*local_variance))/(sqrt(2*PI*local_variance));
-			return exp(-vnl_math_sqr(current_partial-local_mean)/(2*local_variance))/(sqrt(2*PI*local_variance));
+	if (variance>0.01) 
+	{
+		if (local_variance>0.01) 
+		{
+			//return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance))*exp(-beta*total_neighbor);
+			return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance))*exp(-vnl_math_sqr(current_partial-local_mean)/(2*local_variance))/(sqrt(2*PI*local_variance));
+		
 		} else {
-			//return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance));
-			return exp(-vnl_math_sqr(current_partial-local_mean)/(2*local_variance))/(sqrt(2*PI*local_variance));
+
+			return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance));
 		}
 	} else {
 		return 0;
@@ -101,13 +91,6 @@ vnl_vector<float> expectation(double Y, double mean[], double variance[], float 
 	float sumPFK=0.0;
 	for (int i=0;i<3;i++) {
 		double total_neighbor=0;
-		
-		/*
-		if (current_partial[0]<.6 && current_partial[1]<.6 && current_partial[2]<.6) {
-			beta=.7;
-		} else {
-			beta=0;
-		}*/
 		
 		// Local neighborhood probability inputs
 		float local_mean=0;
@@ -124,22 +107,7 @@ vnl_vector<float> expectation(double Y, double mean[], double variance[], float 
 		}
 
 		local_variance=local_variance/sum;
-			//if (gradient>100) {
-			
-				//switch (i) {
-				//	case 0:
-				//		total_neighbor+=sqrt(vnl_math_sqr(current_partial[1]-neighbor.get(1,j))*vnl_math_sqr(current_partial[2]-neighbor.get(2,j)))*neighbor_weight[j % 3];
-				//		break;
-				//	case 1:
-				//		total_neighbor+=sqrt(vnl_math_sqr(current_partial[0]-neighbor.get(0,j))*vnl_math_sqr(current_partial[2]-neighbor.get(2,j)))*neighbor_weight[j % 3];
-				//		break;
-				//	case 2:
-				//		total_neighbor+=sqrt(vnl_math_sqr(current_partial[1]-neighbor.get(1,j))*vnl_math_sqr(current_partial[0]-neighbor.get(0,j)))*neighbor_weight[j % 3];
-				//		break;
-				//}
-			//}
-		//std::cerr<<sum<<" "<<local_variance<<" "<<local_mean<<std::endl;
-		
+
 		// Calculate probability
 		pFK[i]=Probability(Y,mean[i],variance[i], current_partial[i], local_variance, local_mean)*weight[i];
 		
@@ -158,9 +126,9 @@ vnl_vector<float> expectation(double Y, double mean[], double variance[], float 
 
 void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageType::Pointer &input)
 {
-	IteratorType input_iter(input,REGION);
-	ByteIteratorType colon_iter(colon,REGION);
-	ArrayIteratorType partial_iter(partial,REGION);
+	IteratorType inputIt(input,REGION);
+	ByteIteratorType colonIt(colon,REGION);
+	ArrayIteratorType partialIt(partial,REGION);
 
 	int counter=0;							//used to total certain values (description given when set)
     double mean[3]={0, 0, 0};				//stores the mean of the air/tissue/stool classes
@@ -169,16 +137,16 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
 	float weight[3]={0,0,0};				//stores the weights of the air/tissue/stool classes
 
 	// Computes the mean (expectation) for each class by using sum(partial[i]*value[i])/sum(partial[i])
-	for(input_iter.GoToBegin(), partial_iter.GoToBegin(), colon_iter.GoToBegin();
-		!input_iter.IsAtEnd() && !partial_iter.IsAtEnd() && !colon_iter.IsAtEnd();
-		++input_iter, ++partial_iter, ++colon_iter) 
+	for(inputIt.GoToBegin(), partialIt.GoToBegin(), colonIt.GoToBegin();
+		!inputIt.IsAtEnd() && !partialIt.IsAtEnd() && !colonIt.IsAtEnd();
+		++inputIt, ++partialIt, ++colonIt) 
 	{
-		if (colon_iter.Get()==255) {		
-			ArrayType p = partial_iter.Get();
+		if (colonIt.Get()==255) {		
+			ArrayType p = partialIt.Get();
 			for (int i=0; i<3; i++)
 			{
 				sum[i] += p[i];
-				mean[i] += p[i]*input_iter.Get();
+				mean[i] += p[i]*inputIt.Get();
 			}
 		}
 	}
@@ -186,15 +154,15 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
 	for (int i=0;i<3;i++) { mean[i]=mean[i]/sum[i]; } 
 
 	// Compute variance and weights
-	for(input_iter.GoToBegin(), partial_iter.GoToBegin(), colon_iter.GoToBegin();
-		!input_iter.IsAtEnd() && !partial_iter.IsAtEnd() && !colon_iter.IsAtEnd();
-		++input_iter, ++partial_iter, ++colon_iter) 
+	for(inputIt.GoToBegin(), partialIt.GoToBegin(), colonIt.GoToBegin();
+		!inputIt.IsAtEnd() && !partialIt.IsAtEnd() && !colonIt.IsAtEnd();
+		++inputIt, ++partialIt, ++colonIt) 
 	{
-		if (colon_iter.Get()==255) {		
-			ArrayType p = partial_iter.Get();
+		if (colonIt.Get()==255) {		
+			ArrayType p = partialIt.Get();
 			for (int i=0; i<3; i++)
 			{
-				variance[i] += p[i]*vnl_math_sqr(input_iter.Get()-mean[i]);
+				variance[i] += p[i]*vnl_math_sqr(inputIt.Get()-mean[i]);
 			}
 		}
 	}
@@ -208,73 +176,89 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
 	} 
 
 	//outputs the initial mean and variance of each class
-	std::ofstream em;
-	em.open("em.txt");
-	em<<"EM\tMean0\tMean1\tMean2\tVar0\tVar1\tVar2\tWeight0\tWeight1\tWeight2\n";
+	/*em<<"EM\tMean0\tMean1\tMean2\tVar0\tVar1\tVar2\tWeight0\tWeight1\tWeight2\n";
 
 	std::ostringstream ss;
 	ss<<"0\t"<<mean[0]<<"\t"<<mean[1]<<"\t"<<mean[2]<<"\t"<<variance[0]<<"\t"<<variance[1]<<"\t"<<variance[2]<<"\t"<<weight[0]<<"\t"<<weight[1]<<"\t"<<weight[2]<<"\n";
-	em<<ss.str();
+	em<<ss.str();*/
 
 	std::cerr<<std::endl;
 	std::cerr<<"EM0"<<std::endl;
 	std::cerr<<"Mean: "<<mean[0]<<" "<<mean[1]<<" "<<mean[2]<<std::endl;
 	std::cerr<<"Variance: "<<variance[0]<<" "<<variance[1]<<" "<<variance[2]<<std::endl;
+	std::cerr<<"Std Dev: "<<sqrt(variance[0])<<" " <<sqrt(variance[1])<<" "<<sqrt(variance[2])<<std::endl;
 	std::cerr<<"Weight: "<<weight[0]<<" "<<weight[1]<<" "<<weight[2]<<std::endl;
-
-	Write(partial,"partialsss.nii");
 	
 	// Computes iterations of the Maximization Algorithm
     for (int emNum=0;emNum<20;emNum++) // used 20 in original test case
 	{
+		/*std::ofstream em;
+		std::stringstream ss;
+		ss << "em" << emNum << ".txt";
+		em.open(ss.str().c_str());*/
+
 		//gives the temporary storage of the variables corresponding to sum, variance, and mean for each class on the i+1 iteration
 		double sum_temp[3]={0,0,0};
         double variance_temp[3]={0,0,0};
 		double mean_temp[3]={0,0,0};
 
-		for (input_iter.GoToBegin(), partial_iter.GoToBegin(), colon_iter.GoToBegin();
-			!input_iter.IsAtEnd() && !partial_iter.IsAtEnd() && !colon_iter.IsAtEnd();
-			++input_iter, ++partial_iter, ++colon_iter) 
+		for (inputIt.GoToBegin(), partialIt.GoToBegin(), colonIt.GoToBegin();
+			!inputIt.IsAtEnd() && !partialIt.IsAtEnd() && !colonIt.IsAtEnd();
+			++inputIt, ++partialIt, ++colonIt) 
 		{
-			if (colon_iter.Get()==255) {		
-				ArrayType p = partial_iter.Get();		//retrieves the partial informations
+			if (colonIt.Get()==255) {		
+				ArrayType p = partialIt.Get();		//retrieves the partial informations
 				float Z[3]={p[0],p[1],p[2]};
 
 				// Only update uncertain partials
 				if ( !(p[0] == 1 || p[1] == 1 || p[2] == 1) )
 				{
-					ImageType::IndexType idx = input_iter.GetIndex();
+					ImageType::IndexType idx = inputIt.GetIndex();
 
-					vnl_vector<float> Z_update=expectation(input_iter.Get(),mean, variance, weight, GetNeighbor(partial,idx), Z);	//updates the partial values
+					vnl_vector<float> Z_update=expectation(inputIt.Get(),mean, variance, weight, GetNeighbor(partial,idx), Z);	//updates the partial values
 					p[0]=Z_update[0];										
 					p[1]=Z_update[1];
 					p[2]=Z_update[2];
-					partial_iter.Set(p);
+
+					// set tolerance to allow uncertain probabilites to update to certain
+					for (int i=0; i<3; i++)
+					{
+						p[i] = p[i] > 0.001 ? p[i] : 0;
+						p[i] = p[i] < 0.999 ? p[i] : 1;
+					}
+
+					partialIt.Set(p);
+
+					/*em << idx[0] << " " << idx[1] << " " << idx[2] << " ";
+					em << inputIt.Get() << " ";
+					em << p[0] << " " << p[1] << " " << p[2] << "\n";*/
 				}
 
 				//updates the new mean total partial sum for each class accordingly
 				for (int i=0;i<3;i++) 
 				{
-					mean_temp[i]+=p[i]*input_iter.Get();	
+					mean_temp[i]+=p[i]*inputIt.Get();	
 					sum_temp[i]+=p[i];
 				}
-			}
+			}			
         }
 
-		partial_iter = ArrayIteratorType(partial,REGION);
+		/*em.close();*/
+
+		partialIt = ArrayIteratorType(partial,REGION);
 
 		for (int i=0;i<3;i++) { mean_temp[i]=mean_temp[i]/sum_temp[i]; } 
 
 		// Compute variance and weights
-		for(input_iter.GoToBegin(), partial_iter.GoToBegin(), colon_iter.GoToBegin();
-			!input_iter.IsAtEnd() && !partial_iter.IsAtEnd() && !colon_iter.IsAtEnd();
-			++input_iter, ++partial_iter, ++colon_iter) 
+		for(inputIt.GoToBegin(), partialIt.GoToBegin(), colonIt.GoToBegin();
+			!inputIt.IsAtEnd() && !partialIt.IsAtEnd() && !colonIt.IsAtEnd();
+			++inputIt, ++partialIt, ++colonIt) 
 		{
-			if (colon_iter.Get()==255) {		
-				ArrayType p = partial_iter.Get();
+			if (colonIt.Get()==255) {		
+				ArrayType p = partialIt.Get();
 				for (int i=0; i<3; i++)
 				{
-					variance_temp[i] += p[i]*vnl_math_sqr(input_iter.Get()-mean_temp[i]);
+					variance_temp[i] += p[i]*vnl_math_sqr(inputIt.Get()-mean_temp[i]);
 				}
 			}
 		}
@@ -294,13 +278,13 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
 		std::cerr<<"Variance: "<<variance[0]<<" "<<variance[1]<<" "<<variance[2]<<std::endl;
 		std::cerr<<"Weight: "<<weight[0]<<" "<<weight[1]<<" "<<weight[2]<<std::endl;
 
-		std::stringstream ss;
+		/*std::stringstream ss;
 		ss<<emNum+1;
 		ss<<"\t"<<mean[0]<<"\t"<<mean[1]<<"\t"<<mean[2]<<"\t"<<variance[0]<<"\t"<<variance[1]<<"\t"<<variance[2]<<"\t"<<weight[0]<<"\t"<<weight[1]<<"\t"<<weight[2]<<"\n";
-		em<<ss.str();
+		em<<ss.str();*/
 
 		std::stringstream ss2;
-		ss2<<"EM"<<emNum+1;
+		ss2<<"EM"<<emNum+1<<".nii";
 
 		Write(partial,ss2.str());
     }

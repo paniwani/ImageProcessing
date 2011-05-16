@@ -833,27 +833,26 @@ PixelType * GetImageArray ( ImageType::Pointer& img)
 	PixelType *imgArray;
 	imgArray = new PixelType[size[0]*size[1]*size[2]];
 
-	IteratorType img_iter(img,region);
+	IteratorType imgIt(img,region);
 
 	int count = 0;
-	for (img_iter.GoToBegin(); !img_iter.IsAtEnd(); ++img_iter)
+	for (imgIt.GoToBegin(); !imgIt.IsAtEnd(); ++imgIt)
 	{
-		imgArray[count++] = img_iter.Get();
+		imgArray[count++] = imgIt.Get();
 	}
 
 	return imgArray;
 }
 
-ImageType::Pointer ScatterCorrection( ImageType::Pointer &input_full, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap)
+ImageType::Pointer ScatterCorrection( ImageType::Pointer &inputOriginal, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap)
 {	
-	//********************* NOTE *********************
-	// Scatter correction code requires that sizeX = sizeY
-	// Use extract image filter to perform scatter correction in symmetric XY plane,
-	// and then extract appropriate global region afterwards
-	//************************************************
+	// Note:: scatter correction code requires that origin be at (0,0,0) and 
+	// that the region be symmetric in X and Y dimensions
+	
+	// Crop full input (unmasked)
 	typedef itk::RegionOfInterestImageFilter<ImageType,ImageType> RegionOfInterestImageFilterType;
 	RegionOfInterestImageFilterType::Pointer cropper = RegionOfInterestImageFilterType::New();
-	cropper->SetInput( input_full );
+	cropper->SetInput( inputOriginal );
 
 	ImageType::RegionType region = OLDREGION;
 	ImageType::SizeType esize = region.GetSize();
@@ -875,66 +874,58 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input_full, ByteImageT
 
 	ImageType::SizeType size = input->GetLargestPossibleRegion().GetSize();
 
-	// Copy input image
-	ImageType::Pointer input2 = ImageType::New();
-	input2->SetRegions(region);
-	input2->SetSpacing(input->GetSpacing());
-	input2->CopyInformation(input);
-	input2->Allocate();
-
-	IteratorType input_iter(input,region);
-	IteratorType input2_iter(input2,region);
-
-	for(input_iter.GoToBegin(), input2_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++input2_iter)
-	{
-		input2_iter.Set( input_iter.Get() );
-	}
-
+	// Copy input image and shift so that air is 0 HU (used in CTCCAD)
+	typedef itk::AddConstantToImageFilter<ImageType,PixelType,ImageType> AddConstantToImageFilterType;
+	AddConstantToImageFilterType::Pointer adder = AddConstantToImageFilterType::New();
+	adder->SetInput(input);
+	adder->SetConstant( abs(BACKGROUND) );
+	adder->Update();
+	ImageType::Pointer input2 = adder->GetOutput();
+	
 	//Write(input2,"input2.nii");
 
 	PixelType *img = input2->GetBufferPointer();	
 
 	// Create tagmask
-	ByteImageType::Pointer tag_mask = ByteImageType::New();
-	tag_mask->SetRegions(region);
-	tag_mask->SetDirection(input->GetDirection());
-	tag_mask->Allocate();
-	tag_mask->FillBuffer(0);
+	ByteImageType::Pointer tagMask = ByteImageType::New();
+	tagMask->SetRegions(region);
+	tagMask->SetDirection(input->GetDirection());
+	tagMask->Allocate();
+	tagMask->FillBuffer(0);
 
-	ByteIteratorType colon_iter(colon,REGION);
-	ByteIteratorType tag_mask_iter(tag_mask,REGION);
-	input2_iter = IteratorType(input2,REGION);
+	ByteIteratorType colonIt(colon,REGION);
+	ByteIteratorType tagMaskIt(tagMask,REGION);
+	IteratorType input2It = IteratorType(input2,REGION);
 
-	for(input2_iter.GoToBegin(), tag_mask_iter.GoToBegin(), colon_iter.GoToBegin(); !input2_iter.IsAtEnd(); ++input2_iter, ++tag_mask_iter, ++colon_iter)
+	for(input2It.GoToBegin(), tagMaskIt.GoToBegin(), colonIt.GoToBegin(); !input2It.IsAtEnd(); ++input2It, ++tagMaskIt, ++colonIt)
 	{
-		if (colon_iter.Get() == 255 && input2_iter.Get() >= 1225)
+		if (colonIt.Get() == 255 && input2It.Get() >= 1225)
 		{
-			tag_mask_iter.Set( 255 );
+			tagMaskIt.Set( 255 );
 		}
 	}
 
-	//Write(tag_mask,"tagmask.nii");
+	//Write(tagMask,"tagMask.nii");
 
-	tag_mask_iter.GoToBegin();
-	input_iter.GoToBegin();
+	tagMaskIt.GoToBegin();
 
 	SSlice *DAB;
-	ConvertByteImageTo3DArray(DAB, tag_mask);
+	ConvertByteImageTo3DArray(DAB, tagMask);
 
 	// Allocate scale_image
-	ByteImageType::Pointer scale_image_itk = ByteImageType::New();
-	scale_image_itk->SetDirection(input->GetDirection());
-	scale_image_itk->SetRegions(input->GetLargestPossibleRegion());
-	scale_image_itk->Allocate();
-	scale_image_itk->FillBuffer(0);
-	scale_image = scale_image_itk->GetBufferPointer();
+	ByteImageType::Pointer scaleImageITK = ByteImageType::New();
+	scaleImageITK->SetDirection(input->GetDirection());
+	scaleImageITK->SetRegions(input->GetLargestPossibleRegion());
+	scaleImageITK->Allocate();
+	scaleImageITK->FillBuffer(0);
+	scale_image = scaleImageITK->GetBufferPointer();
 
 	// Compute object scale
 	compute_scale_image(img, VoxelSize, DAB, size[0], size[1], size[2], HIST_THRESHOLD,0);
 
 	typedef itk::CastImageFilter<ByteImageType,FloatImageType> CastImageFilterType;
 	CastImageFilterType::Pointer caster = CastImageFilterType::New();
-	caster->SetInput( scale_image_itk );
+	caster->SetInput( scaleImageITK );
 	caster->Update();
 
 	std::stringstream ss;
@@ -946,18 +937,27 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input_full, ByteImageT
 	scatterCorrection(img,DAB,size[0],size[1],size[2]);
 
 	// Only make changes inside colon, inside tag mask, if voxel was unclassified or stool
-	VoxelIteratorType vmap_iter(vmap,REGION);
-	input_iter = IteratorType(input,REGION);
-	input2_iter = IteratorType(input2,REGION);
-	colon_iter = ByteIteratorType(colon,REGION);
-	tag_mask_iter = ByteIteratorType(colon,REGION);
+	VoxelIteratorType vmapIt(vmap,REGION);
+	IteratorType inputIt(input,REGION);
+	input2It = IteratorType(input2,REGION);
+	colonIt = ByteIteratorType(colon,REGION);
+	tagMaskIt = ByteIteratorType(colon,REGION);
 
-	for (input_iter.GoToBegin(), input2_iter.GoToBegin(), colon_iter.GoToBegin(), tag_mask_iter.GoToBegin(), vmap_iter.GoToBegin(); !input_iter.IsAtEnd();
-		++input_iter, ++input2_iter, ++colon_iter, ++tag_mask_iter, ++vmap_iter)
+	for (inputIt.GoToBegin(), input2It.GoToBegin(), colonIt.GoToBegin(), tagMaskIt.GoToBegin(), vmapIt.GoToBegin(); !inputIt.IsAtEnd();
+		++inputIt, ++input2It, ++colonIt, ++tagMaskIt, ++vmapIt)
 	{
-		if ( ! (colon_iter.Get() == 255 && tag_mask_iter.Get() == 255 && (vmap_iter.Get() == Unclassified || vmap_iter.Get() == Stool) ) )
-			input2_iter.Set( input_iter.Get() );
+		if ( ! (colonIt.Get() == 255 && tagMaskIt.Get() == 255 && (vmapIt.Get() == Unclassified || vmapIt.Get() == Stool) ) )
+		{
+			input2It.Set( inputIt.Get() + abs(BACKGROUND) );
+		}
 	}
+
+	// Shift scatter image back to air as -1024 HU
+	adder = AddConstantToImageFilterType::New();
+	adder->SetInput(input2);
+	adder->SetConstant(BACKGROUND);
+	adder->Update();
+	input2 = adder->GetOutput();
 
 	// Write change only image
 	typedef itk::SubtractImageFilter<ImageType,ImageType> SubtractImageFilterType;
@@ -985,9 +985,10 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input_full, ByteImageT
 	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
 	masker->SetInput1(cropper->GetOutput());
 	masker->SetInput2(colon);
+	masker->SetOutsideValue(BACKGROUND);
 	masker->Update();
 
-	Write(masker->GetOutput(),"input_scatter.nii");
+	Write(masker->GetOutput(),"inputScatter.nii");
 
 	return masker->GetOutput();
 }

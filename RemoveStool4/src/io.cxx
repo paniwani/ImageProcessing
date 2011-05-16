@@ -71,6 +71,7 @@ void Write(ByteImageType::Pointer image, std::string name) {
 	writer->Update();
 }
 
+/*
 void Write(ShortImageType::Pointer image, std::string name) {
 	typedef itk::ImageFileWriter< ShortImageType >  WriterType;
     WriterType::Pointer writer = WriterType::New();
@@ -91,6 +92,7 @@ void Write(ShortImageType::Pointer image, std::string name) {
 	std::cout<<"Writing: "<<ss.str()<<std::endl;
 	writer->Update();
 }
+*/
 
 void Write(FloatImageType::Pointer image, std::string name) {
 	typedef itk::ImageFileWriter< FloatImageType >  WriterType;
@@ -110,7 +112,13 @@ void Write(FloatImageType::Pointer image, std::string name) {
 
 	writer->SetInput(image);
 	std::cout<<"Writing: "<<ss.str()<<std::endl;
-	writer->Update();
+	
+	try {
+		writer->Update();
+	} catch (itk::ExceptionObject &excp) {
+		std::cerr << "ExceptionObject caught: " << excp << std::endl;
+		system("pause");
+	}
 } 
 
 void Write(VoxelImageType::Pointer vmap, std::string name) 
@@ -169,6 +177,8 @@ void Write(ArrayImageType::Pointer &v, std::string name)
 	ArrayImageType::RegionType region = v->GetLargestPossibleRegion();
 
 	ArrayIteratorType v_iter(v,region);
+
+	//int i=1; // only write tissue partial
 
 	for (int i=0; i < ArrayImageType::ImageDimension ; i++)
 	{

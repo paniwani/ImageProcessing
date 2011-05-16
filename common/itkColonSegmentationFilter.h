@@ -58,11 +58,11 @@ public:
   itkGetConstMacro( TaggedValue, unsigned int );
   itkSetMacro( TaggedValue, unsigned int );
   
-  itkSetMacro(ForegroundValue, OutputImagePixelType);
-  itkGetConstMacro(ForegroundValue, OutputImagePixelType);
+  itkSetMacro(OutputForegroundValue, OutputImagePixelType);
+  itkGetConstMacro(OutputForegroundValue, OutputImagePixelType);
 
-  itkSetMacro(BackgroundValue, OutputImagePixelType);
-  itkGetConstMacro(BackgroundValue, OutputImagePixelType);
+  itkSetMacro(OutputBackgroundValue, OutputImagePixelType);
+  itkGetConstMacro(OutputBackgroundValue, OutputImagePixelType);
 
   itkSetMacro(PrintImages, bool);
   itkGetConstMacro(PrintImages, bool);
@@ -110,11 +110,10 @@ private:
   void operator=(const Self&); //purposely not implemented
 
   unsigned int m_TaggedValue;
-  OutputImagePixelType m_ForegroundValue;
-  OutputImagePixelType m_BackgroundValue;
+  OutputImagePixelType m_OutputForegroundValue;
+  OutputImagePixelType m_OutputBackgroundValue;
   bool m_PrintImages;
   bool m_RemoveBoneLung;
-
 };
 
 } // end namespace itk

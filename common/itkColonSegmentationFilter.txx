@@ -14,9 +14,9 @@ ColonSegmentationFilter<TInputImage,TOutputImage >
 ::ColonSegmentationFilter()
 {
   this->SetNumberOfRequiredInputs( 1 );
-  m_TaggedValue=1225;
-  m_ForegroundValue=255;
-  m_BackgroundValue=0;
+  m_TaggedValue=200;
+  m_OutputForegroundValue=255;
+  m_OutputBackgroundValue=0;
   m_PrintImages=false;
   m_RemoveBoneLung=true;
 }
@@ -32,26 +32,6 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 {
 	// Setup
 	InputImagePointer input = const_cast<InputImageType *>(this->GetInput());
-
-
-	InputImageType::DirectionType originalDirection = input->GetDirection();
-
-	/********************
-	When removing bone and lungs, reorient such that lung is closest to slice 0 and bone is at top of image.
-	After segmentation and bone/lung subtraction, orient back to original orientation
-	//********************/
-	//if ( m_RemoveBoneLung )
-	//{
-	//
-	//	// Orient input into LAI orientation (spine is at top of image, lungs at z=0)
-	//	itk::OrientImageFilter<ImageType,ImageType>::Pointer orienter = itk::OrientImageFilter<InputImageType,InputImageType>::New();
-	//	orienter->UseImageDirectionOn();
-	//	orienter->SetDesiredCoordinateOrientation(itk::SpatialOrientation::ITK_COORDINATE_ORIENTATION_LAI);
-	//	orienter->SetInput(input);
-	//	orienter->Update();
-	//	input = orienter->GetOutput();	
-
-	//}
 	
 	InputImageType::RegionType region = input->GetLargestPossibleRegion();
 	InputImageType::SpacingType spacing = input->GetSpacing();
@@ -98,7 +78,7 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 
 	for (input_iter.GoToBegin(), air_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++air_iter)
 	{
-		if (input_iter.Get() < 400)
+		if (input_iter.Get() < -600)
 		{
 			air_iter.Set(255);
 		} else {
@@ -136,7 +116,6 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 	bkgFilter2D->SetLambda(0);
 	bkgFilter2D->SetReverseOrdering(true);
 	
-	
 	SliceBySliceImageFilterBackgroundType::Pointer bkgRemover = SliceBySliceImageFilterBackgroundType::New();
 	bkgRemover->SetInput( air );
 	bkgRemover->SetFilter( bkgFilter2D );
@@ -144,37 +123,7 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 	air = bkgRemover->GetOutput();
 	air_iter = ByteIteratorType(air,region);
 
-	/*
-	// Detect component with largest number of pixels on border
-	typedef itk::BinaryShapeKeepNObjectsImageFilter< ByteImageType > BinaryShapeKeepNObjectsImageFilterType;
-	BinaryShapeKeepNObjectsImageFilterType::Pointer binaryFilter = BinaryShapeKeepNObjectsImageFilterType::New();
-	binaryFilter->SetInput( air );
-	binaryFilter->SetBackgroundValue(0);
-	binaryFilter->SetForegroundValue(255);
-	binaryFilter->SetAttribute("SizeOnBorder");
-	binaryFilter->SetNumberOfObjects(1);
-	binaryFilter->Update();
-	ByteImageType::Pointer bkg = binaryFilter->GetOutput();
-	ByteIteratorType bkg_iter(bkg,region);
-	binaryFilter.~SmartPointer();
-
-	WriteITK(bkg,"bkg.nii");
-	
-	for (air_iter.GoToBegin(), bkg_iter.GoToBegin(); !air_iter.IsAtEnd(); ++air_iter, ++bkg_iter)
-	{
-		if (bkg_iter.Get() == 255)
-			air_iter.Set( 0 );
-	}
-	
-	
-	bkg.~SmartPointer();
-
-	*/
-
-	
-
 	WriteITK(air,"air_no_bkg.nii");	
-	
 	
 	if ( m_RemoveBoneLung )
 	{
@@ -220,11 +169,8 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 		lungGrower.~SmartPointer();
 	
 	}
-
-	
 	
 	// Dilate air
-	
 
 	radius.Fill(0);
 	radius[0] = 3;
@@ -232,9 +178,7 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 
 	StructuringElementType ball;
 	ball.SetRadius( radius );
-	ball.CreateStructuringElement();
-	
-	
+	ball.CreateStructuringElement();	
 
 	DilateFilterType::Pointer dilater = DilateFilterType::New();
 	dilater->SetBackgroundValue(0);
@@ -255,23 +199,20 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 
 	WriteITK(air_dilated,"air_dilated_only.nii");
 
+	// Find tagged regions, with or without bone
 
-
-	// Find tagged regions, w/ or w/o bone
-	
-	
 	ByteImageType::Pointer tagged;
 
 	if ( m_RemoveBoneLung )
 	{
 		// Detect bone using region growing with seeds from first slice
 		// Assumption: only high intensity object at z=0 is bone
-		InputImagePixelType bone_threshold = 1275;
+		InputImagePixelType bone_threshold = 250;
 
 		ConnectedThresholdImageFilterType::Pointer grower = ConnectedThresholdImageFilterType::New();
 		grower->SetInput( input );
 		grower->SetLower( bone_threshold );
-		grower->SetUpper(2225);
+		grower->SetUpper(1500); //1200
 		grower->SetReplaceValue(255);
 
 		// Set tagged regions within dilated area as seeds of region growing
@@ -293,72 +234,11 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 		ByteIteratorType bone_iter(bone,region);
 
 		WriteITK(bone,"bone.nii");
-
-
-		//// Setup region growing filter
-		//ConnectedThresholdImageFilterType::Pointer grower2 = ConnectedThresholdImageFilterType::New();
-		//grower2->SetInput( input );
-		//grower2->SetLower(m_TaggedValue);
-		//grower2->SetUpper(1200);
-		//grower2->SetReplaceValue(255);
-
-		//// Set tagged regions within dilated area as seeds of region growing
-		//for (input_iter.GoToBegin(), air_dilated_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++air_dilated_iter)
-		//{
-		//	if (air_dilated_iter.Get() == 255 && input_iter.Get() >= m_TaggedValue)
-		//	{
-		//		grower2->AddSeed( input_iter.GetIndex() );
-		//	}
-		//}
-
-		//grower2->Update();
-		//tagged = grower2->GetOutput();
-		//
-		//WriteITK(tagged,"tagged.nii");
-
-		//// Subtract bone from tagged
-
-		//ByteIteratorType tagged_iter(tagged,region);
-		//ByteIteratorType bone_iter(bone,region);
-
-		//for (tagged_iter.GoToBegin(), bone_iter.GoToBegin(); !tagged_iter.IsAtEnd(); ++tagged_iter, ++bone_iter)
-		//{
-		//	if (bone_iter.Get() == 255)
-		//	{	
-		//		tagged_iter.Set(0);
-		//	}	
-		//}
-
-		//WriteITK(tagged,"tagged_bone_subtracted.nii");
-
-
-		/*
-
-		// Keep only largest bone component
-		BinaryShapeKeepNObjectsImageFilterType::Pointer keeper = BinaryShapeKeepNObjectsImageFilterType::New();
-		keeper->SetInput( bone );
-		keeper->SetAttribute("Size");
-		keeper->SetBackgroundValue(0);
-		keeper->SetForegroundValue(255);
-		keeper->SetNumberOfObjects(1);
-		keeper->Update();
-		
-		bone = keeper->GetOutput();
-
-		WriteITK(bone,"bone_largest.nii");
-
-
-		ByteIteratorType bone_iter(bone,region);
-
-		*/
-		
-		
-
 		
 		IsolatedConnectedImageFilterType::Pointer isolatedGrower = IsolatedConnectedImageFilterType::New();
 		isolatedGrower->SetInput( input );
 		isolatedGrower->SetLower(m_TaggedValue);
-		isolatedGrower->SetUpper( 2225 );
+		isolatedGrower->SetUpper( 1500 ); // 1200
 		isolatedGrower->SetReplaceValue( 255 );
 		isolatedGrower->FindUpperThresholdOff();
 
@@ -394,7 +274,7 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 		ConnectedThresholdImageFilterType::Pointer grower2 = ConnectedThresholdImageFilterType::New();
 		grower2->SetInput( input );
 		grower2->SetLower(m_TaggedValue);
-		grower2->SetUpper(2225);
+		grower2->SetUpper(1500); //1200
 		grower2->SetReplaceValue(255);
 
 		// Set tagged regions within dilated area as seeds of region growing
@@ -469,24 +349,11 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 	{
 		if ( colon_iter.Get() == 255 )
 		{
-			output_iter.Set( m_ForegroundValue );
+			output_iter.Set( m_OutputForegroundValue );
 		} else {
-			output_iter.Set( m_BackgroundValue );
+			output_iter.Set( m_OutputBackgroundValue );
 		}
 	}	
-
-	//if ( m_RemoveBoneLung )
-	//{
-	//
-	//	// Reorient back to original direction
-	//	itk::OrientImageFilter<ByteImageType,ByteImageType>::Pointer orienter = itk::OrientImageFilter<ByteImageType,ByteImageType>::New();
-	//	orienter->UseImageDirectionOn();
-	//	orienter->SetDesiredCoordinateDirection( originalDirection );
-	//	orienter->SetInput( output );
-	//	orienter->Update();
-	//	output = orienter->GetOutput();	
-
-	//}
 }
 
 template <class TInputImage, class TOutputImage >
@@ -497,8 +364,8 @@ PrintSelf(std::ostream& os, Indent indent) const
   Superclass::PrintSelf(os,indent);
   
   os << indent << "TaggedValue: " << m_TaggedValue << std::endl;
-  os << indent << "ForegroundValue: " << m_ForegroundValue << std::endl;
-  os << indent << "BackgroundValue: " << m_BackgroundValue << std::endl;
+  os << indent << "OutputForegroundValue: " << m_OutputForegroundValue << std::endl;
+  os << indent << "OutputBackgroundValue: " << m_OutputBackgroundValue << std::endl;
   os << indent << "PrintImages: " << m_PrintImages << std::endl;
   os << indent << "RemoveBoneLung: " << m_RemoveBoneLung << std::endl;
 }

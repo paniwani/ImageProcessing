@@ -23,34 +23,29 @@ int main(int argc, char * argv[])
 		return EXIT_FAILURE;
 	}
 
-	ImageType::Pointer				input_original			= ImageType::New();
+	ImageType::Pointer				inputOriginal			= ImageType::New();
 	ImageType::Pointer				input					= ImageType::New();
 	ByteImageType::Pointer			colon					= ByteImageType::New();
-	FloatImageType::Pointer			gradient_magnitude		= FloatImageType::New();
+	FloatImageType::Pointer			gradientMagnitude		= FloatImageType::New();
 	VoxelImageType::Pointer			vmap					= VoxelImageType::New();
 	ArrayImageType::Pointer			partial					= ArrayImageType::New();
 
 	// Load images and segment colon
-	Setup(argv[1],input_original,input,colon,gradient_magnitude);
+	Setup(argv[1],inputOriginal,input,colon,gradientMagnitude);
 
 	// Initial segmentation, save tissue stool threshold
-	PixelType tst = SingleMaterialClassification(input, gradient_magnitude, vmap, colon);
+	PixelType tst = SingleMaterialClassification(input, gradientMagnitude, vmap, colon);
 
 	// Apply scatter correction
-	input = ScatterCorrection(input_original,colon,vmap);
+	input = ScatterCorrection(inputOriginal,colon,vmap);
 
 	// Update vmap with new scatter input
-	ApplyThresholdRules(input,gradient_magnitude,vmap,colon,tst);
+	ApplyThresholdRules(input,gradientMagnitude,vmap,colon,tst);
 
 	Write(vmap,"scatter_vmap.nii");
 
-	// Local neighborhood boundary
-	//LocalBoundary(vmap,colon);
-
 	// Determine boundary types
-	partial = QuadraticRegression(input,colon,vmap,gradient_magnitude,tst);
-
-	Write(partial,"partial.nii");
+	partial = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
 
 	// EM
 	EM(partial,colon,input);
@@ -90,135 +85,103 @@ void Dilate(ByteImageType::Pointer &img, unsigned int radius)
 - Mask input with colon
 - Crop input and colon in XY plane
 *********************************************************/
-void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::Pointer &input, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradient_magnitude)
+void Setup(std::string dataset, ImageType::Pointer  &inputOriginal, ImageType::Pointer &input, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradientMagnitude)
 {
 	//----------------------------------------------
 	// Load image
 	//----------------------------------------------
-	std::vector<std::string> dataset_ar = explode( "\\", dataset );
-	std::string dsname = dataset_ar[ dataset_ar.size() - 2 ];
+	std::vector<std::string> datasetArray = explode( "\\", dataset );
+	std::string dsname = datasetArray[ datasetArray.size() - 2 ];
 	std::cout << "Dataset: " << dsname << std::endl;
 
-	if (truncate_on)
+	if (truncateOn)
 	{
 		std::cout << "Truncating data" << std::endl;
-		std::cout << "Slices: " << truncate_ar[0] << " to " << truncate_ar[1] << std::endl;
+		std::cout << "Slices: " << truncateArray[0] << " to " << truncateArray[1] << std::endl;
 		
 		std::stringstream ss;
-		ss << dsname << "_" << truncate_ar[0] << "_" << truncate_ar[1];
+		ss << dsname << "_" << truncateArray[0] << "_" << truncateArray[1];
 		dsname = ss.str();
 	}
 
 	// Set writer prefix
 	note = dsname;
 
-	ShortImageType::Pointer input_s;
-
 	// Load dicom files
-	if (!truncate_on)
+	if (!truncateOn)
 	{
-		input_s = ReadDicom < ShortImageType > ( dataset );
+		inputOriginal = ReadDicom < ImageType > ( dataset );
 	} else {
-		input_s = ReadDicom < ShortImageType > ( dataset, truncate_ar[0], truncate_ar[1] );
+		inputOriginal = ReadDicom < ImageType > ( dataset, truncateArray[0], truncateArray[1] );
 	}
-
-	//Write(input_s,"input_s.nii");
-
-	ShortIteratorType input_s_iter( input_s, input_s->GetLargestPossibleRegion() );
-
-	//----------------------------------------------
-	// Shift input so that air is 0 HU
-	//----------------------------------------------
-
-	// Shift and cast to 16-bit unsigned short
-	// Save original (input_original) and modified input with colon mask applied (input) 
-	input_original->SetRegions( input_s->GetLargestPossibleRegion() );
-	input_original->SetSpacing( input_s->GetSpacing() );
-	input_original->SetDirection( input_s->GetDirection() );
-	input_original->CopyInformation( input_s );
-	input_original->Allocate();
-	IteratorType input_original_iter(input_original, input_original->GetLargestPossibleRegion() );
-	
-	input->SetRegions( input_s->GetLargestPossibleRegion() );
-	input->SetSpacing( input_s->GetSpacing() );
-	input->SetDirection( input_s->GetDirection() );
-	input->CopyInformation( input_s );
-	input->Allocate();
-	IteratorType input_iter(input, input->GetLargestPossibleRegion() );
-
-	// Compute background pixel value and save globally
-	typedef itk::MinimumMaximumImageCalculator< ShortImageType > MinimumMaximumImageCalculatorType;
-	MinimumMaximumImageCalculatorType::Pointer calc = MinimumMaximumImageCalculatorType::New();
-	calc->SetImage( input_s );
-	calc->ComputeMinimum();
-	BACKGROUND = calc->GetMinimum();
-
-	for (input_s_iter.GoToBegin(), input_original_iter.GoToBegin(); !input_s_iter.IsAtEnd(); ++input_s_iter, ++input_original_iter)
-	{
-		input_original_iter.Set( input_s_iter.Get() + abs( BACKGROUND ) );
-	}
-
-	input_s.~SmartPointer();
 
 	// Set global region
-	REGION = input_original->GetLargestPossibleRegion();
+	REGION = inputOriginal->GetLargestPossibleRegion();	
+
+	Write(inputOriginal,"inputOriginal.nii");
+
+	// Get image minimum and set as global background
+	typedef itk::MinimumMaximumImageCalculator<ImageType> MinimumMaximumImageCalculatorType;
+	MinimumMaximumImageCalculatorType::Pointer minCalc = MinimumMaximumImageCalculatorType::New();
+	minCalc->SetImage(inputOriginal);
+	minCalc->ComputeMinimum();
+	BACKGROUND = minCalc->GetMinimum();
 
 	//----------------------------------------------
 	// Segment colon
 	//----------------------------------------------
 	typedef itk::ColonSegmentationFilter< ImageType, ByteImageType > ColonSegmentationFilterType;
-	ColonSegmentationFilterType::Pointer colon_segmenter = ColonSegmentationFilterType::New();
-	colon_segmenter->SetInput( input_original );
-	colon_segmenter->SetForegroundValue( 255 );
-	colon_segmenter->SetBackgroundValue( 0 );
-	//colon_segmenter->SetPrintImages(true);
+	ColonSegmentationFilterType::Pointer colonSegmenter = ColonSegmentationFilterType::New();
+	colonSegmenter->SetInput( inputOriginal );
+	colonSegmenter->SetOutputForegroundValue( 255 );
+	colonSegmenter->SetOutputBackgroundValue( 0 );
+	//colonSegmenter->SetPrintImages(true);
 
-	if ( truncate_on )
-		colon_segmenter->SetRemoveBoneLung( false );
+	if ( truncateOn )
+		colonSegmenter->SetRemoveBoneLung( false );
 
-	colon_segmenter->Update();
-	colon = colon_segmenter->GetOutput();
+	colonSegmenter->Update();
+	colon = colonSegmenter->GetOutput();
 
 	//----------------------------------------------
 	// Mask input with colon
 	//----------------------------------------------
 	typedef itk::MaskImageFilter< ImageType, ByteImageType, ImageType > MaskImageFilterType;
 	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
-	masker->SetInput1( input_original );
+	masker->SetInput1( inputOriginal );
 	masker->SetInput2( colon );
+	masker->SetOutsideValue( BACKGROUND );
 	masker->Update();
-
 	input = masker->GetOutput();
 
-	Write(input_original,"input_original.nii");
-
 	//----------------------------------------------
-	// Calculate gradient magnitude and mask with colon
+	// Calculate gradient magnitude
 	//----------------------------------------------
 	typedef itk::GradientMagnitudeRecursiveGaussianImageFilter<ImageType,FloatImageType> GradientMagnitudeRecursiveGaussianImageFilterType;
 	
-	GradientMagnitudeRecursiveGaussianImageFilterType::Pointer gradient_magnitude_filter = GradientMagnitudeRecursiveGaussianImageFilterType::New();
-	gradient_magnitude_filter->SetInput( input_original );
-	gradient_magnitude_filter->SetSigma( input_original->GetSpacing()[0] );
-	gradient_magnitude_filter->Update();
-	gradient_magnitude = gradient_magnitude_filter->GetOutput();
+	GradientMagnitudeRecursiveGaussianImageFilterType::Pointer gradientMagnitudeFilter = GradientMagnitudeRecursiveGaussianImageFilterType::New();
+	gradientMagnitudeFilter->SetInput( inputOriginal );
+	gradientMagnitudeFilter->SetSigma( inputOriginal->GetSpacing()[0] );
+	gradientMagnitudeFilter->Update();
+	gradientMagnitude = gradientMagnitudeFilter->GetOutput();
 
 	//----------------------------------------------
 	// Crop images in XY plane
 	//----------------------------------------------
-	
-	input_iter = IteratorType(input,REGION);
 
 	ImageType::SizeType size = REGION.GetSize();
 
 	long minX=size[0],minY=size[1],maxX=0,maxY=0;
-	unsigned short paddingXY = 5;
+	short paddingXY = 5;
+	
+	IteratorType inputIt(input,REGION);
+	ByteIteratorType colonIt(colon,REGION);
 
-	for (input_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter)
+	for (inputIt.GoToBegin(), colonIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++colonIt)
 	{
-		if ( input_iter.Get() != 0 )
+		if ( colonIt.Get() != 0 )
 		{
-			ImageType::IndexType idx = input_iter.GetIndex();
+			ImageType::IndexType idx = inputIt.GetIndex();
 
 			if (idx[0] < minX)
 				minX = idx[0];
@@ -257,10 +220,10 @@ void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::
 
 	typedef itk::RegionOfInterestImageFilter<FloatImageType,FloatImageType> RegionOfInterestImageFilterFloatType;
 	RegionOfInterestImageFilterFloatType::Pointer cropperFloat = RegionOfInterestImageFilterFloatType::New();
-	cropperFloat->SetInput( gradient_magnitude );
+	cropperFloat->SetInput( gradientMagnitude );
 	cropperFloat->SetRegionOfInterest( extractRegion );
 	cropperFloat->Update();
-	gradient_magnitude = cropperFloat->GetOutput();
+	gradientMagnitude = cropperFloat->GetOutput();
 
 	typedef itk::RegionOfInterestImageFilter<ByteImageType,ByteImageType> RegionOfInterestImageFilterByteType;
 	RegionOfInterestImageFilterByteType::Pointer cropperByte = RegionOfInterestImageFilterByteType::New();
@@ -269,75 +232,23 @@ void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::
 	cropperByte->Update();
 	colon = cropperByte->GetOutput();
 
+	// Set cropped region globally
 	REGION = colon->GetLargestPossibleRegion();
 
-	// TESTTTTTTTT
-
-	typedef itk::CastImageFilter<ImageType,ShortImageType> CastImageFilterType;
-	CastImageFilterType::Pointer caster = CastImageFilterType::New();
-	caster->SetInput(input);
-
-	typedef itk::AddConstantToImageFilter<ShortImageType,short,ShortImageType> AddConstantToImageFilterType;
-	AddConstantToImageFilterType::Pointer adder = AddConstantToImageFilterType::New();
-	adder->SetConstant(BACKGROUND);
-	adder->SetInput(caster->GetOutput());
-	adder->Update();
-
-	typedef itk::GradientMagnitudeImageFilter<ImageType,FloatImageType> GradientMagnitudeImageFilterType;
-	GradientMagnitudeImageFilterType::Pointer gmFilter = GradientMagnitudeImageFilterType::New();
-	gmFilter->SetInput(input);
-	gmFilter->Update();
-	Write(gmFilter->GetOutput(),"gm_no_smoothing.nii");
-
-	typedef itk::CastImageFilter<ImageType,FloatImageType> CastImageFilterType2;
-	CastImageFilterType2::Pointer caster2 = CastImageFilterType2::New();
-	caster2->SetInput(input);
-
-	typedef itk::CannyEdgeDetectionImageFilterModified<FloatImageType,FloatImageType> CannyEdgeDetectionImageFilterType;
-	CannyEdgeDetectionImageFilterType::Pointer cannyFilter = CannyEdgeDetectionImageFilterType::New();
-	cannyFilter->SetInput( caster2->GetOutput() );
-	cannyFilter->SetLowerThreshold(0); // minimum gradient threshold
-	cannyFilter->SetVariance(0);	
-	cannyFilter->Update();
-
-	Write(cannyFilter->GetOutput(), "canny.nii");
 	Write(input,"input.nii");
-	Write(adder->GetOutput(),"input_scale.nii");
 	Write(colon,"colon.nii");
-	Write(gradient_magnitude,"gradient_magnitude.nii");
+	Write(gradientMagnitude,"gradientMagnitude.nii");
 }
 
 /*********************************************************
-1. Calculate gradient magnitude
-2. Allocate voxel map
-3. Compute otsu threshold separating tissue and stool
-4. Apply initial threshold rules
+- Allocate voxel map
+- Compute otsu threshold separating tissue and stool
+- Apply initial threshold rules
 *********************************************************/
-PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon) 
+PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType::Pointer &gradientMagnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon) 
 {
-	
-
-	/*typedef itk::CastImageFilter<ImageType,FloatImageType> CastImageFilterType;
-	CastImageFilterType::Pointer caster = CastImageFilterType::New();
-	caster->SetInput(input);
-	caster->Update();
-	*/
-	//// No smoothing
-	//typedef itk::GradientMagnitudeImageFilter<FloatImageType,FloatImageType> GradientMagnitudeImageFilterNoSmoothingType;
-	//GradientMagnitudeImageFilterNoSmoothingType::Pointer grad_no_smooth_filter = GradientMagnitudeImageFilterNoSmoothingType::New();
-	//grad_no_smooth_filter->SetInput( caster->GetOutput() );
-	//grad_no_smooth_filter->Update();
-	//Write(grad_no_smooth_filter->GetOutput(), "grad_no_smooth.nii");
-
-	//// Sobel
-	//typedef itk::SobelEdgeDetectionImageFilter<FloatImageType,FloatImageType> SobelEdgeDetectionImageFilterType;
-	//SobelEdgeDetectionImageFilterType::Pointer sobel_filter = SobelEdgeDetectionImageFilterType::New();
-	//sobel_filter->SetInput( caster->GetOutput() );
-	//sobel_filter->Update();
-	//Write(sobel_filter->GetOutput(),"sobel.nii");
-
 	//----------------------------------------------
-	// 2. Allocate voxel map
+	// Allocate voxel map
 	//----------------------------------------------
 	vmap->SetRegions( input->GetLargestPossibleRegion() );
 	vmap->SetSpacing( input->GetSpacing() );
@@ -345,71 +256,61 @@ PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType
 	vmap->CopyInformation( input );
 	vmap->Allocate();
 	vmap->FillBuffer(Unclassified);
-	
-	IteratorType input_iter(input,REGION);
-	FloatIteratorType gradient_magnitude_iter(gradient_magnitude,REGION);
-	VoxelIteratorType vmap_iter(vmap,REGION);
-	ByteIteratorType colon_iter(colon,REGION);
 
 	//----------------------------------------------
-	// 3. Compute otsu threshold separating tissue and stool
+	// Compute otsu threshold separating tissue and stool
 	//----------------------------------------------
 
 	typedef itk::OtsuThresholdImageCalculatorModified< ImageType > OtsuThresholdImageCalculatorModifiedType;
 	OtsuThresholdImageCalculatorModifiedType::Pointer otsuCalculator = OtsuThresholdImageCalculatorModifiedType::New();
 	otsuCalculator->SetImage( input );
 	otsuCalculator->SetMinMax(true);
-	otsuCalculator->SetHistogramMin(775);
-	otsuCalculator->SetHistogramMax(2425);
+	otsuCalculator->SetHistogramMin(-300);
+	otsuCalculator->SetHistogramMax(1500);
 	otsuCalculator->SetPrintHistogram(note+"_intensity.csv");
 	otsuCalculator->Compute();
 
-	PixelType tissue_stool_threshold = otsuCalculator->GetThreshold();
-
-	std::cout << std::endl << std::endl;
-	std::cout << "Tissue Stool Otsu Threshold: " << tissue_stool_threshold << std::endl;
-	std::cout << std::endl << std::endl;
+	PixelType tissueStoolThreshold = otsuCalculator->GetThreshold();
+	std::cout << "Tissue Stool Otsu Threshold: " << tissueStoolThreshold << std::endl;
 
 	//----------------------------------------------
-	// 4. Apply initial threshold rules
+	// Apply initial threshold rules
 	//----------------------------------------------
-	ApplyThresholdRules( input, gradient_magnitude, vmap, colon, tissue_stool_threshold );
+	ApplyThresholdRules( input, gradientMagnitude, vmap, colon, tissueStoolThreshold );
 
 	Write(vmap,"vmap.nii");
 
-	return tissue_stool_threshold;
+	return tissueStoolThreshold;
 }
 
-void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissue_stool_threshold )
+void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gradientMagnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissueStoolThreshold )
 {
-	IteratorType input_iter(input,REGION);
-	FloatIteratorType gradient_magnitude_iter(gradient_magnitude,REGION);
-	VoxelIteratorType vmap_iter(vmap,REGION);
-	ByteIteratorType colon_iter(colon,REGION);
+	IteratorType inputIt(input,REGION);
+	FloatIteratorType gradientMagnitudeIt(gradientMagnitude,REGION);
+	VoxelIteratorType vmapIt(vmap,REGION);
+	ByteIteratorType colonIt(colon,REGION);
 
-	tissue_stool_threshold += BACKGROUND;
-
-	for ( input_iter.GoToBegin(), gradient_magnitude_iter.GoToBegin(), vmap_iter.GoToBegin(), colon_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++gradient_magnitude_iter, ++vmap_iter, ++colon_iter)
+	for ( inputIt.GoToBegin(), gradientMagnitudeIt.GoToBegin(), vmapIt.GoToBegin(), colonIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++gradientMagnitudeIt, ++vmapIt, ++colonIt)
 	{
-		if (colon_iter.Get() == 255)
+		if (colonIt.Get() == 255)
 		{
 			VoxelType voxel;
 
-			short I = input_iter.Get() + BACKGROUND;
-			float G = gradient_magnitude_iter.Get();
+			short I = inputIt.Get();
+			float G = gradientMagnitudeIt.Get();
 
-			if ( ( I >= tissue_stool_threshold && G < 0.8*I ) || I > 1000 )
+			if ( ( I >= tissueStoolThreshold && G < 0.8*I ) || I > 1000 )
 			{
 				voxel = Stool;
 			} else if ( I <= -600 ) {
 				voxel = Air;
-			} else if ( I < tissue_stool_threshold && I > -300 && G <= 400 ) {
+			} else if ( I < tissueStoolThreshold && I > -300 && G <= 400 ) {
 				voxel = Tissue;
 			} else {
 				voxel = Unclassified;
 			}
 
-			vmap_iter.Set( voxel );
+			vmapIt.Set( voxel );
 		}
 	}
 }
