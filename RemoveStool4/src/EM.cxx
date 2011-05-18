@@ -30,11 +30,7 @@ vnl_matrix<float> GetNeighbor(ArrayImageType::Pointer partialVector, ImageType::
 
 double Probability(double Y, double mean, double variance,  double current_partial, double local_variance, double local_mean) {  
 
-	if (local_mean == 0 && local_variance == 0)
-	{
-		std::cout << "nothing there!" << std::endl;
-	}	
-	/*if (mean == Y && variance == 0)
+	if (mean == Y && variance == 0)
 	{
 		return 1;
 	} else {
@@ -44,8 +40,7 @@ double Probability(double Y, double mean, double variance,  double current_parti
 		} else {
 			return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance))*exp(-vnl_math_sqr(current_partial-local_mean)/(2*local_variance))/(sqrt(2*PI*local_variance));
 		}
-	}*/
-	return 0;
+	}
 }
 
 vnl_vector<float> expectation(double Y, double mean[], double variance[], float weight[],  vnl_matrix<float> neighbor, float current_partial[]) {	
@@ -139,13 +134,6 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
 		weight[i]=sum[i]/sum_all;
 	} 
 
-	//outputs the initial mean and variance of each class
-	/*em<<"EM\tMean0\tMean1\tMean2\tVar0\tVar1\tVar2\tWeight0\tWeight1\tWeight2\n";
-
-	std::ostringstream ss;
-	ss<<"0\t"<<mean[0]<<"\t"<<mean[1]<<"\t"<<mean[2]<<"\t"<<variance[0]<<"\t"<<variance[1]<<"\t"<<variance[2]<<"\t"<<weight[0]<<"\t"<<weight[1]<<"\t"<<weight[2]<<"\n";
-	em<<ss.str();*/
-
 	std::cerr<<std::endl;
 	std::cerr<<"EM0"<<std::endl;
 	std::cerr<<"Mean: "<<mean[0]<<" "<<mean[1]<<" "<<mean[2]<<std::endl;
@@ -155,71 +143,71 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
 
 	ImageType::SpacingType spacing = input->GetSpacing();
 	
-	// Computes iterations of the Maximization Algorithm
+	// Compute iterations of the Maximization Algorithm
     for (int emNum=0;emNum<1;emNum++) // used 20 in original test case
 	{
-		/*std::ofstream em;
-		std::stringstream ss;
-		ss << "em" << emNum << ".txt";
-		em.open(ss.str().c_str());*/
-
-		//gives the temporary storage of the variables corresponding to sum, variance, and mean for each class on the i+1 iteration
 		double sum_temp[3]={0,0,0};
         double variance_temp[3]={0,0,0};
 		double mean_temp[3]={0,0,0};
 
-		for (inputIt.GoToBegin(), partialIt.GoToBegin(), colonIt.GoToBegin();
-			!inputIt.IsAtEnd() && !partialIt.IsAtEnd() && !colonIt.IsAtEnd();
-			++inputIt, ++partialIt, ++colonIt) 
+		// Duplicate partials
+		typedef itk::ImageDuplicator<ArrayImageType> ImageDuplicatorType;
+		ImageDuplicatorType::Pointer duplicator = ImageDuplicatorType::New();
+		duplicator->SetInputImage(partial);
+		duplicator->Update();
+		ArrayImageType::Pointer partial2 = duplicator->GetOutput();
+		ArrayIteratorType partial2It(partial2,REGION);
+
+		for (inputIt.GoToBegin(), partialIt.GoToBegin(), partial2It.GoToBegin(), colonIt.GoToBegin();
+			!inputIt.IsAtEnd() && !partialIt.IsAtEnd() && !partial2It.IsAtEnd() && !colonIt.IsAtEnd();
+			++inputIt, ++partialIt, ++partial2It, ++colonIt) 
 		{
 			if (colonIt.Get()==255) {		
 				ArrayType p = partialIt.Get();		//retrieves the partial informations
 				float Z[3]={p[0],p[1],p[2]};
 
-				// Only update uncertain partials
-				if ( !(p[0] == 1 || p[1] == 1 || p[2] == 1) )
+				if (p[1] > 0 && p[1] < 1)
 				{
 					ImageType::IndexType idx = inputIt.GetIndex();
 
-					/*if (idx[0]*spacing[0] > 40 && idx[0]*spacing[0] < 56 &&
-						idx[1]*spacing[1] > 30 && idx[1]*spacing[1] < 50 &&
-						idx[2]*spacing[2] == 2.5)
-					{*/
+					vnl_vector<float> Z_update=expectation(inputIt.Get(),mean, variance, weight, GetNeighbor(partial,idx), Z);	//updates the partial values
+					
+					ArrayType p2;
 
-						debug << "idx: " << idx[0]*spacing[0] << " " << idx[1]*spacing[1] << " " << idx[2]*spacing[2] << " I:" << inputIt.Get() << " ";
+					for (int i=0; i<3; i++)
+						p2[i] = Z_update[i];
 
-						vnl_vector<float> Z_update=expectation(inputIt.Get(),mean, variance, weight, GetNeighbor(partial,idx), Z);	//updates the partial values
-						p[0]=Z_update[0];										
-						p[1]=Z_update[1];
-						p[2]=Z_update[2];
+					// set tolerance to allow uncertain probabilites to update to certain
+					for (int i=0; i<3; i++)
+					{
+						p2[i] = p2[i] > 0.001 ? p2[i] : 0;
+						p2[i] = p2[i] < 0.999 ? p2[i] : 1;
+					}
 
-						// set tolerance to allow uncertain probabilites to update to certain
-						for (int i=0; i<3; i++)
-						{
-							p[i] = p[i] > 0.001 ? p[i] : 0;
-							p[i] = p[i] < 0.999 ? p[i] : 1;
-						}
-
-						partialIt.Set(p);
-
-						/*em << idx[0] << " " << idx[1] << " " << idx[2] << " ";
-						em << inputIt.Get() << " ";
-						em << p[0] << " " << p[1] << " " << p[2] << "\n";*/
-					//}
+					partial2It.Set(p2);
 				}
-
-				//updates the new mean total partial sum for each class accordingly
-				for (int i=0;i<3;i++) 
-				{
-					mean_temp[i]+=p[i]*inputIt.Get();	
-					sum_temp[i]+=p[i];
-				}
-			}			
+			}
         }
 
-		/*em.close();*/
+		partial = partial2;
 
 		partialIt = ArrayIteratorType(partial,REGION);
+
+		// Computes the mean (expectation) for each class by using sum(partial[i]*value[i])/sum(partial[i])
+		for(inputIt.GoToBegin(), partialIt.GoToBegin(), colonIt.GoToBegin();
+			!inputIt.IsAtEnd() && !partialIt.IsAtEnd() && !colonIt.IsAtEnd();
+			++inputIt, ++partialIt, ++colonIt) 
+		{
+			if (colonIt.Get()==255) 
+			{		
+				ArrayType p = partialIt.Get();
+				for (int i=0; i<3; i++)
+				{
+					sum_temp[i] += p[i];
+					mean_temp[i] += p[i]*inputIt.Get();
+				}
+			}
+		}
 
 		for (int i=0;i<3;i++) { mean_temp[i]=mean_temp[i]/sum_temp[i]; } 
 
