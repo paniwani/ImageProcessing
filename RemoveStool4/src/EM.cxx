@@ -28,60 +28,24 @@ vnl_matrix<float> GetNeighbor(ArrayImageType::Pointer partialVector, ImageType::
     return temp_return;
 }
 
-/*vnl_matrix<float> GetNeighbor(ArrayImageType::Pointer partialVector, ImageType::IndexType index) {
-	ArrayImageType::IndexType idx = index;
-	
-	ImageType::RegionType fullregion = partialVector->GetLargestPossibleRegion();
-    vnl_matrix<float> temp_return(3,6);
-    float filler[3]={0,0,0};
-    for(int i=0;i<3;i++) {
-        //ImageType::IndexType temp_index_1(idx);
-        ArrayImageType::IndexType temp_index_1 = idx;
-		
-		temp_index_1[i]+=1;
-        ArrayType data_1(filler);
-
-		if (checkBounds(fullregion,temp_index_1)) {
-		//if (fullregion.IsInside(temp_index_1)) {
-            data_1 = partialVector->GetPixel(temp_index_1);    //account for image issues
-        }
-
-        //ImageType::IndexType temp_index_2(idx);
-        
-		ArrayImageType::IndexType temp_index_2 = idx;
-
-		temp_index_2[i]-=1;
-        ArrayType data_2(filler);
-        if (checkBounds(fullregion,temp_index_2)) {
-		// if (fullregion.IsInside(temp_index_2)) {
-            data_2 = partialVector->GetPixel(temp_index_2);
-        } 
-
-		std::cout << "pause" << std::endl;
-
-        for (int j=0;j<3;j++) {
-            temp_return.put(j,i,data_1[j]);
-			temp_return.put(j,i+3,data_2[j]);
-        }
-    }
-    return temp_return;
-}*/
-
 double Probability(double Y, double mean, double variance,  double current_partial, double local_variance, double local_mean) {  
-	if (variance>0.01) 
-	{
-		if (local_variance>0.01) 
-		{
-			//return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance))*exp(-beta*total_neighbor);
-			return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance))*exp(-vnl_math_sqr(current_partial-local_mean)/(2*local_variance))/(sqrt(2*PI*local_variance));
-		
-		} else {
 
-			return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance));
-		}
+	if (local_mean == 0 && local_variance == 0)
+	{
+		std::cout << "nothing there!" << std::endl;
+	}	
+	/*if (mean == Y && variance == 0)
+	{
+		return 1;
 	} else {
-		return 0;
-	}
+		if (local_mean == 0 && local_variance == 0)
+		{
+			return 0;
+		} else {
+			return exp(-vnl_math_sqr(Y-mean)/(2*variance))/(sqrt(2*PI*variance))*exp(-vnl_math_sqr(current_partial-local_mean)/(2*local_variance))/(sqrt(2*PI*local_variance));
+		}
+	}*/
+	return 0;
 }
 
 vnl_vector<float> expectation(double Y, double mean[], double variance[], float weight[],  vnl_matrix<float> neighbor, float current_partial[]) {	
@@ -188,9 +152,11 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
 	std::cerr<<"Variance: "<<variance[0]<<" "<<variance[1]<<" "<<variance[2]<<std::endl;
 	std::cerr<<"Std Dev: "<<sqrt(variance[0])<<" " <<sqrt(variance[1])<<" "<<sqrt(variance[2])<<std::endl;
 	std::cerr<<"Weight: "<<weight[0]<<" "<<weight[1]<<" "<<weight[2]<<std::endl;
+
+	ImageType::SpacingType spacing = input->GetSpacing();
 	
 	// Computes iterations of the Maximization Algorithm
-    for (int emNum=0;emNum<20;emNum++) // used 20 in original test case
+    for (int emNum=0;emNum<1;emNum++) // used 20 in original test case
 	{
 		/*std::ofstream em;
 		std::stringstream ss;
@@ -215,23 +181,31 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
 				{
 					ImageType::IndexType idx = inputIt.GetIndex();
 
-					vnl_vector<float> Z_update=expectation(inputIt.Get(),mean, variance, weight, GetNeighbor(partial,idx), Z);	//updates the partial values
-					p[0]=Z_update[0];										
-					p[1]=Z_update[1];
-					p[2]=Z_update[2];
+					/*if (idx[0]*spacing[0] > 40 && idx[0]*spacing[0] < 56 &&
+						idx[1]*spacing[1] > 30 && idx[1]*spacing[1] < 50 &&
+						idx[2]*spacing[2] == 2.5)
+					{*/
 
-					// set tolerance to allow uncertain probabilites to update to certain
-					for (int i=0; i<3; i++)
-					{
-						p[i] = p[i] > 0.001 ? p[i] : 0;
-						p[i] = p[i] < 0.999 ? p[i] : 1;
-					}
+						debug << "idx: " << idx[0]*spacing[0] << " " << idx[1]*spacing[1] << " " << idx[2]*spacing[2] << " I:" << inputIt.Get() << " ";
 
-					partialIt.Set(p);
+						vnl_vector<float> Z_update=expectation(inputIt.Get(),mean, variance, weight, GetNeighbor(partial,idx), Z);	//updates the partial values
+						p[0]=Z_update[0];										
+						p[1]=Z_update[1];
+						p[2]=Z_update[2];
 
-					/*em << idx[0] << " " << idx[1] << " " << idx[2] << " ";
-					em << inputIt.Get() << " ";
-					em << p[0] << " " << p[1] << " " << p[2] << "\n";*/
+						// set tolerance to allow uncertain probabilites to update to certain
+						for (int i=0; i<3; i++)
+						{
+							p[i] = p[i] > 0.001 ? p[i] : 0;
+							p[i] = p[i] < 0.999 ? p[i] : 1;
+						}
+
+						partialIt.Set(p);
+
+						/*em << idx[0] << " " << idx[1] << " " << idx[2] << " ";
+						em << inputIt.Get() << " ";
+						em << p[0] << " " << p[1] << " " << p[2] << "\n";*/
+					//}
 				}
 
 				//updates the new mean total partial sum for each class accordingly
@@ -288,4 +262,6 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
 
 		Write(partial,ss2.str());
     }
+
+	debug.close();
 }

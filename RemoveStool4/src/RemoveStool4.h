@@ -100,3 +100,4 @@ std::string note;
 PixelType BACKGROUND = 0;
 double PI=3.1415926;
 double neighbor_weight[3]={1,1,.5};
+std::ofstream debug;

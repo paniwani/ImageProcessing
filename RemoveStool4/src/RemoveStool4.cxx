@@ -30,6 +30,9 @@ int main(int argc, char * argv[])
 	VoxelImageType::Pointer			vmap					= VoxelImageType::New();
 	ArrayImageType::Pointer			partial					= ArrayImageType::New();
 
+
+	debug.open("debug.txt");
+
 	// Load images and segment colon
 	Setup(argv[1],inputOriginal,input,colon,gradientMagnitude);
 
