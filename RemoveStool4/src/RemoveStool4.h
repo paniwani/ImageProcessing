@@ -13,7 +13,7 @@
 // Math
 #include <vnl/vnl_math.h>
 #include <vnl/vnl_real_polynomial.h>
-#include <vnl/algo/vnl_rpoly_roots.h>
+//#include <vnl/algo/vnl_rpoly_roots.h>
 #include <vnl/vnl_erf.h>
 #include <vnl/vnl_matrix.h>
 #include <vnl/algo/vnl_qr.h>
@@ -43,6 +43,9 @@
 #include <itkRegionOfInterestImageFilter.h>
 #include <itkAddConstantToImageFilter.h>
 #include <itkMultiplyByConstantImageFilter.h>
+#include <itkDirectionalGradientImageFilter.h>
+#include <itkDirectionalGradientImageFilter2.h>
+#include <otbScalarImageToTexturesFilter2.h>
 
 
 #define CDF_SIGMA 0.27
@@ -67,6 +70,9 @@ typedef itk::FixedArray<float,3>													ArrayType;
 
 typedef itk::Image<PixelType, 3>													ImageType;
 typedef itk::Image<BytePixelType, 3>												ByteImageType;
+typedef itk::Image<PixelType, 2>													ImageType2D;
+typedef itk::Image<BytePixelType, 2>												ByteImageType2D;
+
 //typedef itk::Image< short int, 3>													ShortImageType;
 typedef itk::Image< float, 3>														FloatImageType;
 typedef itk::Image< VoxelType, 3>													VoxelImageType;
@@ -86,8 +92,8 @@ void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::
 PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon);
 void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissue_stool_threshold );
 void Dilate(ByteImageType::Pointer &img, unsigned int radius);
-
-vnl_matrix<float> GetNeighbor(ArrayImageType::Pointer partialVector, ImageType::IndexType index);
+void DirectionalGradient(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap);
+void TextureAnalysis(ImageType::Pointer &input);
 
 // Global vars
 ImageType::RegionType OLDREGION;

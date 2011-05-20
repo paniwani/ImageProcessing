@@ -1,7 +1,7 @@
 #include "RemoveStool4.h"
 #include "io.cxx"
 #include "scattercorrection.cxx"
-#include "QR.cxx"
+//#include "QR.cxx"
 #include "EM.cxx"
 //#include "HessianFunctions.cxx"
 
@@ -47,14 +47,147 @@ int main(int argc, char * argv[])
 
 	Write(vmap,"scatter_vmap.nii");
 
-	// Determine boundary types
-	partial = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
+	DirectionalGradient(input, colon, vmap);
 
-	// EM
-	EM(partial,colon,input);
+	//TextureAnalysis(input);
+
+	//// Determine boundary types
+	//partial = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
+
+	//// EM
+	//EM(partial,colon,input);
 
 	system("pause");
 	return 0;
+}
+
+void TextureAnalysis(ImageType::Pointer &input)
+{
+	// get gradient (no smoothing)
+	typedef itk::GradientMagnitudeImageFilter<ImageType,FloatImageType> GradientMagnitudeImageFilterType;
+	GradientMagnitudeImageFilterType::Pointer gmFilter = GradientMagnitudeImageFilterType::New();
+	gmFilter->SetInput(input);
+
+	// threshold gradient
+	typedef itk::BinaryThresholdImageFilter<FloatImageType,ByteImageType> BinaryThresholdImageFilterType;
+	BinaryThresholdImageFilterType::Pointer thresholdFilter = BinaryThresholdImageFilterType::New();
+	thresholdFilter->SetInsideValue(1);
+	thresholdFilter->SetOutsideValue(0);
+	thresholdFilter->SetLowerThreshold(400);
+	thresholdFilter->SetInput(gmFilter->GetOutput());
+	thresholdFilter->Update();
+
+	// write mask
+	typedef itk::MultiplyByConstantImageFilter<ByteImageType,unsigned char,ByteImageType> MultiplyFilterType;
+	MultiplyFilterType::Pointer multiplier = MultiplyFilterType::New();
+	multiplier->SetInput(thresholdFilter->GetOutput());
+	multiplier->SetConstant(255);
+	multiplier->Update();
+	Write(multiplier->GetOutput(),"mask.nii");
+
+	// get image minimum and maximum
+	typedef itk::MinimumMaximumImageCalculator<ImageType> MinimumMaximumImageCalculatorType;
+	MinimumMaximumImageCalculatorType::Pointer imageCalc = MinimumMaximumImageCalculatorType::New();
+	imageCalc->SetImage(input);
+	imageCalc->ComputeMinimum();
+	imageCalc->ComputeMaximum();
+
+	typedef otb::ScalarImageToTexturesFilter2<ImageType,FloatImageType,ByteImageType> TextureFilterType;
+	TextureFilterType::Pointer textureFilter = TextureFilterType::New();
+	textureFilter->SetInput(input);
+	textureFilter->SetMaskImage(thresholdFilter->GetOutput());
+	textureFilter->SetInputImageMinimum(imageCalc->GetMinimum());
+	textureFilter->SetInputImageMaximum(imageCalc->GetMaximum());
+	
+	ImageType::OffsetType offset;
+	offset[0] = 1;
+	offset[1] = 0;
+	offset[2] = 0;
+
+	textureFilter->SetOffset(offset);
+
+	ImageType::SizeType radius;
+	radius[0] = 1;
+	radius[1] = 1;
+	radius[2] = 0;
+
+	textureFilter->SetRadius(radius);
+	textureFilter->Update();
+
+	for (int i=0; i<8; i++)
+	{
+		std::stringstream ss;
+		ss << "texture" << i << ".nii";
+		Write(textureFilter->GetOutput(i),ss.str());
+	}
+
+}
+
+void DirectionalGradient(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap)
+{
+	// create binary tissue mask
+	ImageType::Pointer mask = ImageType::New();
+	mask->SetSpacing(input->GetSpacing());
+	mask->SetRegions(REGION);
+	mask->Allocate();
+	mask->FillBuffer(0);
+	
+	IteratorType maskIt(mask,REGION);
+	VoxelIteratorType vmapIt(vmap,REGION);
+
+	for (maskIt.GoToBegin(), vmapIt.GoToBegin(); !maskIt.IsAtEnd(); ++maskIt, ++vmapIt)
+	{
+		if (vmapIt.Get() == Air)
+			maskIt.Set(1);
+	}
+
+	//// keep only largest component
+	//typedef itk::BinaryShapeKeepNObjectsImageFilter<ByteImageType> BinaryShapeKeepNObjectsImageFilterType;
+	//BinaryShapeKeepNObjectsImageFilterType::Pointer keeper = BinaryShapeKeepNObjectsImageFilterType::New();
+	//keeper->SetInput(mask);
+	//keeper->SetAttribute("Size");
+	//keeper->SetBackgroundValue(0);
+	//keeper->SetForegroundValue(1);
+	//keeper->SetNumberOfObjects(1);
+	//keeper->Update();
+	//mask = keeper->GetOutput();
+
+	// write mask
+	typedef itk::MultiplyByConstantImageFilter<ImageType,ImageType::PixelType,ImageType> MultiplyByConstantImageFilterType;
+	MultiplyByConstantImageFilterType::Pointer multiplier = MultiplyByConstantImageFilterType::New();
+	multiplier->SetInput(mask);
+	multiplier->SetConstant(255);
+	multiplier->Update();
+	Write(multiplier->GetOutput(),"mask.nii");
+
+	/*typedef itk::DirectionalGradientImageFilter2<ImageType2D,ImageType2D,ImageType2D> DirectionalGradientImageFilterType2D;
+	DirectionalGradientImageFilterType2D::Pointer dgFilter2D = DirectionalGradientImageFilterType2D::New();
+	dgFilter2D->SetOutsideValue(1);
+
+	typedef itk::SliceBySliceImageFilter<ImageType,ImageType,DirectionalGradientImageFilterType2D> SliceBySliceImageFilterType;
+	SliceBySliceImageFilterType::Pointer sliceFilter = SliceBySliceImageFilterType::New();
+	sliceFilter->SetFilter(dgFilter2D);
+	sliceFilter->SetInput(input);
+	sliceFilter->SetInput(1,mask);
+	sliceFilter->Update();
+	Write(sliceFilter->GetOutput(),"dgSlice.nii");*/
+
+
+
+
+	// directional gradient
+	typedef itk::DirectionalGradientImageFilter2<ImageType,ImageType,ImageType> DirectionalGradientImageFilterType;
+	DirectionalGradientImageFilterType::Pointer dgFilter = DirectionalGradientImageFilterType::New();
+	dgFilter->SetInput(input);
+	dgFilter->SetMaskImage(mask);
+	dgFilter->SetOutsideValue(1); //distance to mask values
+	dgFilter->Update();
+	Write(dgFilter->GetOutput(),"dg.nii");
+
+
+
+
+	
 }
 
 void Dilate(ByteImageType::Pointer &img, unsigned int radius)
