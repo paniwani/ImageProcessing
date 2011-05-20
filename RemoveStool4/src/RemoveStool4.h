@@ -44,8 +44,8 @@
 #include <itkAddConstantToImageFilter.h>
 #include <itkMultiplyByConstantImageFilter.h>
 #include <itkDirectionalGradientImageFilter.h>
-#include <itkDirectionalGradientImageFilter2.h>
-#include <otbScalarImageToTexturesFilter2.h>
+//#include <itkDirectionalGradientImageFilter2.h>
+//#include <otbScalarImageToTexturesFilter2.h>
 
 
 #define CDF_SIGMA 0.27
@@ -93,7 +93,7 @@ PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType
 void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissue_stool_threshold );
 void Dilate(ByteImageType::Pointer &img, unsigned int radius);
 void DirectionalGradient(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap);
-void TextureAnalysis(ImageType::Pointer &input);
+//void TextureAnalysis(ImageType::Pointer &input);
 
 // Global vars
 ImageType::RegionType OLDREGION;
