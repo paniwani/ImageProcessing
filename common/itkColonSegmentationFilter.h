@@ -78,9 +78,8 @@ public:
 					  
 
   typedef typename itk::Image<unsigned char, InputImageDimension> 				ByteImageType;
-
-  typedef itk::ImageRegionIteratorWithIndex< InputImageType > 			InputIteratorType;	
-  typedef itk::ImageRegionIteratorWithIndex< OutputImageType > 			IteratorType;
+  typedef itk::ImageRegionIteratorWithIndex< InputImageType > 					InputIteratorType;	
+  typedef itk::ImageRegionIteratorWithIndex< OutputImageType > 					IteratorType;
   typedef itk::ImageRegionIteratorWithIndex< ByteImageType >  					ByteIteratorType;
 					  
 

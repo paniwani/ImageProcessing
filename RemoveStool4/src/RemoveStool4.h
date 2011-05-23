@@ -44,7 +44,7 @@
 #include <itkAddConstantToImageFilter.h>
 #include <itkMultiplyByConstantImageFilter.h>
 #include <itkDirectionalGradientImageFilter.h>
-//#include <itkDirectionalGradientImageFilter2.h>
+#include <itkDirectionalGradientImageFilter2.h>
 //#include <otbScalarImageToTexturesFilter2.h>
 
 

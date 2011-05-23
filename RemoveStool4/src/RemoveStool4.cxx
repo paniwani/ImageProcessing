@@ -138,66 +138,12 @@ void DirectionalGradient(ImageType::Pointer &input, ByteImageType::Pointer &colo
 	for (maskIt.GoToBegin(), vmapIt.GoToBegin(); !maskIt.IsAtEnd(); ++maskIt, ++vmapIt)
 	{
 		if (vmapIt.Get() == Air)
-			maskIt.Set(1);
+			maskIt.Set(255);
 	}
 
-	//// keep only largest component
-	//typedef itk::BinaryShapeKeepNObjectsImageFilter<ByteImageType> BinaryShapeKeepNObjectsImageFilterType;
-	//BinaryShapeKeepNObjectsImageFilterType::Pointer keeper = BinaryShapeKeepNObjectsImageFilterType::New();
-	//keeper->SetInput(mask);
-	//keeper->SetAttribute("Size");
-	//keeper->SetBackgroundValue(0);
-	//keeper->SetForegroundValue(1);
-	//keeper->SetNumberOfObjects(1);
-	//keeper->Update();
-	//mask = keeper->GetOutput();
-
-	// write mask
-	typedef itk::MultiplyByConstantImageFilter<ByteImageType,ByteImageType::PixelType,ByteImageType> MultiplyByConstantImageFilterType;
-	MultiplyByConstantImageFilterType::Pointer multiplier = MultiplyByConstantImageFilterType::New();
-	multiplier->SetInput(mask);
-	multiplier->SetConstant(255);
-	multiplier->Update();
-	Write(multiplier->GetOutput(),"airMask.nii");
-
-	/*typedef itk::DirectionalGradientImageFilter2<ImageType2D,ImageType2D,ImageType2D> DirectionalGradientImageFilterType2D;
-	DirectionalGradientImageFilterType2D::Pointer dgFilter2D = DirectionalGradientImageFilterType2D::New();
-	dgFilter2D->SetOutsideValue(1);
-
-	typedef itk::SliceBySliceImageFilter<ImageType,ImageType,DirectionalGradientImageFilterType2D> SliceBySliceImageFilterType;
-	SliceBySliceImageFilterType::Pointer sliceFilter = SliceBySliceImageFilterType::New();
-	sliceFilter->SetFilter(dgFilter2D);
-	sliceFilter->SetInput(input);
-	sliceFilter->SetInput(1,mask);
-	sliceFilter->Update();
-	Write(sliceFilter->GetOutput(),"dgSlice.nii");*/
-
-	// directional gradient
-	typedef itk::DirectionalGradientImageFilter<ImageType,ByteImageType,ImageType> DirectionalGradientImageFilterType;
-	DirectionalGradientImageFilterType::Pointer dgFilter = DirectionalGradientImageFilterType::New();
-	dgFilter->SetInput(input);
-	dgFilter->SetSigma(input->GetSpacing()[0]);
-	dgFilter->SetMaskImage(mask);
-	dgFilter->SetOutsideValue(1); //distance to mask values
-	dgFilter->Update();
-	Write(dgFilter->GetOutput(),"dg.nii");
-
-	
-	/*ByteImageType::Pointer umask = ByteImageType::New();
-	umask->SetSpacing(input->GetSpacing());
-	umask->SetRegions(REGION);
-	umask->Allocate();
-	umask->FillBuffer(0);
-	ByteIteratorType umaskIt(umask,REGION);
-
-	for (umaskIt.GoToBegin(), vmapIt.GoToBegin(); !umaskIt.IsAtEnd(); ++umaskIt, ++vmapIt)
-	{
-		if (vmapIt.Get() == Unclassified)
-			umaskIt.Set(1);
-	}*/
+	Write(mask,"airMask.nii");
 
 	// mask dg adjacent to air only
-	mask = multiplier->GetOutput();
 
 	typedef itk::ImageDuplicator<ByteImageType> ImageDuplicatorType;
 	ImageDuplicatorType::Pointer duplicator = ImageDuplicatorType::New();
@@ -205,7 +151,7 @@ void DirectionalGradient(ImageType::Pointer &input, ByteImageType::Pointer &colo
 	duplicator->Update();
 	ByteImageType::Pointer maskDilated = duplicator->GetOutput();
 
-	Dilate(maskDilated,1);
+	Dilate(maskDilated,3);
 	Write(maskDilated,"airMaskDilated.nii");
 
 	typedef itk::SubtractImageFilter<ByteImageType,ByteImageType,ByteImageType> SubtractImageFilterType;
@@ -213,12 +159,44 @@ void DirectionalGradient(ImageType::Pointer &input, ByteImageType::Pointer &colo
 	subtracter->SetInput1(maskDilated);
 	subtracter->SetInput2(mask);
 	subtracter->Update();
-	Write(subtracter->GetOutput(),"airDilatedOnly.nii");
+	ByteImageType::Pointer airBorder = subtracter->GetOutput();
+
+	// only see dg in unclassified air border
+	ByteIteratorType airBorderIt(airBorder,REGION);
+
+	for (airBorderIt.GoToBegin(), vmapIt.GoToBegin(); !airBorderIt.IsAtEnd(); ++airBorderIt, ++vmapIt)
+	{
+		if (vmapIt.Get() != Unclassified)
+			airBorderIt.Set(0);
+	}
+
+	Write(airBorder,"airBorder.nii");
+
+	// directional gradient
+	typedef itk::DirectionalGradientImageFilter2<ImageType,ByteImageType,ImageType> DirectionalGradientImageFilterType;
+	DirectionalGradientImageFilterType::Pointer dgFilter = DirectionalGradientImageFilterType::New();
+	dgFilter->SetInput(input);
+	//dgFilter->SetSigma(input->GetSpacing()[0]);
+	dgFilter->SetScale(-1);
+	dgFilter->SetMaskImage(mask);
+	dgFilter->SetOutsideValue(255);
+	dgFilter->Update();
+	ImageType::Pointer dg = dgFilter->GetOutput();
+	IteratorType dgIt(dg,REGION);
+
+	// set -ve to 0
+	for (dgIt.GoToBegin(); !dgIt.IsAtEnd(); ++dgIt)
+	{
+		if (dgIt.Get() < 0)
+			dgIt.Set(0);
+	}
+
+	Write(dg,"dg.nii");
 	
 	typedef itk::MaskImageFilter<ImageType,ByteImageType,ImageType> MaskImageFilterType;
 	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
-	masker->SetInput1(dgFilter->GetOutput());
-	masker->SetInput2(subtracter->GetOutput());
+	masker->SetInput1(dg);
+	masker->SetInput2(airBorder);
 	masker->Update();
 	Write(masker->GetOutput(),"dgMasked.nii");
 	
@@ -228,10 +206,10 @@ void Dilate(ByteImageType::Pointer &img, unsigned int radius)
 {
 	StructuringElementType se;
 	
-	ByteImageType::SizeType rad;
+	/*ByteImageType::SizeType rad;
 	rad.Fill(0);
 	rad[0] = radius;
-	rad[1] = radius;
+	rad[1] = radius;*/
 
 	se.SetRadius( radius );
 	se.CreateStructuringElement();

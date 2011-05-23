@@ -71,8 +71,6 @@ typename T::Pointer ReadDicom( std::string path, int slice1=0, int slice2=-1)
 
 	*/
 	
-	
-	
 	// Create regex finder to match file names
 	itk::RegularExpressionSeriesFileNames::Pointer fit = itk::RegularExpressionSeriesFileNames::New();
 	
@@ -82,13 +80,18 @@ typename T::Pointer ReadDicom( std::string path, int slice1=0, int slice2=-1)
 
 	std::vector<std::string> names = fit->GetFileNames();
 	
+	if (T::ImageDimension == 2 && slice2 == -1)
+	{
+		names.erase( names.begin(), names.begin()+slice1-1 );
+		names.erase( names.begin()+1, names.end() );
+	}
+	
 	if (slice2 > 0 && slice2 > slice1)
 	{
 		names.erase( names.begin(), names.begin()+slice1);
 		names.erase( names.begin()+slice2-slice1, names.end() );
 	}
 	
-
     reader->SetFileNames( names );
 	try
 	{

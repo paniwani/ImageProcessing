@@ -48,21 +48,15 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 	// Typedefs
 	typedef itk::BinaryMedianImageFilter< ByteImageType, ByteImageType > BinaryMedianFilterType;
 
-	typedef Image< unsigned char, 2 > ByteImageType2D;
-
-	typedef itk::BinaryShapeOpeningImageFilter< ByteImageType2D > BinaryShapeOpeningImageFilter2D;
-
-	typedef itk::SliceBySliceImageFilter< ByteImageType, ByteImageType, BinaryShapeOpeningImageFilter2D > SliceBySliceImageFilterBackgroundType;
-
 	typedef itk::ConnectedThresholdImageFilter<ByteImageType, ByteImageType> ConnectedThresholdImageFilterByteType;
 
 	typedef itk::BinaryBallStructuringElement<unsigned char, InputImageDimension> StructuringElementType;
 
 	typedef itk::BinaryDilateImageFilter< ByteImageType, ByteImageType, StructuringElementType> DilateFilterType;
 
-	typedef itk::ConnectedThresholdImageFilter< ImageType, ByteImageType> ConnectedThresholdImageFilterType;
+	typedef itk::ConnectedThresholdImageFilter< InputImageType, ByteImageType> ConnectedThresholdImageFilterType;
 
-	typedef itk::IsolatedConnectedImageFilter< ImageType, ByteImageType > IsolatedConnectedImageFilterType;
+	typedef itk::IsolatedConnectedImageFilter< InputImageType, ByteImageType > IsolatedConnectedImageFilterType;
 
 	typedef itk::BinaryShapeKeepNObjectsImageFilter< ByteImageType > BinaryShapeKeepNObjectsImageFilterType;
 		
@@ -108,19 +102,38 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 
 	// Remove background air component
 	// Remove components in 2D that are touching XY slice border [REQUIRES 3D INPUT]
-	
-	BinaryShapeOpeningImageFilter2D::Pointer bkgFilter2D = BinaryShapeOpeningImageFilter2D::New();
-	bkgFilter2D->SetAttribute("SizeOnBorder");
-	bkgFilter2D->SetBackgroundValue(0);
-	bkgFilter2D->SetForegroundValue(255);
-	bkgFilter2D->SetLambda(0);
-	bkgFilter2D->SetReverseOrdering(true);
-	
-	SliceBySliceImageFilterBackgroundType::Pointer bkgRemover = SliceBySliceImageFilterBackgroundType::New();
-	bkgRemover->SetInput( air );
-	bkgRemover->SetFilter( bkgFilter2D );
-	bkgRemover->Update();
-	air = bkgRemover->GetOutput();
+
+	if (InputImageDimension == 3)
+	{
+		typedef Image< unsigned char, 2 > ByteImageType2D;
+		typedef itk::BinaryShapeOpeningImageFilter< ByteImageType2D > BinaryShapeOpeningImageFilter2D;
+		typedef itk::SliceBySliceImageFilter< ByteImageType, ByteImageType, BinaryShapeOpeningImageFilter2D > SliceBySliceImageFilterBackgroundType;
+
+		BinaryShapeOpeningImageFilter2D::Pointer bkgFilter2D = BinaryShapeOpeningImageFilter2D::New();
+		bkgFilter2D->SetAttribute("SizeOnBorder");
+		bkgFilter2D->SetBackgroundValue(0);
+		bkgFilter2D->SetForegroundValue(255);
+		bkgFilter2D->SetLambda(0);
+		bkgFilter2D->SetReverseOrdering(true);
+		
+		SliceBySliceImageFilterBackgroundType::Pointer bkgRemover = SliceBySliceImageFilterBackgroundType::New();
+		bkgRemover->SetInput( air );
+		bkgRemover->SetFilter( bkgFilter2D );
+		bkgRemover->Update();
+		air = bkgRemover->GetOutput();
+	} else {
+		typedef itk::BinaryShapeOpeningImageFilter< ByteImageType > BinaryShapeOpeningImageFilter;
+		BinaryShapeOpeningImageFilter::Pointer bkgFilter = BinaryShapeOpeningImageFilter::New();
+		bkgFilter->SetInput( air );
+		bkgFilter->SetAttribute("SizeOnBorder");
+		bkgFilter->SetBackgroundValue(0);
+		bkgFilter->SetForegroundValue(255);
+		bkgFilter->SetLambda(0);
+		bkgFilter->SetReverseOrdering(true);
+		bkgFilter->Update();
+		air = bkgFilter->GetOutput();
+	}
+
 	air_iter = ByteIteratorType(air,region);
 
 	WriteITK(air,"air_no_bkg.nii");	
