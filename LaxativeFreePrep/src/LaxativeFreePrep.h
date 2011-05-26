@@ -27,13 +27,13 @@
 #include <itkSimpleContourExtractorImageFilter.h>
 #include <itkCurvesLevelSetImageFilter.h>
 
-#include "Typedef.h"
+//#include "Typedef.h"
 #include "utils.h"
 
 #include "itkLocalRoughnessImageFilter.h"
 
-#include <NIH_Algo_TextureAnalysis.h>
-#include <DynArray.h>
+//#include <NIH_Algo_TextureAnalysis.h>
+//#include <DynArray.h>
 
 
 #include <itkCastImageFilter.h>
@@ -60,8 +60,11 @@ enum VoxelType {
 	TissueStool=7,
     ThinStool=8
 };
+
+typedef unsigned char SSlice[512][512]; 
+
 //Pixel Type
-typedef Float4                                                              PixelType;
+typedef float                                                              PixelType;
 //CovariantVector Type
 typedef itk::CovariantVector<PixelType,3>                                     CovariantVectorType;
 typedef itk::Image<PixelType, 3>                                            ImageType;
@@ -138,7 +141,5 @@ void WriteITK(ByteImageType::Pointer image, char * name);
 
 template <class T> int solveNormalizedCubic (T r, T s, T t, T x[3]);
 template <class T> int solveCubic (T a, T b, T c, T d, T x[3]);
-
-typedef unsigned char SSlice[512][512]; 
 
 #endif  // LAXATIVE_FREE_PREP_H

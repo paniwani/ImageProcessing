@@ -46,6 +46,7 @@
 #include <itkDirectionalGradientImageFilter.h>
 #include <itkDirectionalGradientImageFilter2.h>
 //#include <otbScalarImageToTexturesFilter2.h>
+#include <time.h>
 
 
 #define CDF_SIGMA 0.27

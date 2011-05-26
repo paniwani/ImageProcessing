@@ -1,7 +1,7 @@
 #include "RemoveStool4.h"
 #include "io.cxx"
 #include "scattercorrection.cxx"
-//#include "QR.cxx"
+#include "QR.cxx"
 #include "EM.cxx"
 //#include "HessianFunctions.cxx"
 
@@ -13,6 +13,9 @@ int main(int argc, char * argv[])
 	*	- colon air set to 0?
 	*
 	*/
+
+	clock_t init,final;
+	init = clock();
 
 
 	if( argc < 2 )
@@ -47,15 +50,20 @@ int main(int argc, char * argv[])
 
 	Write(vmap,"scatter_vmap.nii");
 
-	DirectionalGradient(input, colon, vmap);
+	//DirectionalGradient(input, colon, vmap);
 
 	//TextureAnalysis(input);
 
 	//// Determine boundary types
-	//partial = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
+	partial = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
 
 	//// EM
 	//EM(partial,colon,input);
+
+	// end clock
+	final = clock() - init;
+
+	std::cout << (double) final / ((double) CLOCKS_PER_SEC) <<  " seconds" << std::endl;
 
 	system("pause");
 	return 0;

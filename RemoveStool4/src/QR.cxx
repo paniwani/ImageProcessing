@@ -3,31 +3,132 @@ float PolyDist(float X, vnl_real_polynomial poly, float x, float y)
     return sqrtf(vnl_math_sqr(X-x)+vnl_math_sqr(poly.evaluate(X)-y));
 }
 
+double cubeRoot(double x)
+{
+    if (x < 0)
+        return -pow(-x, 0.333333333333333);
+    else
+        return pow(x, 0.333333333333333);
+}
+
+// use cardano's formula
+std::vector<double> solveCubic(double a, double b, double c, double d)
+{
+	std::vector<double> out;
+
+    // find the discriminant
+    double f, g, h;
+    f = (3 * c / a - pow(b, 2) / pow(a, 2)) / 3;
+    g = (2 * pow(b, 3) / pow(a, 3) - 9 * b * c / pow(a, 2) + 27 * d / a) / 27;
+    h = pow(g, 2) / 4 + pow(f, 3) / 27;
+    // evaluate discriminant
+    if (f == 0 && g == 0 && h == 0)
+    {
+        // 3 equal roots
+        double x;
+        // when f, g, and h all equal 0 the roots can be found by the following line
+        x = -cubeRoot(d / a);
+        // print solutions
+        /*cout
+            << "x = " << endl
+            << " " << x << endl
+            << " " << x << endl
+            << " " << x << endl << endl;*/
+
+		out.push_back(x);
+    }
+    else if (h <= 0)
+    {
+        // 3 real roots
+        double q, i, j, k, l, m, n, p;
+        // complicated maths making use of the method
+        i = pow(pow(g, 2) / 4 - h, 0.5);
+        j = cubeRoot(i);
+        k = acos(-(g / (2 * i)));
+        m = cos(k / 3);
+        n = 1.73205080756888 * sin(k / 3);
+        p = -(b / (3 * a));
+        // print solutions
+        /*cout
+            << "x = " << endl
+            << " " << 2 * j * m + p << endl
+            << " " << -j * (m + n) + p << endl
+            << " " << -j * (m - n) + p << endl << endl;*/
+
+		out.push_back(2 * j * m + p);
+		out.push_back(-j * (m + n) + p);
+		out.push_back(-j * (m - n) + p);
+    }
+    else if (h > 0)
+    {
+        // 1 real root and 2 complex roots
+        double r, s, t, u, p;
+        // complicated maths making use of the method
+        r = -(g / 2) + pow(h, 0.5);
+        s = cubeRoot(r);
+        t = -(g / 2) - pow(h, 0.5);
+        u = cubeRoot(t);
+        p = -(b / (3 * a));
+        // print solutions
+        /*cout
+            << "x = " << endl
+            << " " << (s + u) + p << endl
+            << " " << -(s + u) / 2 + p << " +" << (s - u) * ROOTTHREE / 2 << "i" << endl
+            << " " << -(s + u) / 2 + p << " " << -(s - u) * ROOTTHREE / 2 << "i" << endl << endl;*/
+		out.push_back((s + u) + p);
+    }
+
+	return out;
+}
+
 float PolyMinDist(vnl_real_polynomial poly, float x, float y)
 {
-    double coefficients[4] ={
-		vnl_math_sqr(poly[0])*2,
-		poly[0]*3*poly[1],
-		(2*poly[0]*poly[2]-2*poly[0]*y+vnl_math_sqr(poly[1])+1),
-        poly[1]*poly[2]-poly[1]*y-x
-    };
-	
-    vnl_real_polynomial polyRoot(coefficients,4);
-    vnl_rpoly_roots rooter(polyRoot);
-    //rooter.compute();
-    vnl_vector<double> rRoots = rooter.realroots(0.0005);
-    int size = rRoots.size();
+	std::vector<double> rRoots = solveCubic(vnl_math_sqr(poly[0])*2,
+											poly[0]*3*poly[1],
+											(2*poly[0]*poly[2]-2*poly[0]*y+vnl_math_sqr(poly[1])+1),
+											 poly[1]*poly[2]-poly[1]*y-x
+											);
 
-	float distance = PolyDist(rRoots(0),poly,x,y);
-    for(int i=1;i<size;i++) {
-        float temp_dist=PolyDist(rRoots(i),poly,x,y);
+	int size = rRoots.size();
+
+	float distance = PolyDist(rRoots[0],poly,x,y);
+    
+	for(int i=1;i<size;i++) {
+        float temp_dist=PolyDist(rRoots[i],poly,x,y);
         if (distance>temp_dist) {
             distance=temp_dist;
         }
     }
-	//std::cerr<<distance<<std::endl;
+
     return distance;
 }
+
+
+//float PolyMinDist(vnl_real_polynomial poly, float x, float y)
+//{
+//    double coefficients[4] ={
+//		vnl_math_sqr(poly[0])*2,
+//		poly[0]*3*poly[1],
+//		(2*poly[0]*poly[2]-2*poly[0]*y+vnl_math_sqr(poly[1])+1),
+//        poly[1]*poly[2]-poly[1]*y-x
+//    };
+//	
+//    vnl_real_polynomial polyRoot(coefficients,4);
+//    vnl_rpoly_roots rooter(polyRoot);
+//    //rooter.compute();
+//    vnl_vector<double> rRoots = rooter.realroots(0.0005);
+//    int size = rRoots.size();
+//
+//	float distance = PolyDist(rRoots(0),poly,x,y);
+//    for(int i=1;i<size;i++) {
+//        float temp_dist=PolyDist(rRoots(i),poly,x,y);
+//        if (distance>temp_dist) {
+//            distance=temp_dist;
+//        }
+//    }
+//	//std::cerr<<distance<<std::endl;
+//    return distance;
+//}
 
 float ComputeSmax(float intensity[], float gradient_magnitude[], int size) {	
 	double Smax =0;

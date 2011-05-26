@@ -9,6 +9,12 @@ double neighbor_weight[3]={1,1,.5};
 double beta=.7;
 double weight_sum=2.5;
 
+int main()
+{
+	system("pause");
+	return 0;
+}
+
 double Probability(double Y, double mean, double variance,  double current_partial, double local_variance, double local_mean) {  
 	if (variance>0.01) {
 		if (local_variance>0.01) {
