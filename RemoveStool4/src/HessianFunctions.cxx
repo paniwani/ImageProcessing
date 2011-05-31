@@ -1,60 +1,60 @@
-void MeasureObjectness(ImageType::Pointer input)
-{
-	// test over sigma
-	// test scale by largest eigenvalue
-
-	ImageType::RegionType region = input->GetLargestPossibleRegion();
-	ImageType::SpacingType spacing = input->GetSpacing();
-
-	float sigma=0;
-
-	// Compute smoothed Hessian
-	HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
-	hessianFilter->SetInput(input);
-	hessianFilter->SetNormalizeAcrossScale(true);
-	hessianFilter->SetSigma(sigma);
-	hessianFilter->Update();
-
-	// Get object measures at each sigma
-	for (int i=0; i<2; i++)
-	{
-		sigma = spacing[0]*(i+1);
-
-		for (int m=0; m<3; m++) // object type
-		{
-			ObjectnessFilterType::Pointer objectnessFilter = ObjectnessFilterType::New();
-			objectnessFilter->SetInput(hessianFilter->GetOutput());
-			objectnessFilter->SetBrightObject(true);
-			objectnessFilter->SetObjectDimension(m);
-			objectnessFilter->SetScaleObjectnessMeasure(true);
-
-			objectnessFilter->Update();
-
-			std::stringstream ss;
-			ss << "sigma_" << sigma << "_";
-
-			switch (m)
-			{
-				case 0:
-					ss << "blob";
-					break;
-				case 1:
-					ss << "vessel";
-					break;
-				case 2:
-					ss << "plate";
-					break;
-			}
-
-			ss << "_scaled";
-
-			ss << ".hdr";
-
-			WriteITK(objectnessFilter->GetOutput(),ss.str());
-
-		}	
-	}
-}
+//void MeasureObjectness(ImageType::Pointer input)
+//{
+//	// test over sigma
+//	// test scale by largest eigenvalue
+//
+//	ImageType::RegionType region = input->GetLargestPossibleRegion();
+//	ImageType::SpacingType spacing = input->GetSpacing();
+//
+//	float sigma=0;
+//
+//	// Compute smoothed Hessian
+//	HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
+//	hessianFilter->SetInput(input);
+//	hessianFilter->SetNormalizeAcrossScale(true);
+//	hessianFilter->SetSigma(sigma);
+//	hessianFilter->Update();
+//
+//	// Get object measures at each sigma
+//	for (int i=0; i<2; i++)
+//	{
+//		sigma = spacing[0]*(i+1);
+//
+//		for (int m=0; m<3; m++) // object type
+//		{
+//			ObjectnessFilterType::Pointer objectnessFilter = ObjectnessFilterType::New();
+//			objectnessFilter->SetInput(hessianFilter->GetOutput());
+//			objectnessFilter->SetBrightObject(true);
+//			objectnessFilter->SetObjectDimension(m);
+//			objectnessFilter->SetScaleObjectnessMeasure(true);
+//
+//			objectnessFilter->Update();
+//
+//			std::stringstream ss;
+//			ss << "sigma_" << sigma << "_";
+//
+//			switch (m)
+//			{
+//				case 0:
+//					ss << "blob";
+//					break;
+//				case 1:
+//					ss << "vessel";
+//					break;
+//				case 2:
+//					ss << "plate";
+//					break;
+//			}
+//
+//			ss << "_scaled";
+//
+//			ss << ".hdr";
+//
+//			WriteITK(objectnessFilter->GetOutput(),ss.str());
+//
+//		}	
+//	}
+//}
 
 /*
 void ComputeSatoHessian(ImageType::Pointer input_aniso)

@@ -47,6 +47,11 @@
 #include <itkDirectionalGradientImageFilter2.h>
 //#include <otbScalarImageToTexturesFilter2.h>
 #include <time.h>
+#include <itkMorphologicalDistanceTransformImageFilter.h>
+#include <itkMorphologicalSignedDistanceTransformImageFilter.h>
+#include <itkBinaryContourImageFilter.h>
+#include <itkCurvesLevelSetImageFilter.h>
+#include <itkZeroCrossingImageFilter.h>
 
 
 #define CDF_SIGMA 0.27
@@ -94,7 +99,12 @@ PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType
 void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissue_stool_threshold );
 void Dilate(ByteImageType::Pointer &img, unsigned int radius);
 void DirectionalGradient(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap);
+ImageType::Pointer Subtraction(ImageType::Pointer &input, ByteImageType::Pointer &colon, ArrayImageType::Pointer &partial);
 //void TextureAnalysis(ImageType::Pointer &input);
+
+void HeteroStoolRemoval(ImageType::Pointer &cOutput, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap);
+FloatImageType::Pointer StandardDeviation(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius);
+void LevelSet(ImageType::Pointer &input, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradient);
 
 // Global vars
 ImageType::RegionType OLDREGION;

@@ -50,12 +50,20 @@ int main(int argc, char * argv[])
 
 	Write(vmap,"scatter_vmap.nii");
 
+	LevelSet(input,vmap,colon,gradientMagnitude);
+
 	//DirectionalGradient(input, colon, vmap);
 
 	//TextureAnalysis(input);
 
-	//// Determine boundary types
+	// Determine boundary types
 	partial = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
+
+	//ImageType::Pointer carstonOutput = Subtraction(input,colon,partial);
+
+	//HeteroStoolRemoval(carstonOutput,colon,vmap);
+
+
 
 	//// EM
 	EM(partial,colon,input);
@@ -67,6 +75,280 @@ int main(int argc, char * argv[])
 
 	system("pause");
 	return 0;
+}
+
+void LevelSet(ImageType::Pointer &input, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradientMagnitude)
+{
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	// get intial contour
+	// get tissue
+	ByteImageType::Pointer tissue = ByteImageType::New();
+	tissue->SetRegions(region);
+	tissue->SetSpacing(input->GetSpacing());
+	tissue->CopyInformation(input);
+	tissue->Allocate();
+	tissue->FillBuffer(0);
+	ByteIteratorType tissueIt(tissue,region);
+	ByteIteratorType colonIt(colon,region);
+	VoxelIteratorType vmapIt(vmap,region);
+
+	for (vmapIt.GoToBegin(), colonIt.GoToBegin(), tissueIt.GoToBegin(); !vmapIt.IsAtEnd(); ++vmapIt, ++tissueIt, ++colonIt)
+	{
+		if (vmapIt.Get() == Tissue)
+			tissueIt.Set(255);
+
+		if (colonIt.Get() == 0)
+			tissueIt.Set(255);
+	}
+
+	Write(tissue,"tissue.nii");
+
+	//// get contours
+	//typedef itk::BinaryContourImageFilter<ByteImageType,ByteImageType> ContourType;
+	//ContourType::Pointer contourFilter = ContourType::New();
+	//contourFilter->SetInput(tissue);
+	//contourFilter->SetForegroundValue(255);
+	//contourFilter->SetBackgroundValue(0);
+	//contourFilter->Update();
+	//ByteImageType::Pointer tissueContour = contourFilter->GetOutput();
+	//Write(tissueContour,"tissueContour.nii");
+
+	// get signed distance from tissue
+	typedef itk::MorphologicalSignedDistanceTransformImageFilter<ByteImageType,FloatImageType> DistanceType;
+	DistanceType::Pointer dFilter = DistanceType::New();
+	dFilter->SetInput(tissue);
+	dFilter->SetOutsideValue(255);
+	dFilter->Update();
+	Write(dFilter->GetOutput(),"distanceTissue.nii");
+
+	// get zero crossing
+	typedef itk::ZeroCrossingImageFilter<FloatImageType,ByteImageType> ZeroCrossingType;
+	ZeroCrossingType::Pointer crossingFilter = ZeroCrossingType::New();
+	crossingFilter->SetInput(dFilter->GetOutput());
+	crossingFilter->Update();
+	Write(crossingFilter->GetOutput(),"dzc.nii");
+
+	// get edge potential map
+	FloatImageType::Pointer ep = FloatImageType::New();
+	ep->SetRegions(region);
+	ep->SetSpacing(input->GetSpacing());
+	ep->CopyInformation(input);
+	ep->Allocate();
+	ep->FillBuffer(0);
+	FloatIteratorType epIt(ep,region);
+	FloatIteratorType gIt(gradientMagnitude,region);
+
+	for (gIt.GoToBegin(), epIt.GoToBegin(); !gIt.IsAtEnd(); ++gIt, ++epIt)
+	{
+		epIt.Set( 1 / ( 1 + gIt.Get() ) );
+	}
+
+	Write(ep,"edgePotential.nii");
+
+	typedef itk::CurvesLevelSetImageFilter< FloatImageType, FloatImageType > CurvesFilterType;
+	CurvesFilterType::Pointer curvesFilter = CurvesFilterType::New();
+	curvesFilter->SetInput( dFilter->GetOutput() );
+	curvesFilter->SetFeatureImage( ep );
+	curvesFilter->SetPropagationScaling( 1 );
+	curvesFilter->SetCurvatureScaling( 0.5 );
+	curvesFilter->SetAdvectionScaling( 0.4 );
+	curvesFilter->SetNumberOfIterations(50);
+	curvesFilter->SetNumberOfThreads(2);
+	curvesFilter->Update();
+
+	Write(curvesFilter->GetOutput(),"curves.nii");
+
+	crossingFilter = ZeroCrossingType::New();
+	crossingFilter->SetInput(dFilter->GetOutput());
+	crossingFilter->Update();
+	Write(crossingFilter->GetOutput(),"lzc.nii");
+
+}
+
+void HeteroStoolRemoval(ImageType::Pointer &cOutput, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap)
+{
+	ImageType::RegionType region = cOutput->GetLargestPossibleRegion();
+
+	// get air mask
+	ByteImageType::Pointer air = ByteImageType::New();
+	air->SetRegions(region);
+	air->SetSpacing(cOutput->GetSpacing());
+	air->Allocate();
+	air->FillBuffer(0);
+
+	IteratorType cOutputIt(cOutput,region);
+	ByteIteratorType airIt(air,region);
+
+	for (cOutputIt.GoToBegin(), airIt.GoToBegin(); !airIt.IsAtEnd(); ++cOutputIt, ++airIt)
+	{
+		if (cOutputIt.Get() < -600)
+			airIt.Set(255);
+	}
+
+	Write(air,"air.nii");
+
+	// remove bkg air
+	typedef itk::BinaryShapeOpeningImageFilter< ByteImageType2D > BinaryShapeOpeningImageFilter2D;
+	typedef itk::SliceBySliceImageFilter< ByteImageType, ByteImageType, BinaryShapeOpeningImageFilter2D > SliceBySliceImageFilterBackgroundType;
+
+	BinaryShapeOpeningImageFilter2D::Pointer bkgFilter2D = BinaryShapeOpeningImageFilter2D::New();
+	bkgFilter2D->SetAttribute("SizeOnBorder");
+	bkgFilter2D->SetBackgroundValue(0);
+	bkgFilter2D->SetForegroundValue(255);
+	bkgFilter2D->SetLambda(0);
+	bkgFilter2D->SetReverseOrdering(true);
+	
+	SliceBySliceImageFilterBackgroundType::Pointer bkgRemover = SliceBySliceImageFilterBackgroundType::New();
+	bkgRemover->SetInput( air );
+	bkgRemover->SetFilter( bkgFilter2D );
+	bkgRemover->Update();
+	air = bkgRemover->GetOutput();
+
+	Write(air,"air2.nii");
+
+	// get distance map from air
+	typedef itk::MorphologicalDistanceTransformImageFilter<ByteImageType,FloatImageType> DistanceType;
+	DistanceType::Pointer distanceFilter = DistanceType::New();
+	distanceFilter->SetInput(air);
+	distanceFilter->SetOutsideValue(255);
+	distanceFilter->Update();
+	FloatImageType::Pointer airDist = distanceFilter->GetOutput();
+	FloatIteratorType airDistIt(airDist,region);
+
+	// set distance cutoff for full tissue
+	float distCutoff = 3;
+
+	for (airDistIt.GoToBegin(); !airDistIt.IsAtEnd(); ++airDistIt)
+	{
+		if (airDistIt.Get() > distCutoff)
+			airDistIt.Set(distCutoff); 
+	}	
+	
+	Write(airDist,"airDist.nii");
+
+	// get sd
+	FloatImageType::Pointer sd = StandardDeviation(cOutput,colon,2);
+	FloatIteratorType sdIt(sd,region);
+	Write(sd,"sd.nii");
+
+	float sdCutoff = 350;
+
+	// set full tissue if neighboring full tissue and low sd
+	typedef itk::ImageDuplicator<FloatImageType> DuplicatorType;
+	DuplicatorType::Pointer duplicator = DuplicatorType::New();
+	duplicator->SetInputImage(airDist);
+	duplicator->Update();
+	FloatImageType::Pointer airDist2 = duplicator->GetOutput();
+	FloatIteratorType airDist2It(airDist2,region);
+
+	typedef itk::NeighborhoodIterator<FloatImageType> NeighborhoodIteratorType;
+	FloatImageType::SizeType radius;
+	radius.Fill(1);
+	NeighborhoodIteratorType anIt(radius,airDist,region);
+
+	for (anIt.GoToBegin(), sdIt.GoToBegin(), airDist2It.GoToBegin(); !anIt.IsAtEnd(); ++anIt, ++sdIt, ++airDist2It)
+	{
+		if (anIt.GetCenterPixel() < distCutoff && sdIt.Get() < sdCutoff)
+		{
+			for (unsigned int i=0; i<anIt.Size(); i++)
+			{
+				if (anIt.GetPixel(i) >= distCutoff)
+				{
+					airDist2It.Set(distCutoff);
+					break;
+				}
+			}
+		}
+	}
+
+	Write(airDist2,"airDist2.nii");
+
+}
+
+FloatImageType::Pointer StandardDeviation(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius)
+{
+	// get region
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	// set radius
+	ImageType::SizeType rad;
+	rad.Fill(radius);
+
+	// allocate output image
+	FloatImageType::Pointer out = FloatImageType::New();
+	out->SetSpacing(input->GetSpacing());
+	out->SetRegions(region);
+	out->Allocate();
+	out->FillBuffer(0);
+
+	// iterate image
+	FloatIteratorType outIt(out,region);
+	ByteIteratorType maskIt(mask,region);
+	
+	typedef itk::NeighborhoodIterator<ImageType> NeighborhoodIteratorType;
+	NeighborhoodIteratorType nIt(rad,input,region);
+
+	for (nIt.GoToBegin(), outIt.GoToBegin(), maskIt.GoToBegin(); !nIt.IsAtEnd(); ++nIt, ++outIt, ++maskIt)
+	{
+		// inside mask
+		if (maskIt.Get() != 0)
+		{
+			float mean = 0;
+			float std = 0;
+
+			// get mean
+			for (int i=0; i<nIt.Size(); i++)
+			{
+				mean += (float) nIt.GetPixel(i);
+			}
+
+			mean /= (float) nIt.Size();
+
+			//std::cout << mean << std::endl;
+
+			// get standard deviation
+			for (int i=0; i<nIt.Size(); i++)
+			{
+				std += ( (float) nIt.GetPixel(i) - mean ) * ( (float) nIt.GetPixel(i) - mean );
+			}
+
+			std /= ( (float) nIt.Size()-1);
+			std = sqrt(std);
+
+			outIt.Set(std);
+		}
+	}
+
+	return out;
+}
+
+ImageType::Pointer Subtraction(ImageType::Pointer &input, ByteImageType::Pointer &colon, ArrayImageType::Pointer &partial)
+{
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	typedef itk::ImageDuplicator<ImageType> DuplicatorType;
+	DuplicatorType::Pointer duplicator = DuplicatorType::New();
+	duplicator->SetInputImage(input);
+	duplicator->Update();
+	ImageType::Pointer input2 = duplicator->GetOutput();
+
+	IteratorType inputIt(input,region);
+	IteratorType input2It(input2,region);
+	ByteIteratorType colonIt(colon,region);
+	ArrayIteratorType partialIt(partial,region);
+
+	for (inputIt.GoToBegin(), input2It.GoToBegin(), colonIt.GoToBegin(), partialIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++input2It, ++colonIt, ++partialIt)
+	{
+		if (colonIt.Get() != 0)
+		{
+			input2It.Set( partialIt.Get()[1] * ( inputIt.Get() + 1000 ) - 1000 );	
+		}
+	}
+
+	Write(input2,"carstonOutput.nii");
+
+	return input2;
 }
 
 //void TextureAnalysis(ImageType::Pointer &input)

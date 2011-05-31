@@ -144,7 +144,7 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
 	ImageType::SpacingType spacing = input->GetSpacing();
 	
 	// Compute iterations of the Maximization Algorithm
-    for (int emNum=0;emNum<1;emNum++) // used 20 in original test case
+    for (int emNum=0;emNum<20;emNum++) // used 20 in original test case
 	{
 		double sum_temp[3]={0,0,0};
         double variance_temp[3]={0,0,0};
