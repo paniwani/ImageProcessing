@@ -20,9 +20,17 @@
 #include <itkDivideByConstantImageFilter.h>
 #include <itkAddImageFilter.h>
 
-//void Crop(ImageType::Pointer &input, ByteImageType::Pointer &colon);
-//ImageType::Pointer StandardDeviation(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius);
-//ImageType::Pointer Range(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius);
+typedef float PixelType;
+
+const unsigned int Dimension = 2;
+
+typedef itk::Image<PixelType,Dimension> ImageType;
+typedef itk::Image<unsigned char,Dimension> ByteImageType;
+typedef itk::ImageRegionIteratorWithIndex<ImageType> IteratorType;
+typedef itk::ImageRegionIteratorWithIndex<ByteImageType> ByteIteratorType;
+
+ImageType::Pointer StandardDeviation(ImageType::Pointer &input, unsigned int radius);
+ImageType::Pointer Range(ImageType::Pointer &input, unsigned int radius);
 
 int main(int argc, char * argv[])
 {
@@ -39,7 +47,7 @@ int main(int argc, char * argv[])
 	init = clock();	
 
 	// load image
-	ImageType::Pointer input = ReadDicom <ImageType> (argv[1],85,90);
+	ImageType::Pointer input = ReadDicom <ImageType> (argv[1],85);
 	WriteITK <ImageType> (input, "inputOriginal.nii");
 
 	// set radius
@@ -50,12 +58,12 @@ int main(int argc, char * argv[])
 	ImageType::IndexType cropIndex;
 	cropIndex[0] = 350;
 	cropIndex[1] = 230;
-	cropIndex[2] = 0;
+	//cropIndex[2] = 0;
 
 	ImageType::SizeType cropSize;
 	cropSize[0] = 50;
 	cropSize[1] = 50;
-	cropSize[2] = inputSize[2];
+	//cropSize[2] = inputSize[2];
 
 	ImageType::RegionType cropRegion;
 	cropRegion.SetIndex(cropIndex);
@@ -116,76 +124,74 @@ int main(int argc, char * argv[])
 	WriteITK <ImageType> (input,ss.str());
 	*/
 
-	//// get sobel
-	//typedef itk::SobelEdgeDetectionImageFilter<ImageType,ImageType> SobelEdgeDetectionImageFilterType;
-	//SobelEdgeDetectionImageFilterType::Pointer sobelFilter = SobelEdgeDetectionImageFilterType::New();
-	//sobelFilter->SetInput(input);
-	//sobelFilter->Update();
-	//WriteITK <ImageType> (sobelFilter->GetOutput(),"sobel.nii");
+	// get sobel
+	typedef itk::SobelEdgeDetectionImageFilter<ImageType,ImageType> SobelEdgeDetectionImageFilterType;
+	SobelEdgeDetectionImageFilterType::Pointer sobelFilter = SobelEdgeDetectionImageFilterType::New();
+	sobelFilter->SetInput(input);
+	sobelFilter->Update();
+	WriteITK <ImageType> (sobelFilter->GetOutput(),"sobel.nii");
 
-	//// get gradient
-	//typedef itk::GradientMagnitudeImageFilter<ImageType,ImageType> GradientMagnitudeImageFilterType;
-	//GradientMagnitudeImageFilterType::Pointer gmFilter = GradientMagnitudeImageFilterType::New();
-	//gmFilter->SetInput(input);
-	//gmFilter->Update();
-	//WriteITK <ImageType> (gmFilter->GetOutput(),"gm.nii");
+	// get gradient
+	typedef itk::GradientMagnitudeImageFilter<ImageType,ImageType> GradientMagnitudeImageFilterType;
+	GradientMagnitudeImageFilterType::Pointer gmFilter = GradientMagnitudeImageFilterType::New();
+	gmFilter->SetInput(input);
+	gmFilter->Update();
+	WriteITK <ImageType> (gmFilter->GetOutput(),"gm.nii");
 
-	//// get gradient smoothed
-	//typedef itk::GradientMagnitudeRecursiveGaussianImageFilter<ImageType> GradientMagnitudeRecursiveGaussianImageFilterType;
-	//GradientMagnitudeRecursiveGaussianImageFilterType::Pointer gsmFilter = GradientMagnitudeRecursiveGaussianImageFilterType::New();
-	//gsmFilter->SetInput(input);
+	// get gradient smoothed
+	typedef itk::GradientMagnitudeRecursiveGaussianImageFilter<ImageType> GradientMagnitudeRecursiveGaussianImageFilterType;
+	GradientMagnitudeRecursiveGaussianImageFilterType::Pointer gsmFilter = GradientMagnitudeRecursiveGaussianImageFilterType::New();
+	gsmFilter->SetInput(input);
 
-	//float gsigma[6] = {0.1,0.25,0.5,1,2,5};
+	float gsigma[6] = {0.1,0.25,0.5,1,2,5};
 
-	//for (int i=0; i<6; i++)
-	//{
-	//	gsmFilter->SetSigma(gsigma[i]);
-	//	gsmFilter->Update();
+	for (int i=0; i<6; i++)
+	{
+		gsmFilter->SetSigma(gsigma[i]);
+		gsmFilter->Update();
 
-	//	ss.str("");
-	//	ss << "gsm_" << gsigma[i] << ".nii";
-	//	WriteITK <ImageType> (gsmFilter->GetOutput(),ss.str());
-	//}
+		ss.str("");
+		ss << "gsm_" << gsigma[i] << ".nii";
+		WriteITK <ImageType> (gsmFilter->GetOutput(),ss.str());
+	}
 
-	//// get laplacian zero crossings
-	//typedef itk::ZeroCrossingBasedEdgeDetectionImageFilter<ImageType,ImageType> ZeroCrossingBasedEdgeDetectionImageFilterType;
-	//ZeroCrossingBasedEdgeDetectionImageFilterType::Pointer zeroCrossingFilter = ZeroCrossingBasedEdgeDetectionImageFilterType::New();
-	//zeroCrossingFilter->SetInput(input);
-	//zeroCrossingFilter->SetBackgroundValue(0);
-	//zeroCrossingFilter->SetForegroundValue(255);
+	// get laplacian zero crossings
+	typedef itk::ZeroCrossingBasedEdgeDetectionImageFilter<ImageType,ImageType> ZeroCrossingBasedEdgeDetectionImageFilterType;
+	ZeroCrossingBasedEdgeDetectionImageFilterType::Pointer zeroCrossingFilter = ZeroCrossingBasedEdgeDetectionImageFilterType::New();
+	zeroCrossingFilter->SetInput(input);
+	zeroCrossingFilter->SetBackgroundValue(0);
+	zeroCrossingFilter->SetForegroundValue(255);
 
-	//// set variance
-	//typedef itk::FixedArray<double,2> ArrayType;
-	//ArrayType variance;
+	// set variance
+	typedef itk::FixedArray<double,2> ArrayType;
+	ArrayType variance;
 
-	//for (int i=5; i<=20; i+=5)
-	//{
-	//	variance[0] = i;
-	//	variance[1] = i;
+	for (int i=5; i<=20; i+=5)
+	{
+		variance[0] = i;
+		variance[1] = i;
 
-	//	zeroCrossingFilter->SetVariance(variance);
-	//	zeroCrossingFilter->Update();
+		zeroCrossingFilter->SetVariance(variance);
+		zeroCrossingFilter->Update();
 
-	//	ss.str("");
-	//	ss << "zeroCrossing_" << i << ".nii";
-	//	WriteITK <ImageType> (zeroCrossingFilter->GetOutput(),ss.str());
-	//}
+		ss.str("");
+		ss << "zeroCrossing_" << i << ".nii";
+		WriteITK <ImageType> (zeroCrossingFilter->GetOutput(),ss.str());
+	}
 
-	//// get standard deviation image
-	//ImageType::Pointer std = StandardDeviation(input,colon,radius);
-	//
-	//ss.str("");
-	//ss << "std" << 2*radius+1 << "x" << 2*radius+1 << ".nii";
-	//WriteITK <ImageType> (std,ss.str());
-
-	//// get range image
-	//ImageType::Pointer range = Range(input,colon,radius);
-	//
-	//ss.str("");
-	//ss << "range" << 2*radius+1 << "x" << 2*radius+1 << ".nii";
-	//WriteITK <ImageType> (range,ss.str());
-
+	// get standard deviation image
+	ImageType::Pointer std = StandardDeviation(input,radius);
 	
+	ss.str("");
+	ss << "std" << 2*radius+1 << "x" << 2*radius+1 << ".nii";
+	WriteITK <ImageType> (std,ss.str());
+
+	// get range image
+	ImageType::Pointer range = Range(input,radius);
+	
+	ss.str("");
+	ss << "range" << 2*radius+1 << "x" << 2*radius+1 << ".nii";
+	WriteITK <ImageType> (range,ss.str());	
 
 	// get textures
 
@@ -215,9 +221,7 @@ int main(int argc, char * argv[])
 
 	// set all offets to average across
 	// half of all possible directions from center pixel
-	//std::vector<ImageType::OffsetType> offsetVector;
-
-	/*
+	std::vector<ImageType::OffsetType> offsetVector;
 
 	typedef itk::Neighborhood<PixelType,ImageType::ImageDimension> NeighborhoodType;
 	NeighborhoodType hood;
@@ -228,13 +232,6 @@ int main(int argc, char * argv[])
 		ImageType::OffsetType offset = hood.GetOffset(i);
 		offsetVector.push_back(offset);
 	}
-
-	*/
-	
-	ImageType::OffsetType offsetVector[6];
-	offsetVector[0] = 1; offsetVector[1] 
-
-
 
 	// allocate all 8 outputs
 	ImageType::Pointer outputArray[8];
@@ -294,6 +291,10 @@ int main(int argc, char * argv[])
 			CastImageFilterType::Pointer caster = CastImageFilterType::New();
 			caster->SetInput(rescaler->GetOutput());
 			caster->Update();
+
+			ss.str("");
+			ss << "texture" << j << "_offset_" << offsetVector[i][0] << "_" << offsetVector[i][1] << "_" << 2*radius+1 << "x" << 2*radius+1 << ".nii";
+			WriteITK <ByteImageType> (caster->GetOutput(),ss.str());
 
 			// sum textures from each offet
 			typedef itk::AddImageFilter<ImageType,ByteImageType,ImageType> AddImageFilterType;
@@ -389,112 +390,101 @@ int main(int argc, char * argv[])
 //	cropperByte->Update();
 //	colon = cropperByte->GetOutput();
 //}
-//
-//// NOTE IMAGE TYPE MUST BE FLOAT
-//ImageType::Pointer StandardDeviation(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius)
-//{
-//	// get region
-//	ImageType::RegionType region = input->GetLargestPossibleRegion();
-//
-//	// set radius
-//	ImageType::SizeType rad;
-//	rad.Fill(radius);
-//
-//	// allocate output image
-//	ImageType::Pointer out = ImageType::New();
-//	out->SetSpacing(input->GetSpacing());
-//	out->SetRegions(region);
-//	out->Allocate();
-//	out->FillBuffer(0);
-//
-//	// iterate image
-//	IteratorType2D outIt(out,region);
-//	ByteIteratorType2D maskIt(mask,region);
-//	
-//	typedef itk::NeighborhoodIterator<ImageType> NeighborhoodIteratorType;
-//	NeighborhoodIteratorType nIt(rad,input,region);
-//
-//	for (nIt.GoToBegin(), outIt.GoToBegin(), maskIt.GoToBegin(); !nIt.IsAtEnd(); ++nIt, ++outIt, ++maskIt)
-//	{
-//		// inside mask
-//		if (maskIt.Get() != 0)
-//		{
-//			float mean = 0;
-//			float std = 0;
-//
-//			// get mean
-//			for (int i=0; i<nIt.Size(); i++)
-//			{
-//				mean += nIt.GetPixel(i);
-//			}
-//
-//			mean /= nIt.Size();
-//
-//			//std::cout << mean << std::endl;
-//
-//			// get standard deviation
-//			for (int i=0; i<nIt.Size(); i++)
-//			{
-//				std += ( nIt.GetPixel(i) - mean ) * ( nIt.GetPixel(i) - mean );
-//			}
-//
-//			std /= (nIt.Size()-1);
-//			std = sqrt(std);
-//
-//			
-//
-//			outIt.Set(std);
-//		}
-//	}
-//
-//	return out;
-//}
-//
-//ImageType::Pointer Range(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius)
-//{
-//	// get region
-//	ImageType::RegionType region = input->GetLargestPossibleRegion();
-//
-//	// set radius
-//	ImageType::SizeType rad;
-//	rad.Fill(radius);
-//
-//	// allocate output image
-//	ImageType::Pointer out = ImageType::New();
-//	out->SetSpacing(input->GetSpacing());
-//	out->SetRegions(region);
-//	out->Allocate();
-//	out->FillBuffer(0);
-//
-//	// iterate image
-//	IteratorType2D outIt(out,region);
-//	ByteIteratorType2D maskIt(mask,region);
-//	
-//	typedef itk::NeighborhoodIterator<ImageType> NeighborhoodIteratorType;
-//	NeighborhoodIteratorType nIt(rad,input,region);
-//
-//	for (nIt.GoToBegin(), outIt.GoToBegin(), maskIt.GoToBegin(); !nIt.IsAtEnd(); ++nIt, ++outIt, ++maskIt)
-//	{
-//		// inside mask
-//		if (maskIt.Get() != 0)
-//		{
-//			PixelType max = itk::NumericTraits<PixelType>::NonpositiveMin();
-//			PixelType min = itk::NumericTraits<PixelType>::max();
-//			
-//			for (int i=0; i<nIt.Size(); i++)
-//			{
-//				PixelType val = nIt.GetPixel(i);
-//
-//				if (val > max)
-//					max = val;
-//
-//				if (val < min)
-//					min = val;
-//			}
-//
-//			outIt.Set(max-min);
-//		}
-//	}
-//
-//	return out;
-//}
+
+// NOTE IMAGE TYPE MUST BE FLOAT
+ImageType::Pointer StandardDeviation(ImageType::Pointer &input, unsigned int radius)
+{
+	// get region
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	// set radius
+	ImageType::SizeType rad;
+	rad.Fill(radius);
+
+	// allocate output image
+	ImageType::Pointer out = ImageType::New();
+	out->SetSpacing(input->GetSpacing());
+	out->SetRegions(region);
+	out->Allocate();
+	out->FillBuffer(0);
+
+	// iterate image
+	IteratorType outIt(out,region);
+	
+	typedef itk::NeighborhoodIterator<ImageType> NeighborhoodIteratorType;
+	NeighborhoodIteratorType nIt(rad,input,region);
+
+	for (nIt.GoToBegin(), outIt.GoToBegin(); !nIt.IsAtEnd(); ++nIt, ++outIt)
+	{
+		float mean = 0;
+		float std = 0;
+
+		// get mean
+		for (int i=0; i<nIt.Size(); i++)
+		{
+			mean += (float) nIt.GetPixel(i);
+		}
+
+		mean /= nIt.Size();
+
+		//std::cout << mean << std::endl;
+
+		// get standard deviation
+		for (int i=0; i<nIt.Size(); i++)
+		{
+			std += ( (float) nIt.GetPixel(i) - mean ) * ( (float) nIt.GetPixel(i) - mean );
+		}
+
+		std /= (nIt.Size()-1);
+		std = sqrt(std);
+
+		outIt.Set(std);
+	}
+
+	return out;
+}
+
+ImageType::Pointer Range(ImageType::Pointer &input, unsigned int radius)
+{
+	// get region
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	// set radius
+	ImageType::SizeType rad;
+	rad.Fill(radius);
+
+	// allocate output image
+	ImageType::Pointer out = ImageType::New();
+	out->SetSpacing(input->GetSpacing());
+	out->SetRegions(region);
+	out->Allocate();
+	out->FillBuffer(0);
+
+	// iterate image
+	IteratorType outIt(out,region);
+	
+	typedef itk::NeighborhoodIterator<ImageType> NeighborhoodIteratorType;
+	NeighborhoodIteratorType nIt(rad,input,region);
+
+	for (nIt.GoToBegin(), outIt.GoToBegin(); !nIt.IsAtEnd(); ++nIt, ++outIt)
+	{
+		
+		PixelType max = itk::NumericTraits<PixelType>::NonpositiveMin();
+		PixelType min = itk::NumericTraits<PixelType>::max();
+		
+		for (int i=0; i<nIt.Size(); i++)
+		{
+			PixelType val = nIt.GetPixel(i);
+
+			if (val > max)
+				max = val;
+
+			if (val < min)
+				min = val;
+		}
+
+		outIt.Set(max-min);
+	}
+
+	return out;
+}

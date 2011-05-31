@@ -220,6 +220,15 @@ ScalarImageToTexturesMaskFilter<TInputImage, TOutputImage, TMaskImage>
     {
     mask->SetRequestedRegion( inputRequestedRegion );
     }
+  else
+    {
+    // Build an exception
+    itk::InvalidRequestedRegionError e(__FILE__, __LINE__);
+    e.SetLocation(ITK_LOCATION);
+    e.SetDescription("Requested region is (at least partially) outside the largest possible region.");
+    e.SetDataObject(inputPtr);
+    throw e;
+    }
 }
 
 template <class TInputImage, class TOutputImage, class TMaskImage>

@@ -58,7 +58,7 @@ int main(int argc, char * argv[])
 	partial = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
 
 	//// EM
-	//EM(partial,colon,input);
+	EM(partial,colon,input);
 
 	// end clock
 	final = clock() - init;
