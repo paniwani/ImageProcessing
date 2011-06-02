@@ -52,6 +52,8 @@
 #include <itkBinaryContourImageFilter.h>
 #include <itkCurvesLevelSetImageFilter.h>
 #include <itkZeroCrossingImageFilter.h>
+#include <itkGaussianBlurImageFunction.h>
+#include <itkDiscreteGaussianImageFilter.h>
 
 
 #define CDF_SIGMA 0.27
@@ -99,7 +101,7 @@ PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType
 void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissue_stool_threshold );
 void Dilate(ByteImageType::Pointer &img, unsigned int radius);
 void DirectionalGradient(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap);
-ImageType::Pointer Subtraction(ImageType::Pointer &input, ByteImageType::Pointer &colon, ArrayImageType::Pointer &partial);
+ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &inputOriginal, ByteImageType::Pointer &colon, ArrayImageType::Pointer &partial, VoxelImageType::Pointer &vmap);
 //void TextureAnalysis(ImageType::Pointer &input);
 
 void HeteroStoolRemoval(ImageType::Pointer &cOutput, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap);
@@ -112,7 +114,7 @@ ImageType::RegionType REGION;
 bool write_num = true;
 int write_count = 1;
 bool truncateOn = true;
-unsigned int truncateArray[2] = {85,90};
+unsigned int truncateArray[2] = {85,110};
 std::string note;
 PixelType BACKGROUND = 0;
 double PI=3.1415926;

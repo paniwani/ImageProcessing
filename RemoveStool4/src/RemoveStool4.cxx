@@ -50,7 +50,7 @@ int main(int argc, char * argv[])
 
 	Write(vmap,"scatter_vmap.nii");
 
-	LevelSet(input,vmap,colon,gradientMagnitude);
+	//LevelSet(input,vmap,colon,gradientMagnitude);
 
 	//DirectionalGradient(input, colon, vmap);
 
@@ -59,14 +59,14 @@ int main(int argc, char * argv[])
 	// Determine boundary types
 	partial = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
 
-	//ImageType::Pointer carstonOutput = Subtraction(input,colon,partial);
+	ImageType::Pointer carstonOutput = Subtraction(input,inputOriginal,colon,partial,vmap);
 
 	//HeteroStoolRemoval(carstonOutput,colon,vmap);
 
 
 
 	//// EM
-	EM(partial,colon,input);
+	//EM(partial,colon,input);
 
 	// end clock
 	final = clock() - init;
@@ -323,32 +323,221 @@ FloatImageType::Pointer StandardDeviation(ImageType::Pointer &input, ByteImageTy
 	return out;
 }
 
-ImageType::Pointer Subtraction(ImageType::Pointer &input, ByteImageType::Pointer &colon, ArrayImageType::Pointer &partial)
+ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &inputOriginal, ByteImageType::Pointer &colon, ArrayImageType::Pointer &partial, VoxelImageType::Pointer &vmap)
 {
+	// scale intensity by partial of tissue
+	//ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	//typedef itk::ImageDuplicator<ImageType> DuplicatorType;
+	//DuplicatorType::Pointer duplicator = DuplicatorType::New();
+	//duplicator->SetInputImage(input);
+	//duplicator->Update();
+	//ImageType::Pointer input2 = duplicator->GetOutput();
+
+	//IteratorType inputIt(input,region);
+	//IteratorType input2It(input2,region);
+	//ByteIteratorType colonIt(colon,region);
+	//ArrayIteratorType partialIt(partial,region);
+
+	//for (inputIt.GoToBegin(), input2It.GoToBegin(), colonIt.GoToBegin(), partialIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++input2It, ++colonIt, ++partialIt)
+	//{
+	//	if (colonIt.Get() != 0)
+	//	{
+	//		input2It.Set( partialIt.Get()[1] * ( inputIt.Get() + 1000 ) - 1000 );	
+	//	}
+	//}
+
+	//Write(input2,"carstonOutput.nii");
+
+	//// plug cropped input back into original
+	//DuplicatorType::Pointer duplicator = DuplicatorType::New();
+	//duplicator->SetInputImage(input);
+	//duplicator->Update();
+	//ImageType::Pointer input2 = duplicator->GetOutput();
+
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
 
-	typedef itk::ImageDuplicator<ImageType> DuplicatorType;
-	DuplicatorType::Pointer duplicator = DuplicatorType::New();
-	duplicator->SetInputImage(input);
-	duplicator->Update();
-	ImageType::Pointer input2 = duplicator->GetOutput();
-
-	IteratorType inputIt(input,region);
-	IteratorType input2It(input2,region);
-	ByteIteratorType colonIt(colon,region);
+	// get pt binary mask
+	ByteImageType::Pointer ptb = ByteImageType::New();
+	ptb->SetRegions(region);
+	ptb->CopyInformation(input);
+	ptb->Allocate();
+	ptb->FillBuffer(0);
+	ByteIteratorType ptbIt(ptb,region);
 	ArrayIteratorType partialIt(partial,region);
 
-	for (inputIt.GoToBegin(), input2It.GoToBegin(), colonIt.GoToBegin(), partialIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++input2It, ++colonIt, ++partialIt)
+	for (ptbIt.GoToBegin(), partialIt.GoToBegin(); !ptbIt.IsAtEnd(); ++ptbIt, ++partialIt)
 	{
-		if (colonIt.Get() != 0)
+		if (partialIt.Get()[1] > 0)
 		{
-			input2It.Set( partialIt.Get()[1] * ( inputIt.Get() + 1000 ) - 1000 );	
+			ptbIt.Set(255);
 		}
 	}
 
-	Write(input2,"carstonOutput.nii");
+	Write(ptb,"partialTissueBinaryMask.nii");
 
-	return input2;
+	// keep only largest component
+	typedef itk::BinaryShapeKeepNObjectsImageFilter<ByteImageType> KeeperType;
+	KeeperType::Pointer keeper = KeeperType::New();
+	keeper->SetInput(ptb);
+	keeper->SetForegroundValue(255);
+	keeper->SetBackgroundValue(0);
+	keeper->SetNumberOfObjects(1);
+	keeper->SetAttribute("Size");
+	keeper->Update();
+	ptb = keeper->GetOutput();
+	Write(ptb,"partialTissueBinaryMaskCompd.nii");
+	
+	// update partial image
+	ptbIt = ByteIteratorType(ptb,region);
+
+	for (ptbIt.GoToBegin(), partialIt.GoToBegin(); !ptbIt.IsAtEnd(); ++ptbIt, ++partialIt)
+	{
+		if (ptbIt.Get() == 0 && partialIt.Get()[1] != 0)
+		{
+			ArrayType p = partialIt.Get();
+			p[1] = 0;
+			partialIt.Set(p);
+		}
+	}
+
+	// scale input by partial of tissue
+	IteratorType inputIt(input,region);
+	ByteIteratorType colonIt(colon,region);
+
+	for (inputIt.GoToBegin(), colonIt.GoToBegin(), partialIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++colonIt, ++partialIt)
+	{
+		if (colonIt.Get() != 0)
+		{
+			inputIt.Set( partialIt.Get()[1] * ( inputIt.Get() + 1000 ) - 1000 );	
+		}
+	}
+
+	Write(input,"inputPtScaled.nii");
+
+	// gaussian blur edges of air and tissue
+	// get binary air mask
+	ByteImageType::Pointer air = ByteImageType::New();
+	air->SetRegions(region);
+	air->SetSpacing(input->GetSpacing());
+	air->Allocate();
+	air->FillBuffer(0);
+	ByteIteratorType airIt(air,region);
+
+	for (airIt.GoToBegin(), inputIt.GoToBegin(); !airIt.IsAtEnd(); ++inputIt, ++airIt)
+	{
+		if (inputIt.Get() < -600)
+		{
+			airIt.Set(255);
+		}
+	}
+
+	// remove bkg air and get edges on each 2d slice
+	typedef itk::BinaryShapeOpeningImageFilter< ByteImageType2D > BinaryShapeOpeningImageFilter2D;
+	typedef itk::BinaryContourImageFilter<ByteImageType2D,ByteImageType2D> BinaryEdgeFilterType2D;
+	typedef itk::SliceBySliceImageFilter< ByteImageType, ByteImageType, BinaryShapeOpeningImageFilter2D, BinaryEdgeFilterType2D> SliceBySliceImageFilterType;
+
+	BinaryShapeOpeningImageFilter2D::Pointer bkgFilter2D = BinaryShapeOpeningImageFilter2D::New();
+	bkgFilter2D->SetAttribute("SizeOnBorder");
+	bkgFilter2D->SetBackgroundValue(0);
+	bkgFilter2D->SetForegroundValue(255);
+	bkgFilter2D->SetLambda(0);
+	bkgFilter2D->SetReverseOrdering(true);
+
+	BinaryEdgeFilterType2D::Pointer edgeFinder2D = BinaryEdgeFilterType2D::New();
+	edgeFinder2D->SetForegroundValue(255);
+	edgeFinder2D->SetBackgroundValue(0);
+	edgeFinder2D->SetInput(bkgFilter2D->GetOutput());
+	
+	SliceBySliceImageFilterType::Pointer slicer = SliceBySliceImageFilterType::New();
+	slicer->SetInput( air );
+	slicer->SetInputFilter( bkgFilter2D );
+	slicer->SetOutputFilter( edgeFinder2D );
+	slicer->Update();
+	air = slicer->GetOutput();
+
+	Write(air,"airEdges.nii");
+
+	// dilate air edge
+	Dilate(air,3);
+
+	Write(air,"airEdgesDilated.nii");
+
+	// smooth only near edge tissue interface
+	typedef itk::DiscreteGaussianImageFilter<ImageType,ImageType> SmoothType;
+	SmoothType::Pointer smoother = SmoothType::New();
+	smoother->SetInput(input);
+	
+	/*ArrayType sigmaArray;
+	sigmaArray[0] = 0.7;
+	sigmaArray[1] = 0.7;
+	sigmaArray[2] = 0;*/
+
+	smoother->SetVariance(0.7*0.7);
+	smoother->Update();
+	ImageType::Pointer inputSmooth = smoother->GetOutput();
+
+	Write(inputSmooth,"inputSmooth.nii");
+
+	IteratorType inputSmoothIt(inputSmooth,region);
+
+	airIt = ByteIteratorType(air,region);
+	inputIt = IteratorType(input,region);
+
+	for (inputIt.GoToBegin(), airIt.GoToBegin(), inputSmoothIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++inputSmoothIt, ++airIt)
+	{
+		if (airIt.Get() != 0)
+		{
+			inputIt.Set( inputSmoothIt.Get() );
+		}
+	}
+
+	Write(input,"inputPostSmoothNearAir.nii");
+
+	//// blur input within air edge mask
+	//typedef itk::GaussianBlurImageFunction< ImageType > GFunctionType;
+	//GFunctionType::Pointer gaussianFunction = GFunctionType::New();
+	//gaussianFunction->SetInputImage( input );
+
+	//GFunctionType::ErrorArrayType setError;
+	//setError.Fill( 0.01 );
+	//gaussianFunction->SetMaximumError( setError );
+
+	//// blur only in 2D
+	//ArrayType sigmaArray;
+	//sigmaArray[0] = 0.7;
+	//sigmaArray[1] = 0.7;
+	//sigmaArray[2] = 0;
+
+	//gaussianFunction->SetSigma( sigmaArray );
+
+	//std::cout << "gaussian kernel: " << gaussianFunction->GetMaximumKernelWidth() << std::endl;
+	//
+
+	//for (airIt.GoToBegin(), inputIt.GoToBegin(); !airIt.IsAtEnd(); ++airIt, ++inputIt)
+	//{
+	//	if (airIt.Get() != 0)
+	//	{
+	//		inputIt.Set( (PixelType) gaussianFunction->EvaluateAtIndex(inputIt.GetIndex()) );
+	//	}
+	//}
+
+	//Write(input,"inputBlur.nii");
+
+	// plug input back into full original input
+	IteratorType inputOriginalIt(inputOriginal,OLDREGION);
+
+	for (inputIt.GoToBegin(), inputOriginalIt.GoToBegin(), colonIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++inputOriginalIt, ++colonIt)
+	{
+		if (colonIt.Get() != 0)
+		{
+			inputOriginalIt.Set( inputIt.Get() );
+		}
+	}
+
+	Write(inputOriginal,"output.nii");
+
+	return inputOriginal;
 }
 
 //void TextureAnalysis(ImageType::Pointer &input)
@@ -496,12 +685,12 @@ void Dilate(ByteImageType::Pointer &img, unsigned int radius)
 {
 	StructuringElementType se;
 	
-	/*ByteImageType::SizeType rad;
+	ByteImageType::SizeType rad;
 	rad.Fill(0);
 	rad[0] = radius;
-	rad[1] = radius;*/
+	rad[1] = radius;
 
-	se.SetRadius( radius );
+	se.SetRadius( rad );
 	se.CreateStructuringElement();
 
 	typedef itk::BinaryDilateImageFilter<ByteImageType, ByteImageType, StructuringElementType> BinaryDilateImageFilterType;
