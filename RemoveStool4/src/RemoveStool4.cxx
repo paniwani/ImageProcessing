@@ -39,6 +39,9 @@ int main(int argc, char * argv[])
 	// Load images and segment colon
 	Setup(argv[1],inputOriginal,input,colon,gradientMagnitude);
 
+	FloatImageType::Pointer inputSD = StandardDeviation(input,colon,1);
+	Write(inputSD,"inputSD.nii");
+
 	// Initial segmentation, save tissue stool threshold
 	PixelType tst = SingleMaterialClassification(input, gradientMagnitude, vmap, colon);
 
@@ -792,6 +795,12 @@ void Setup(std::string dataset, ImageType::Pointer  &inputOriginal, ImageType::P
 	gradientMagnitudeFilter->Update();
 	gradientMagnitude = gradientMagnitudeFilter->GetOutput();
 
+	/*typedef itk::GradientMagnitudeImageFilter<ImageType,FloatImageType> GradientMagnitudeFilterType;
+	GradientMagnitudeFilterType::Pointer gmFilter = GradientMagnitudeFilterType::New();
+	gmFilter->SetInput( inputOriginal );
+	gmFilter->Update();
+	gradientMagnitude = gmFilter->GetOutput();*/
+
 	//----------------------------------------------
 	// Crop images in XY plane
 	//----------------------------------------------
@@ -929,7 +938,7 @@ void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gr
 			if ( ( I >= tissueStoolThreshold && G < 0.8*I ) || I > 1000 )
 			{
 				voxel = Stool;
-			} else if ( I <= -600 ) {
+			} else if ( I <= -700 ) {
 				voxel = Air;
 			} else if ( I < tissueStoolThreshold && I > -300 && G <= 400 ) {
 				voxel = Tissue;
@@ -940,4 +949,53 @@ void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gr
 			vmapIt.Set( voxel );
 		}
 	}
+}
+
+ImageType::Pointer Range(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius)
+{
+	// get region
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	// set radius
+	ImageType::SizeType rad;
+	rad.Fill(radius);
+
+	// allocate output image
+	ImageType::Pointer out = ImageType::New();
+	out->SetSpacing(input->GetSpacing());
+	out->SetRegions(region);
+	out->Allocate();
+	out->FillBuffer(0);
+
+	// iterate image
+	IteratorType outIt(out,region);
+	ByteIteratorType maskIt(mask,region);
+	
+	typedef itk::NeighborhoodIterator<ImageType> NeighborhoodIteratorType;
+	NeighborhoodIteratorType nIt(rad,input,region);
+
+	for (nIt.GoToBegin(), outIt.GoToBegin(), maskIt.GoToBegin(); !nIt.IsAtEnd(); ++nIt, ++outIt, ++maskIt)
+	{
+		// inside mask
+		if (maskIt.Get() != 0)
+		{
+			PixelType max = itk::NumericTraits<PixelType>::NonpositiveMin();
+			PixelType min = itk::NumericTraits<PixelType>::max();
+			
+			for (int i=0; i<nIt.Size(); i++)
+			{
+				PixelType val = nIt.GetPixel(i);
+
+				if (val > max)
+					max = val;
+
+				if (val < min)
+					min = val;
+			}
+
+			outIt.Set(max-min);
+		}
+	}
+
+	return out;
 }

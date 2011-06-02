@@ -54,7 +54,9 @@
 #include <itkZeroCrossingImageFilter.h>
 #include <itkGaussianBlurImageFunction.h>
 #include <itkDiscreteGaussianImageFilter.h>
-
+#include <itkBinaryMorphologicalClosingImageFilter.h>
+#include <itkScalarImageToHistogramGenerator.h>
+#include <itkImageToHistogramFilter.h>
 
 #define CDF_SIGMA 0.27
 
@@ -75,7 +77,8 @@ typedef itk::BinaryBallStructuringElement<PixelType, 3>								StructuringElemen
 typedef itk::CovariantVector<float,3>												VectorType;
 typedef itk::FixedArray<float,3>													ArrayType;
 
-
+typedef itk::Image<unsigned long,1> ImageType1D;
+typedef itk::ImageRegionIteratorWithIndex<ImageType1D> IteratorType1D;
 typedef itk::Image<PixelType, 3>													ImageType;
 typedef itk::Image<BytePixelType, 3>												ByteImageType;
 typedef itk::Image<PixelType, 2>													ImageType2D;
@@ -106,7 +109,9 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 
 void HeteroStoolRemoval(ImageType::Pointer &cOutput, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap);
 FloatImageType::Pointer StandardDeviation(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius);
+ImageType::Pointer Range(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius);
 void LevelSet(ImageType::Pointer &input, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradient);
+void FixATT(ImageType::Pointer &input, ArrayImageType::Pointer &partial, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon);
 
 // Global vars
 ImageType::RegionType OLDREGION;
@@ -115,6 +120,7 @@ bool write_num = true;
 int write_count = 1;
 bool truncateOn = true;
 unsigned int truncateArray[2] = {85,110};
+//unsigned int truncateArray[2] = {95,105};
 std::string note;
 PixelType BACKGROUND = 0;
 double PI=3.1415926;

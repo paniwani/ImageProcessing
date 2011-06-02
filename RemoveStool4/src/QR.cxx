@@ -483,6 +483,7 @@ ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 	ByteIteratorType colonIt(colon,REGION);
 	VoxelIteratorType vmapIt(vmap,REGION);
 
+	// distances (in mm?)
 	float d[3][5];
 	d[0][0] = -1.5; d[0][1] = -1.0; d[0][2] = 0; d[0][3] = 1.0; d[0][4] = 1.5;
 	d[1][0] = -1.0; d[1][1] = -0.5; d[1][2] = 0; d[1][3] = 0.5; d[1][4] = 1.0;
@@ -523,7 +524,7 @@ ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 					ContinuousIndexType odx = idx;
 
 					for (int k=0; k<3; k++)
-						odx[k] += gradientIt.Get()[k]*d[i][j];
+						odx[k] += gradientIt.Get()[k] * ( d[i][j] / spacing[k] );
 					
 					if ( !checkBounds(REGION,odx) )
 						odx = idx;
@@ -553,6 +554,9 @@ ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 				if (smaxTS < tissueStoolThreshold || smaxTS > 1500)
 				{
 					useTS = false;
+					
+					smaxIt.Set(100);
+
 				} else {
 					distanceTS=AverageTissueStoolDist( smaxTS, in, gr );
 				}
@@ -560,6 +564,9 @@ ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 				if (smaxSA < tissueStoolThreshold || smaxSA > 1500)
 				{
 					useSA = false;
+
+					smaxIt.Set(100);
+
 				} else {
 					distanceSA=AverageStoolAirDist( smaxSA, in, gr );
 				}
@@ -600,9 +607,141 @@ ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 	
 	Write(smaxImage,"smax.nii");
 	Write(vmap,"qr.nii");
+	
+	ArrayImageType::Pointer partial = ComputePartials(input,vmap,colon,smaxImage);
+	
+	FixATT(input,partial,vmap,colon);
 
-	return ComputePartials(input,vmap,colon,smaxImage);
+
+	return partial;
 }
+
+/*
+* Find tissue that was erroneusly marked SA
+* by the QR using standard deviation and
+* assign it a tissue a partial based on intensity
+*/
+void FixATT(ImageType::Pointer &input, ArrayImageType::Pointer &partial, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon)
+{
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	// make stool air binary mask
+	ByteImageType::Pointer sa = ByteImageType::New();
+	sa->SetRegions(REGION);
+	sa->SetSpacing(input->GetSpacing());
+	sa->CopyInformation(input);
+	sa->Allocate();
+	sa->FillBuffer(0);
+	ByteIteratorType saIt(sa,REGION);
+	VoxelIteratorType vmapIt(vmap,REGION);
+
+	for (saIt.GoToBegin(), vmapIt.GoToBegin(); !saIt.IsAtEnd(); ++saIt, ++vmapIt)
+	{
+		if (vmapIt.Get() == StoolAir)
+		{
+			saIt.Set(255);
+		}
+	}
+
+	Write(sa,"sa.nii");
+
+	// compute sd within stool air mask
+	FloatImageType::Pointer sasd = StandardDeviation(input,sa,1);
+	Write(sasd,"stoolAirSD_rad_1.nii");
+
+	// get standard deviation histogram
+	typedef itk::Statistics::ScalarImageToHistogramGenerator< FloatImageType > HistogramGeneratorType;
+	HistogramGeneratorType::Pointer histogramGenerator = HistogramGeneratorType::New();
+	histogramGenerator->SetInput(sasd);
+	histogramGenerator->SetNumberOfBins( 256 );
+	histogramGenerator->SetMarginalScale( 10.0 );
+
+	histogramGenerator->SetHistogramMin(  4.5 );
+	histogramGenerator->SetHistogramMax( 1500.5 );
+	histogramGenerator->Compute();
+
+	typedef HistogramGeneratorType::HistogramType  HistogramType;
+
+	const HistogramType * histogram = histogramGenerator->GetOutput();
+
+	// write histogram to txt file
+	const unsigned int histogramSize = histogram->Size();
+	std::cout << "Histogram size " << histogramSize << std::endl;
+
+	std::ofstream sdfile;
+	sdfile.open("sdfile.csv");
+
+	unsigned int bin;
+	for( bin=1; bin < histogramSize; bin++ )
+	{
+		sdfile << bin + 5 << "," << histogram->GetFrequency(bin,0) << "\n";
+	}
+	sdfile.close();
+
+	// convert histogram to 1D image
+	ImageType1D::Pointer histImage = ImageType1D::New();
+	
+	ImageType1D::IndexType index;
+	index[0] = 0;
+	
+	ImageType1D::SizeType size;
+	size[0] = 256;
+	
+	ImageType1D::RegionType region1D;
+	region1D.SetIndex(index);
+	region1D.SetSize(size);
+
+	histImage->SetRegions(region1D);
+	histImage->Allocate();
+	histImage->FillBuffer(0);
+	IteratorType1D histImageIt(histImage,region1D);
+
+	histImageIt.GoToBegin();
+
+	HistogramType::ConstIterator itr = histogram->Begin();
+    HistogramType::ConstIterator end = histogram->End();
+ 
+	unsigned int binNumber = 0;
+	while( itr != end && !histImageIt.IsAtEnd() )
+	{
+		histImageIt.Set( itr.GetFrequency() );
+		
+		++itr;
+		++histImageIt;
+		++binNumber;
+	}
+
+	Write(histImage,"histImage.nii");
+
+	// smooth 1D image
+	typedef itk::DiscreteGaussianImageFilter<ImageType1D,ImageType1D> SmootherType;
+	SmootherType::Pointer smoother = SmootherType::New();
+	smoother->SetInput(histImage);
+	smoother->SetVariance(1);
+
+	// convert histogram image back into a histogram
+	typedef itk::Statistics::ImageToHistogramFilter<ImageType1D> ImageToHistogramFilterType;
+	ImageToHistogramFilterType::Pointer image2histFilter = ImageToHistogramFilterType::New();
+	image2histFilter->SetInput(smoother->GetOutput());
+	image2histFilter->Update();
+	
+	const HistogramType * smoothHistogram = image2histFilter->GetOutput();
+
+	// write histogram to txt file
+	const unsigned int histogramSize2 = smoothHistogram->Size();
+	std::cout << "Histogram size " << histogramSize2 << std::endl;
+
+	std::ofstream sdfile2;
+	sdfile2.open("sdfile2.csv");
+
+	unsigned int bin2;
+	for( bin2=1; bin2 < histogramSize; bin2++ )
+	{
+		sdfile2 << bin2 + 5 << "," << histogram->GetFrequency(bin2,0) << "\n";
+	}
+	sdfile2.close();
+}
+
 
 /*
 void LocalBoundary(VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon)

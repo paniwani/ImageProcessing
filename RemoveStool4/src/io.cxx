@@ -50,6 +50,27 @@ void Write(ImageType::Pointer image, std::string name) {
 	writer->Update();
 }
 
+void Write(ImageType1D::Pointer image, std::string name) {
+	typedef itk::ImageFileWriter< ImageType1D >  WriterType;
+    WriterType::Pointer writer = WriterType::New();
+	WriterType::SetGlobalWarningDisplay(false);
+	
+	std::stringstream ss;
+	if ( !note.empty() )
+		ss << note << "_";
+
+	if ( write_num )
+		ss << write_count++ << "_";
+
+	ss << name;
+
+	writer->SetFileName(ss.str().c_str());
+
+	writer->SetInput(image);
+	std::cout<<"Writing: "<<ss.str()<<std::endl;
+	writer->Update();
+}
+
 void Write(ByteImageType::Pointer image, std::string name) {
 	typedef itk::ImageFileWriter< ByteImageType >  WriterType;
     WriterType::Pointer writer = WriterType::New();
