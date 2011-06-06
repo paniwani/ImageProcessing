@@ -95,20 +95,40 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
     double variance[3]={0, 0, 0};			//stores the variance of the air/tissue/stool classes
 	float weight[3]={0,0,0};				//stores the weights of the air/tissue/stool classes
 
+	/*std::ofstream em;
+	em.open("debugEM.csv");*/
+
+	//int count = 0;
+
 	// Computes the mean (expectation) for each class by using sum(partial[i]*value[i])/sum(partial[i])
 	for(inputIt.GoToBegin(), partialIt.GoToBegin(), colonIt.GoToBegin();
 		!inputIt.IsAtEnd() && !partialIt.IsAtEnd() && !colonIt.IsAtEnd();
 		++inputIt, ++partialIt, ++colonIt) 
 	{
 		if (colonIt.Get()==255) {		
+
+			/*if ( count > 34585 )
+			{
+				std::cout << "DEBUG TIME" << std::endl;
+			}*/
+
 			ArrayType p = partialIt.Get();
 			for (int i=0; i<3; i++)
 			{
+
 				sum[i] += p[i];
 				mean[i] += p[i]*inputIt.Get();
 			}
+
+			/*em << sum[0] << "," << sum[1] << "," << sum[2] << "\n";
+
+			count++;*/
 		}
 	}
+
+	/*std::cout << sum[0] << " " << sum[1] << " " << sum[2] << std::endl;
+
+	em.close();*/
 
 	for (int i=0;i<3;i++) { mean[i]=mean[i]/sum[i]; } 
 
@@ -248,7 +268,7 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
 		std::stringstream ss2;
 		ss2<<"EM"<<emNum+1<<".nii";
 
-		Write(partial,ss2.str());
+		//Write(partial,ss2.str());
     }
 
 	debug.close();

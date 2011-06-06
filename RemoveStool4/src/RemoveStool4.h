@@ -30,6 +30,7 @@
 #include <itkSubtractImageFilter.h>
 #include <itkGradientMagnitudeImageFilter.h>
 #include <itkGradientMagnitudeRecursiveGaussianImageFilter.h>
+#include <itkOtsuThresholdImageCalculator.h>
 #include <itkOtsuThresholdImageCalculatorModified.h>
 #include <itkImageDuplicator.h>
 #include <itkSubtractImageFilter.h>
@@ -57,6 +58,14 @@
 #include <itkBinaryMorphologicalClosingImageFilter.h>
 #include <itkScalarImageToHistogramGenerator.h>
 #include <itkImageToHistogramFilter.h>
+#include <itkBinaryThresholdImageFilter.h>
+#include <itkOrImageFilter.h>
+#include <itkConnectedComponentImageFilter.h>
+#include <itkRelabelComponentImageFilter.h>
+#include <itkBinaryImageToShapeLabelMapFilter.h>
+#include <itkHessianRecursiveGaussianImageFilter.h>
+#include <itkResampleImageFilter.h>
+
 
 #define CDF_SIGMA 0.27
 
@@ -76,6 +85,7 @@ typedef unsigned char																BytePixelType;
 typedef itk::BinaryBallStructuringElement<PixelType, 3>								StructuringElementType;
 typedef itk::CovariantVector<float,3>												VectorType;
 typedef itk::FixedArray<float,3>													ArrayType;
+typedef  itk::FixedArray< double, 3 >												EigenValueArrayType;
 
 typedef itk::Image<unsigned long,1> ImageType1D;
 typedef itk::ImageRegionIteratorWithIndex<ImageType1D> IteratorType1D;
@@ -83,6 +93,8 @@ typedef itk::Image<PixelType, 3>													ImageType;
 typedef itk::Image<BytePixelType, 3>												ByteImageType;
 typedef itk::Image<PixelType, 2>													ImageType2D;
 typedef itk::Image<BytePixelType, 2>												ByteImageType2D;
+typedef itk::Image<unsigned int,3>													LabelImageType;
+	
 
 //typedef itk::Image< short int, 3>													ShortImageType;
 typedef itk::Image< float, 3>														FloatImageType;
@@ -98,6 +110,10 @@ typedef itk::ImageRegionIteratorWithIndex<FloatImageType>							FloatIteratorTyp
 typedef itk::ImageRegionIteratorWithIndex<VoxelImageType>							VoxelIteratorType;
 typedef itk::ImageRegionIteratorWithIndex<VectorImageType>							VectorIteratorType;
 typedef itk::ImageRegionIteratorWithIndex<ArrayImageType>							ArrayIteratorType;
+typedef itk::ImageRegionIteratorWithIndex<LabelImageType>							LabelIteratorType;
+
+
+
 
 void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::Pointer &input, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradient_magnitude);
 PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon);
@@ -108,18 +124,23 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 //void TextureAnalysis(ImageType::Pointer &input);
 
 void HeteroStoolRemoval(ImageType::Pointer &cOutput, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap);
-FloatImageType::Pointer StandardDeviation(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius);
 ImageType::Pointer Range(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius);
 void LevelSet(ImageType::Pointer &input, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradient);
-void FixATT(ImageType::Pointer &input, ArrayImageType::Pointer &partial, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon);
+void FixATT(ImageType::Pointer &input, ArrayImageType::Pointer &partial, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, FloatImageType::Pointer &smax, PixelType tissueStoolThreshold);
+
+
+FloatImageType::Pointer StandardDeviation(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius);
+FloatImageType::Pointer StandardDeviation(FloatImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius);
+
 
 // Global vars
 ImageType::RegionType OLDREGION;
 ImageType::RegionType REGION;
 bool write_num = true;
 int write_count = 1;
-bool truncateOn = true;
-unsigned int truncateArray[2] = {85,110};
+bool truncateOn = false;
+unsigned int truncateArray[2] = {85,90};
+//unsigned int truncateArray[2] = {85,110};
 //unsigned int truncateArray[2] = {95,105};
 std::string note;
 PixelType BACKGROUND = 0;

@@ -14,10 +14,10 @@
      PURPOSE.  See the above copyright notices for more information.
 
 =========================================================================*/
-#ifndef __itkOtsuThresholdImageCalculator_txx
-#define __itkOtsuThresholdImageCalculator_txx
+#ifndef __itkOtsuThresholdImageCalculatorModified_txx
+#define __itkOtsuThresholdImageCalculatorModified_txx
 
-#include "itkOtsuThresholdImageCalculator.h"
+#include "itkOtsuThresholdImageCalculatorModified.h"
 #include "itkImageRegionConstIteratorWithIndex.h"
 #include "itkMinimumMaximumImageCalculator.h"
 
@@ -156,6 +156,21 @@ OtsuThresholdImageCalculatorModified<TInputImage>
 		++iter;
 
     }
+
+  // optional: print histogram
+	if ( m_PrintHistogram != "" )
+	{
+		std::ofstream file;
+		file.open( m_PrintHistogram.c_str() );
+		file << "Bin,Frequency\n";
+	
+		for ( int j = 0; j < m_NumberOfHistogramBins; j++ )
+		{
+			file << j+m_HistogramMin << "," << relativeFrequency[j] << "\n";
+		}
+		
+		file.close();
+	}
  
   // normalize the frequencies
   double totalMean = 0.0;
@@ -166,20 +181,7 @@ OtsuThresholdImageCalculatorModified<TInputImage>
     }
 	
 	
-	// optional: print histogram
-	if ( m_PrintHistogram != "" )
-	{
-		std::ofstream file;
-		file.open( m_PrintHistogram.c_str() );
-		file << "Bin,Frequency\n";
 	
-		for ( j = 0; j < m_NumberOfHistogramBins; j++ )
-		{
-			file << j+m_HistogramMin << "," << relativeFrequency[j] << "\n";
-		}
-		
-		file.close();
-	}
 
 
   // compute Otsu's threshold by maximizing the between-class

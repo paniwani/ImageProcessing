@@ -5,7 +5,7 @@
 #include "itkImageSeriesReader.h"
 #include "itkOrientImageFilter.h"
 
-typedef float PixelType;
+typedef short PixelType;
 typedef itk::Image<PixelType, 3> ImageType;
 typedef itk::Image<PixelType, 2> ImageType2D;
 typedef itk::Image<unsigned char, 3> ByteImageType;

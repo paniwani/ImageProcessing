@@ -1,22 +1,16 @@
 #include "RemoveStool4.h"
+#include "utility.cxx"
 #include "io.cxx"
 #include "scattercorrection.cxx"
 #include "QR.cxx"
 #include "EM.cxx"
-//#include "HessianFunctions.cxx"
+#include "HessianFunctions2.cxx"
 
 int main(int argc, char * argv[])
 {
-	/*
-	*	TODO
-	*	- smooth gradient
-	*	- colon air set to 0?
-	*
-	*/
-
+	// Start clock
 	clock_t init,final;
 	init = clock();
-
 
 	if( argc < 2 )
 	{
@@ -32,15 +26,13 @@ int main(int argc, char * argv[])
 	FloatImageType::Pointer			gradientMagnitude		= FloatImageType::New();
 	VoxelImageType::Pointer			vmap					= VoxelImageType::New();
 	ArrayImageType::Pointer			partial					= ArrayImageType::New();
+	FloatImageType::Pointer			smax					= FloatImageType::New();
 
 
 	debug.open("debug.txt");
 
 	// Load images and segment colon
 	Setup(argv[1],inputOriginal,input,colon,gradientMagnitude);
-
-	FloatImageType::Pointer inputSD = StandardDeviation(input,colon,1);
-	Write(inputSD,"inputSD.nii");
 
 	// Initial segmentation, save tissue stool threshold
 	PixelType tst = SingleMaterialClassification(input, gradientMagnitude, vmap, colon);
@@ -51,27 +43,25 @@ int main(int argc, char * argv[])
 	// Update vmap with new scatter input
 	ApplyThresholdRules(input,gradientMagnitude,vmap,colon,tst);
 
-	Write(vmap,"scatter_vmap.nii");
-
-	//LevelSet(input,vmap,colon,gradientMagnitude);
-
-	//DirectionalGradient(input, colon, vmap);
-
-	//TextureAnalysis(input);
+	Write(vmap,"vmapScatter.nii");	
 
 	// Determine boundary types
-	partial = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
+	smax = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
 
+	partial = ComputePartials(input,vmap,colon,smax);
+	
+	FixATT(input,partial,vmap,colon,smax,tst);
+
+	// Perform hessian analysis
+	HessianAnalysis(input,colon,vmap,smax,partial,tst);	
+
+	// Expectation Maximization
+	EM(partial,colon,input);
+
+	// Perform subtraction
 	ImageType::Pointer carstonOutput = Subtraction(input,inputOriginal,colon,partial,vmap);
 
-	//HeteroStoolRemoval(carstonOutput,colon,vmap);
-
-
-
-	//// EM
-	//EM(partial,colon,input);
-
-	// end clock
+	// End clock
 	final = clock() - init;
 
 	std::cout << (double) final / ((double) CLOCKS_PER_SEC) <<  " seconds" << std::endl;
@@ -290,6 +280,63 @@ FloatImageType::Pointer StandardDeviation(ImageType::Pointer &input, ByteImageTy
 	ByteIteratorType maskIt(mask,region);
 	
 	typedef itk::NeighborhoodIterator<ImageType> NeighborhoodIteratorType;
+	NeighborhoodIteratorType nIt(rad,input,region);
+
+	for (nIt.GoToBegin(), outIt.GoToBegin(), maskIt.GoToBegin(); !nIt.IsAtEnd(); ++nIt, ++outIt, ++maskIt)
+	{
+		// inside mask
+		if (maskIt.Get() != 0)
+		{
+			float mean = 0;
+			float std = 0;
+
+			// get mean
+			for (int i=0; i<nIt.Size(); i++)
+			{
+				mean += (float) nIt.GetPixel(i);
+			}
+
+			mean /= (float) nIt.Size();
+
+			//std::cout << mean << std::endl;
+
+			// get standard deviation
+			for (int i=0; i<nIt.Size(); i++)
+			{
+				std += ( (float) nIt.GetPixel(i) - mean ) * ( (float) nIt.GetPixel(i) - mean );
+			}
+
+			std /= ( (float) nIt.Size()-1);
+			std = sqrt(std);
+
+			outIt.Set(std);
+		}
+	}
+
+	return out;
+}
+
+FloatImageType::Pointer StandardDeviation(FloatImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius)
+{
+	// get region
+	FloatImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	// set radius
+	ImageType::SizeType rad;
+	rad.Fill(radius);
+
+	// allocate output image
+	FloatImageType::Pointer out = FloatImageType::New();
+	out->SetSpacing(input->GetSpacing());
+	out->SetRegions(region);
+	out->Allocate();
+	out->FillBuffer(0);
+
+	// iterate image
+	FloatIteratorType outIt(out,region);
+	ByteIteratorType maskIt(mask,region);
+	
+	typedef itk::NeighborhoodIterator<FloatImageType> NeighborhoodIteratorType;
 	NeighborhoodIteratorType nIt(rad,input,region);
 
 	for (nIt.GoToBegin(), outIt.GoToBegin(), maskIt.GoToBegin(); !nIt.IsAtEnd(); ++nIt, ++outIt, ++maskIt)
@@ -916,6 +963,36 @@ PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType
 
 	Write(vmap,"vmap.nii");
 
+	// output means of air tissue stool classes
+	float mean[3] = {0,0,0};
+	int count[3] = {0,0,0};
+	
+	VoxelIteratorType vmapIt(vmap,vmap->GetLargestPossibleRegion());
+	IteratorType inputIt(input,input->GetLargestPossibleRegion());
+	
+	for (vmapIt.GoToBegin(), inputIt.GoToBegin(); !vmapIt.IsAtEnd(); ++vmapIt, ++inputIt)
+	{
+		VoxelType v = vmapIt.Get();
+		PixelType I = (float) inputIt.Get();
+
+		if (v == Air)
+		{
+			mean[0] += I;
+			count[0]++;
+		} else if (v == Tissue) {
+			mean[1] += I;
+			count[1]++;
+		} else if (v == Stool) {
+			mean[2] += I;
+			count[2]++;
+		}
+	}
+
+	std::cout << "Mean" << std::endl;
+	std::cout << "Air: " << mean[0]/count[0] << std::endl;
+	std::cout << "Tissue: " << mean[1]/count[1] << std::endl;
+	std::cout << "Stool: " << mean[2]/count[2] << std::endl;
+
 	return tissueStoolThreshold;
 }
 
@@ -940,7 +1017,7 @@ void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gr
 				voxel = Stool;
 			} else if ( I <= -700 ) {
 				voxel = Air;
-			} else if ( I < tissueStoolThreshold && I > -300 && G <= 400 ) {
+			} else if ( I < tissueStoolThreshold && I > -300 && G <= 300 ) {
 				voxel = Tissue;
 			} else {
 				voxel = Unclassified;

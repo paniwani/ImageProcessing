@@ -378,6 +378,7 @@ ArrayImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageTyp
 					if (value[1] >= 1) { value[1] = 1; }
 
 					value[0]=1-value[1];
+
 					value[2]=0;
 
 					break;
@@ -385,7 +386,14 @@ ArrayImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageTyp
 				case TissueStool:
 
 					value[0]=0;
-					value[2]=I/S;
+
+					// check divide by 0
+					if ( S == 0 )
+					{
+						value[2] = 0;
+					} else {
+						value[2]=I/S;
+					}
 
 					if (value[2] <= 0) { value[2] = 0; }
 					if (value[2] >= 1) { value[2] = 1; }
@@ -396,7 +404,12 @@ ArrayImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageTyp
 
 				case StoolAir:
 
-					value[2]=(I+1000)/(S+1000);
+					if ( (S+1000) == 0 )
+					{
+						value[2] = 0;
+					} else {
+						value[2]=(I+1000)/(S+1000);
+					}
 
 					if (value[2] <= 0) { value[2] = 0; }
 					if (value[2] >= 1) { value[2] = 1; }
@@ -428,8 +441,15 @@ types to edge voxels
 5. Run voxel edge classification
 
 *********************************************************/
-ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, FloatImageType::Pointer &gradientMagnitude, PixelType tissueStoolThreshold)
+FloatImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, FloatImageType::Pointer &gradientMagnitude, PixelType tissueStoolThreshold)
 {
+	// get region
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	// save computed smax
+	FloatImageType::Pointer smaxImage = AllocateFloatImage(input);
+	FloatIteratorType smaxIt(smaxImage,region);
+	
 	ImageType::SpacingType spacing = input->GetSpacing();
 
 	typedef itk::GradientImageFilter<ImageType> GradientImageFilterType;
@@ -489,14 +509,6 @@ ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 	d[1][0] = -1.0; d[1][1] = -0.5; d[1][2] = 0; d[1][3] = 0.5; d[1][4] = 1.0;
 	d[2][0] = -0.6; d[2][1] = -0.3; d[2][2] = 0; d[2][3] = 0.3; d[2][4] = 0.6;
 
-	// save smax to image
-	FloatImageType::Pointer smaxImage = FloatImageType::New();
-	smaxImage->SetRegions(REGION);
-	smaxImage->SetSpacing(input->GetSpacing());
-	smaxImage->Allocate();
-	smaxImage->FillBuffer(0);
-	FloatIteratorType smaxIt(smaxImage,REGION);
-
 	int count=0;
 
 	for (smaxIt.GoToBegin(), gradientIt.GoToBegin(), colonIt.GoToBegin(), vmapIt.GoToBegin(); !smaxIt.IsAtEnd(); 
@@ -544,6 +556,8 @@ ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 				
 				float smaxSA = Stool_Air_ComputeSmax(in,gr,5);
 				//float smaxTS = ComputeSmax(in,gr,5);
+				
+				//float smaxSA = (float) smaxIt.Get();
 				float smaxTS=smaxSA; // enforce same smax
 
 				smaxIt.Set(smaxSA);
@@ -555,7 +569,7 @@ ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 				{
 					useTS = false;
 					
-					smaxIt.Set(100);
+					smaxIt.Set(0);
 
 				} else {
 					distanceTS=AverageTissueStoolDist( smaxTS, in, gr );
@@ -565,7 +579,7 @@ ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 				{
 					useSA = false;
 
-					smaxIt.Set(100);
+					smaxIt.Set(0);
 
 				} else {
 					distanceSA=AverageStoolAirDist( smaxSA, in, gr );
@@ -604,16 +618,27 @@ ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 
 		}		
 	}
+
+	/*for (smaxIt.GoToBegin(), smax2It.GoToBegin(); !smaxIt.IsAtEnd(); ++smaxIt, ++smax2It)
+	{
+		if (smaxIt.Get() < 0)
+			smaxIt.Set(0);
+
+		if (smaxIt.Get() > 1200)
+			smaxIt.Set(1300);
+
+		if (smax2It.Get() < 0)
+			smax2It.Set(0);
+
+		if (smax2It.Get() > 1200)
+			smax2It.Set(1300);
+	}*/
 	
 	Write(smaxImage,"smax.nii");
+	//Write(smaxImage2,"smax2.nii");
 	Write(vmap,"qr.nii");
-	
-	ArrayImageType::Pointer partial = ComputePartials(input,vmap,colon,smaxImage);
-	
-	FixATT(input,partial,vmap,colon);
 
-
-	return partial;
+	return smaxImage;
 }
 
 /*
@@ -621,126 +646,400 @@ ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 * by the QR using standard deviation and
 * assign it a tissue a partial based on intensity
 */
-void FixATT(ImageType::Pointer &input, ArrayImageType::Pointer &partial, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon)
+
+void FixATT(ImageType::Pointer &input, ArrayImageType::Pointer &partial, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, FloatImageType::Pointer &smax, PixelType tissueStoolThreshold)
 {
+	// get region
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
 
-	// make stool air binary mask
-	ByteImageType::Pointer sa = ByteImageType::New();
-	sa->SetRegions(REGION);
-	sa->SetSpacing(input->GetSpacing());
-	sa->CopyInformation(input);
-	sa->Allocate();
-	sa->FillBuffer(0);
-	ByteIteratorType saIt(sa,REGION);
-	VoxelIteratorType vmapIt(vmap,REGION);
+	// get stool air mask
+	ByteImageType::Pointer sam = BinaryThreshold(vmap,StoolAir);
+	//Write(sam,"sam.nii");
 
-	for (saIt.GoToBegin(), vmapIt.GoToBegin(); !saIt.IsAtEnd(); ++saIt, ++vmapIt)
+	// get sd of input in stool air mask
+	FloatImageType::Pointer sdF = StandardDeviation(input,sam,1);
+
+	// cast
+	typedef itk::CastImageFilter<FloatImageType,ImageType> CasterType;
+	CasterType::Pointer caster = CasterType::New();
+	caster->SetInput(sdF);
+	caster->Update();
+	ImageType::Pointer sd = caster->GetOutput();
+	Write(sd,"sd.nii");
+
+	// get nonzero min, max of sd
+	IteratorType sdIt(sd,region);
+	float min = itk::NumericTraits<PixelType>::max();
+	float max = 0;
+
+	for (sdIt.GoToBegin(); !sdIt.IsAtEnd(); ++sdIt)
 	{
-		if (vmapIt.Get() == StoolAir)
+		float s = sdIt.Get();
+
+		if (s > 0)
 		{
-			saIt.Set(255);
+			if (s < min)
+				min = s;
+			if (s > max)
+				max = s;
 		}
 	}
 
-	Write(sa,"sa.nii");
+	std::cout << "sd min: " << min << std::endl;
+	std::cout << "sd max: " << max << std::endl;
 
-	// compute sd within stool air mask
-	FloatImageType::Pointer sasd = StandardDeviation(input,sa,1);
-	Write(sasd,"stoolAirSD_rad_1.nii");
+	// otsu threshold sd
+	typedef itk::OtsuThresholdImageCalculatorModified<ImageType> OtsuType;
+	OtsuType::Pointer otsu = OtsuType::New();
+	otsu->SetImage(sd);
+	otsu->SetMinMax(true);
+	otsu->SetHistogramMin(min);
+	otsu->SetHistogramMax(max);
+	otsu->SetPrintHistogram("sdHistogram.csv");
+	otsu->Compute();
+	float ot = otsu->GetThreshold();
 
-	// get standard deviation histogram
-	typedef itk::Statistics::ScalarImageToHistogramGenerator< FloatImageType > HistogramGeneratorType;
-	HistogramGeneratorType::Pointer histogramGenerator = HistogramGeneratorType::New();
-	histogramGenerator->SetInput(sasd);
-	histogramGenerator->SetNumberOfBins( 256 );
-	histogramGenerator->SetMarginalScale( 10.0 );
+	std::cout << "sd otsu: " << ot << std::endl;
 
-	histogramGenerator->SetHistogramMin(  4.5 );
-	histogramGenerator->SetHistogramMax( 1500.5 );
-	histogramGenerator->Compute();
+	ByteImageType::Pointer sdmask = AllocateByteImage(input);
+	ByteIteratorType sdmaskIt(sdmask,region);
 
-	typedef HistogramGeneratorType::HistogramType  HistogramType;
-
-	const HistogramType * histogram = histogramGenerator->GetOutput();
-
-	// write histogram to txt file
-	const unsigned int histogramSize = histogram->Size();
-	std::cout << "Histogram size " << histogramSize << std::endl;
-
-	std::ofstream sdfile;
-	sdfile.open("sdfile.csv");
-
-	unsigned int bin;
-	for( bin=1; bin < histogramSize; bin++ )
+	for (sdIt.GoToBegin(), sdmaskIt.GoToBegin(); !sdIt.IsAtEnd(); ++sdIt, ++sdmaskIt)
 	{
-		sdfile << bin + 5 << "," << histogram->GetFrequency(bin,0) << "\n";
-	}
-	sdfile.close();
-
-	// convert histogram to 1D image
-	ImageType1D::Pointer histImage = ImageType1D::New();
-	
-	ImageType1D::IndexType index;
-	index[0] = 0;
-	
-	ImageType1D::SizeType size;
-	size[0] = 256;
-	
-	ImageType1D::RegionType region1D;
-	region1D.SetIndex(index);
-	region1D.SetSize(size);
-
-	histImage->SetRegions(region1D);
-	histImage->Allocate();
-	histImage->FillBuffer(0);
-	IteratorType1D histImageIt(histImage,region1D);
-
-	histImageIt.GoToBegin();
-
-	HistogramType::ConstIterator itr = histogram->Begin();
-    HistogramType::ConstIterator end = histogram->End();
- 
-	unsigned int binNumber = 0;
-	while( itr != end && !histImageIt.IsAtEnd() )
-	{
-		histImageIt.Set( itr.GetFrequency() );
-		
-		++itr;
-		++histImageIt;
-		++binNumber;
+		if (sdIt.Get() > min && sdIt.Get() < ot)
+		{
+			sdmaskIt.Set(255);
+		}
 	}
 
-	Write(histImage,"histImage.nii");
+	//Write(sdmask,"sdmask.nii");
 
-	// smooth 1D image
-	typedef itk::DiscreteGaussianImageFilter<ImageType1D,ImageType1D> SmootherType;
-	SmootherType::Pointer smoother = SmootherType::New();
-	smoother->SetInput(histImage);
-	smoother->SetVariance(1);
+	// get input in tissue intensity range mask
+	ByteImageType::Pointer timask = BinaryThreshold(input,-300,tissueStoolThreshold);
+	//Write(timask,"timask.nii"); 
 
-	// convert histogram image back into a histogram
-	typedef itk::Statistics::ImageToHistogramFilter<ImageType1D> ImageToHistogramFilterType;
-	ImageToHistogramFilterType::Pointer image2histFilter = ImageToHistogramFilterType::New();
-	image2histFilter->SetInput(smoother->GetOutput());
-	image2histFilter->Update();
+	// mask sd with tissue intensity mask
+	sdmask = Mask(sdmask,timask);
+	//Write(sdmask,"sdmask2.nii");
+
+	// ------------------------------------------------------------------------
+	// for each sd component, count number of times it touches tissue
+	// ------------------------------------------------------------------------
+
+	// get connected components		
+	typedef itk::ConnectedComponentImageFilter<ByteImageType, LabelImageType> ConnectedType;
+	ConnectedType::Pointer connecter = ConnectedType::New();
+	connecter->SetInput(sdmask);
+	connecter->SetBackgroundValue(0);
 	
-	const HistogramType * smoothHistogram = image2histFilter->GetOutput();
+	typedef itk::RelabelComponentImageFilter<LabelImageType, LabelImageType> RelabelType;
+	RelabelType::Pointer relabeler = RelabelType::New();
+	relabeler->SetInput(connecter->GetOutput());
+	relabeler->SetMinimumObjectSize(3);
+	relabeler->Update();
 
-	// write histogram to txt file
-	const unsigned int histogramSize2 = smoothHistogram->Size();
-	std::cout << "Histogram size " << histogramSize2 << std::endl;
+	unsigned long originalNumOfObjects = relabeler->GetOriginalNumberOfObjects();
+	unsigned long numOfObjects = relabeler->GetNumberOfObjects();
 
-	std::ofstream sdfile2;
-	sdfile2.open("sdfile2.csv");
+	std::cout << "Original # of objects: " << originalNumOfObjects << std::endl;
+	std::cout << "Number of objects: " << numOfObjects << std::endl;
 
-	unsigned int bin2;
-	for( bin2=1; bin2 < histogramSize; bin2++ )
+	LabelImageType::Pointer cc = relabeler->GetOutput();
+	LabelIteratorType ccIt(cc,region);
+
+	Write(cc,"ccRelabel.nii");
+
+	std::vector<unsigned long> countVector;
+	countVector.resize(numOfObjects+1);
+
+	typedef itk::NeighborhoodIterator<VoxelImageType> NeighborhoodIteratorType;
+
+	VoxelImageType::SizeType radius;
+	radius.Fill(1);
+
+	NeighborhoodIteratorType vIt(radius,vmap,region);
+
+	for (vIt.GoToBegin(), ccIt.GoToBegin(); !vIt.IsAtEnd(); ++vIt, ++ccIt)
 	{
-		sdfile2 << bin2 + 5 << "," << histogram->GetFrequency(bin2,0) << "\n";
+		if ( ccIt.Get() > 0 )
+		{
+			bool tissueNeighbor = false;
+
+			for (int i=0; i<vIt.Size(); i++)
+			{
+				if ( i != (vIt.Size()-1)/2 )
+				{
+					if ( vIt.GetPixel(i) == Tissue )
+					{
+						tissueNeighbor = true;
+						break;
+					}
+				}
+			}
+
+			if (tissueNeighbor)
+				countVector[ ccIt.Get() ]++;
+		}
 	}
-	sdfile2.close();
+
+	sdmaskIt = ByteIteratorType(sdmask,region);
+
+	for (ccIt.GoToBegin(), sdmaskIt.GoToBegin(); !ccIt.IsAtEnd(); ++ccIt, ++sdmaskIt)
+	{
+		if ( countVector[ ccIt.Get() ] < 10 )
+		{
+			sdmaskIt.Set( 0 );	
+		}
+	}
+
+	//Write(sdmask,"sdmaskPost.nii");
+
+	// compute partial of tissue
+
+	IteratorType inputIt(input,region);
+	FloatIteratorType smaxIt(smax,region);
+	ArrayIteratorType partialIt(partial,region);
+
+	for (inputIt.GoToBegin(), smaxIt.GoToBegin(), partialIt.GoToBegin(), sdmaskIt.GoToBegin(); !inputIt.IsAtEnd();
+		 ++inputIt, ++smaxIt, ++partialIt, ++sdmaskIt)
+	{
+		if (sdmaskIt.Get() != 0)
+		{
+			float I = (float) inputIt.Get();
+			float S = (float) smaxIt.Get();
+
+			ArrayType p;
+
+			if ( S > 0 )
+			{
+				p[0] = 0;
+
+				p[1] = 1 - (I/S);
+
+				// bounds check
+				p[1] = (p[1] > 1) ? 1 : p[1];
+				p[1] = (p[1] < 0) ? 0 : p[1];
+
+				p[2] = 1 - p[1];
+
+			} else {
+				p[0] = 0;
+				p[1] = 1;
+				p[2] = 0;
+			}
+
+			partialIt.Set( p );
+		}
+	}
+
+	Write(partial,"partialATTFix.nii");
 }
+
+
+
+
+
+
+
+
+
+
+//void FixATT(ImageType::Pointer &input, ArrayImageType::Pointer &partial, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon)
+//{
+//	ImageType::RegionType region = input->GetLargestPossibleRegion();
+//
+//	// make stool air binary mask
+//	ByteImageType::Pointer sa = ByteImageType::New();
+//	sa->SetRegions(REGION);
+//	sa->SetSpacing(input->GetSpacing());
+//	sa->CopyInformation(input);
+//	sa->Allocate();
+//	sa->FillBuffer(0);
+//	ByteIteratorType saIt(sa,REGION);
+//	VoxelIteratorType vmapIt(vmap,REGION);
+//
+//	for (saIt.GoToBegin(), vmapIt.GoToBegin(); !saIt.IsAtEnd(); ++saIt, ++vmapIt)
+//	{
+//		if (vmapIt.Get() == StoolAir)
+//		{
+//			saIt.Set(255);
+//		}
+//	}
+//
+//	Write(sa,"sa.nii");
+//
+//	// find tissue automatically
+//	// compute sd within stool air mask smoothed
+//	/*float sigma[5] = {0.1, 0.25, 0.5, 1, 2};
+//
+//	for (int i=0; i<5; i++)
+//	{*/
+//		//// smooth input
+//		//typedef itk::DiscreteGaussianImageFilter<ImageType,FloatImageType> GaussianType;
+//		//GaussianType::Pointer smoother = GaussianType::New();
+//		//smoother->SetInput(input);
+//		//smoother->SetVariance( sigma[i]*sigma[i] );
+//		//smoother->Update();
+//		//FloatImageType::Pointer smoothedInput = smoother->GetOutput();
+//
+//		// get sd within SA mask
+//		FloatImageType::Pointer sasd = StandardDeviation ( input, sa, 1 );
+//		std::stringstream ss;
+//		//ss << "stoolAirSD_rad_1_sigma_" << sigma[i] << ".nii";
+//		Write(sasd,"sasd.nii");
+//
+//
+//		// tissue can only be within strict intensity range
+//		typedef itk::BinaryThresholdImageFilter<ImageType,ByteImageType> 
+//
+//
+//		// otsu
+//
+//		// get non-zero min and max of image
+//		FloatIteratorType sasdIt(sasd,region);
+//		float min = itk::NumericTraits<float>::max();
+//		float max = 0;
+//
+//		for (sasdIt.GoToBegin(); !sasdIt.IsAtEnd(); ++sasdIt)
+//		{
+//			float val = sasdIt.Get();
+//
+//			if ( val > 0 )
+//			{
+//				if (val < min)
+//					min = val;
+//
+//				if (val > max)
+//					val = max;
+//			}
+//		}
+//
+//		std::cout << "min: " << min << std::endl;
+//		std::cout << "max: " << max << std::endl;
+//
+//		// otsu threshold
+//		typedef itk::OtsuThresholdImageCalculatorModified<FloatImageType> OtsuType;
+//		OtsuType::Pointer otsuCalc = OtsuType::New();
+//		otsuCalc->SetImage(sasd);
+//		otsuCalc->SetMinMax(true);
+//		otsuCalc->SetHistogramMin(min);
+//		otsuCalc->SetHistogramMax(max);
+//		otsuCalc->SetPrintHistogram("otsu.csv");
+//		otsuCalc->Compute();
+//		float ot = otsuCalc->GetThreshold();
+//
+//		std::cout << "Otsu: " << ot << std::endl;
+//
+//		// threshold
+//		typedef itk::BinaryThresholdImageFilter<FloatImageType,ByteImageType> ThresholdType;
+//		ThresholdType::Pointer thresholder = ThresholdType::New();
+//		thresholder->SetInput(sasd);
+//		thresholder->SetLowerThreshold( ot );
+//		thresholder->SetInsideValue(0);
+//		thresholder->SetOutsideValue(255);
+//		thresholder->Update();
+//
+//		ss.str("");
+//		ss << "sasdOtsu_sigma_" << sigma[i] << ".nii";
+//		Write(thresholder->GetOutput(),ss.str());		
+//
+//		std::cout << std::endl;
+//	}	
+//	//FloatImageType::Pointer sasd = StandardDeviation(input,sa,1);
+//	//Write(sasd,"stoolAirSD_rad_1.nii");
+//
+//	//// get standard deviation histogram
+//	//typedef itk::Statistics::ScalarImageToHistogramGenerator< FloatImageType > HistogramGeneratorType;
+//	//HistogramGeneratorType::Pointer histogramGenerator = HistogramGeneratorType::New();
+//	//histogramGenerator->SetInput(sasd);
+//	//histogramGenerator->SetNumberOfBins( 256 );
+//	//histogramGenerator->SetMarginalScale( 10.0 );
+//
+//	//histogramGenerator->SetHistogramMin(  4.5 );
+//	//histogramGenerator->SetHistogramMax( 1500.5 );
+//	//histogramGenerator->Compute();
+//
+//	//typedef HistogramGeneratorType::HistogramType  HistogramType;
+//
+//	//const HistogramType * histogram = histogramGenerator->GetOutput();
+//
+//	//// write histogram to txt file
+//	//const unsigned int histogramSize = histogram->Size();
+//	//std::cout << "Histogram size " << histogramSize << std::endl;
+//
+//	//std::ofstream sdfile;
+//	//sdfile.open("sdfile.csv");
+//
+//	//unsigned int bin;
+//	//for( bin=1; bin < histogramSize; bin++ )
+//	//{
+//	//	sdfile << bin + 5 << "," << histogram->GetFrequency(bin,0) << "\n";
+//	//}
+//	//sdfile.close();
+//
+//	//// convert histogram to 1D image
+//	//ImageType1D::Pointer histImage = ImageType1D::New();
+//	//
+//	//ImageType1D::IndexType index;
+//	//index[0] = 0;
+//	//
+//	//ImageType1D::SizeType size;
+//	//size[0] = 256;
+//	//
+//	//ImageType1D::RegionType region1D;
+//	//region1D.SetIndex(index);
+//	//region1D.SetSize(size);
+//
+//	//histImage->SetRegions(region1D);
+//	//histImage->Allocate();
+//	//histImage->FillBuffer(0);
+//	//IteratorType1D histImageIt(histImage,region1D);
+//
+//	//histImageIt.GoToBegin();
+//
+//	//HistogramType::ConstIterator itr = histogram->Begin();
+// //   HistogramType::ConstIterator end = histogram->End();
+// //
+//	//unsigned int binNumber = 0;
+//	//while( itr != end && !histImageIt.IsAtEnd() )
+//	//{
+//	//	histImageIt.Set( itr.GetFrequency() );
+//	//	
+//	//	++itr;
+//	//	++histImageIt;
+//	//	++binNumber;
+//	//}
+//
+//	//Write(histImage,"histImage.nii");
+//
+//	//// smooth 1D image
+//	//typedef itk::DiscreteGaussianImageFilter<ImageType1D,ImageType1D> SmootherType;
+//	//SmootherType::Pointer smoother = SmootherType::New();
+//	//smoother->SetInput(histImage);
+//	//smoother->SetVariance(1);
+//
+//	//// convert histogram image back into a histogram
+//	//typedef itk::Statistics::ImageToHistogramFilter<ImageType1D> ImageToHistogramFilterType;
+//	//ImageToHistogramFilterType::Pointer image2histFilter = ImageToHistogramFilterType::New();
+//	//image2histFilter->SetInput(smoother->GetOutput());
+//	//image2histFilter->Update();
+//	//
+//	//const HistogramType * smoothHistogram = image2histFilter->GetOutput();
+//
+//	//// write histogram to txt file
+//	//const unsigned int histogramSize2 = smoothHistogram->Size();
+//	//std::cout << "Histogram size " << histogramSize2 << std::endl;
+//
+//	//std::ofstream sdfile2;
+//	//sdfile2.open("sdfile2.csv");
+//
+//	//unsigned int bin2;
+//	//for( bin2=1; bin2 < histogramSize; bin2++ )
+//	//{
+//	//	sdfile2 << bin2 + 5 << "," << histogram->GetFrequency(bin2,0) << "\n";
+//	//}
+//	//sdfile2.close();
+//}
 
 
 /*
