@@ -29,6 +29,27 @@ std::vector<std::string> explode( const std::string &delimiter, const std::strin
     return arr;
 }
 
+void Write2(ImageType::Pointer image, std::string name) {
+	typedef itk::ImageFileWriter< ImageType >  WriterType;
+    WriterType::Pointer writer = WriterType::New();
+	WriterType::SetGlobalWarningDisplay(false);
+	
+	std::stringstream ss;
+	if ( !note.empty() )
+		ss << note << "_";
+
+	if ( write_num )
+		ss << write_count++ << "_";
+
+	ss << name;
+
+	writer->SetFileName(ss.str().c_str());
+
+	writer->SetInput(image);
+	std::cout<<"Writing: "<<ss.str()<<std::endl;
+	writer->Update();
+}
+
 void Write(ImageType::Pointer image, std::string name) {
 	typedef itk::ImageFileWriter< ImageType >  WriterType;
     WriterType::Pointer writer = WriterType::New();
@@ -245,7 +266,7 @@ void Write(ArrayImageType::Pointer &v, std::string name)
 }
 
 template <typename T>
-typename T::Pointer ReadDicom( std::string path, int slice1=0, int slice2=-1)
+typename T::Pointer ReadDicom( std::string path, int slice1=-1, int slice2=-1)
 {	
 	// Create reader
 	itk::ImageSeriesReader<T>::Pointer reader = itk::ImageSeriesReader<T>::New();
@@ -275,10 +296,15 @@ typename T::Pointer ReadDicom( std::string path, int slice1=0, int slice2=-1)
 
 	std::vector<std::string> names = fit->GetFileNames();
 	
-	if (slice2 > 0 && slice2 > slice1)
+	if (slice1 > -1 && slice2 > -1 && slice2 > slice1)
 	{
 		names.erase( names.begin(), names.begin()+slice1);
 		names.erase( names.begin()+slice2-slice1, names.end() );
+	} else if (slice1 > -1 && slice2 == -1) {
+		names.erase( names.begin(), names.begin()+slice1-1);
+		names.erase( names.begin()+1, names.end() );
+	} else {
+		std::cout << "Error truncating slices. Restoring full set." << std::endl;
 	}
 
     reader->SetFileNames( names );

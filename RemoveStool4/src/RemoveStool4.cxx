@@ -25,14 +25,14 @@ int main(int argc, char * argv[])
 	ByteImageType::Pointer			colon					= ByteImageType::New();
 	FloatImageType::Pointer			gradientMagnitude		= FloatImageType::New();
 	VoxelImageType::Pointer			vmap					= VoxelImageType::New();
-	ArrayImageType::Pointer			partial					= ArrayImageType::New();
-	FloatImageType::Pointer			smax					= FloatImageType::New();
-
 
 	debug.open("debug.txt");
 
 	// Load images and segment colon
 	Setup(argv[1],inputOriginal,input,colon,gradientMagnitude);
+
+	//AdaptiveThreshold(input,colon);
+	//LocalThreshold(input,colon,gradientMagnitude,vmap);
 
 	// Initial segmentation, save tissue stool threshold
 	PixelType tst = SingleMaterialClassification(input, gradientMagnitude, vmap, colon);
@@ -41,19 +41,23 @@ int main(int argc, char * argv[])
 	input = ScatterCorrection(inputOriginal,colon,vmap);
 
 	// Update vmap with new scatter input
-	ApplyThresholdRules(input,gradientMagnitude,vmap,colon,tst);
+	ApplyThresholdRules(input,REGION,gradientMagnitude,vmap,colon,tst);
 
 	Write(vmap,"vmapScatter.nii");	
 
 	// Determine boundary types
-	smax = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
+	FloatImageType::Pointer smax = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
 
-	partial = ComputePartials(input,vmap,colon,smax);
+	gradientMagnitude.~SmartPointer();
+
+	ArrayImageType::Pointer partial = ComputePartials(input,vmap,colon,smax);
 	
 	FixATT(input,partial,vmap,colon,smax,tst);
 
+	smax.~SmartPointer();
+
 	// Perform hessian analysis
-	HessianAnalysis(input,colon,vmap,smax,partial,tst);	
+	HessianAnalysis(input,colon,vmap,partial,tst);	
 
 	// Expectation Maximization
 	EM(partial,colon,input);
@@ -68,6 +72,141 @@ int main(int argc, char * argv[])
 
 	system("pause");
 	return 0;
+}
+
+void AdaptiveThreshold(ImageType::Pointer &input, ByteImageType::Pointer &colon)
+{
+	// get an adaptive threshold between tissue and stool
+	typedef itk::AdaptiveOtsuThresholdImageFilter<ImageType,ImageType> AOFilterType;
+	AOFilterType::Pointer otsuFilter = AOFilterType::New();
+	otsuFilter->SetOutsideValue(0);
+	otsuFilter->SetInsideValue(255);
+	otsuFilter->SetInput(input);
+
+	try {
+		otsuFilter->Update();
+	} catch( itk::ExceptionObject & err ) {
+		std::cerr << "Error: " << err << std::endl;
+		system("pause");
+	}
+	
+	ImageType::Pointer bth = otsuFilter->GetOutput();
+	Write(bth,"bth.nii");
+	
+	ImageType::Pointer th = otsuFilter->GetThresholdImage();
+	Write(th,"th.nii");
+}
+
+
+
+
+
+
+
+// divide image and auto threshold I and G in each region
+void LocalThreshold(ImageType::Pointer &input, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradientMagnitude, VoxelImageType::Pointer &vmap)
+{
+	// get full region
+	ImageType::RegionType fullRegion = input->GetLargestPossibleRegion();
+
+	unsigned int requestedDivisions = 128;//itk::NumericTraits<unsigned int>::max();
+
+	// divide image into hyper cubes
+	typedef itk::ImageRegionMultidimensionalSplitter<3> SplitterType;
+	SplitterType::Pointer splitter = SplitterType::New();
+
+	unsigned int divisions = splitter->GetNumberOfSplits(fullRegion,requestedDivisions);
+
+	std::cout << "requested number of divisions: " << requestedDivisions << std::endl;
+	std::cout << "number of divisions: " << divisions << std::endl;
+
+	// allocate vmap
+	vmap->SetRegions( fullRegion );
+	vmap->SetSpacing( input->GetSpacing() );
+	vmap->SetDirection( input->GetDirection() );
+	vmap->CopyInformation( input );
+	vmap->Allocate();
+	vmap->FillBuffer(Unclassified);
+
+	// setup otsu calculator
+	typedef itk::OtsuThresholdImageCalculatorModified< ImageType > OtsuThresholdImageCalculatorModifiedType;
+	OtsuThresholdImageCalculatorModifiedType::Pointer otsuCalculator = OtsuThresholdImageCalculatorModifiedType::New();
+	otsuCalculator->SetImage(input);
+	otsuCalculator->SetMinMax(true);
+	otsuCalculator->SetHistogramMin(-300);
+	otsuCalculator->SetHistogramMax(1500);
+
+	// get global otsu threshold
+	otsuCalculator->Compute();
+	PixelType globalOtsu = otsuCalculator->GetThreshold();
+
+	// allocate otsu map image
+	FloatImageType::Pointer otsuMap = AllocateFloatImage(input);
+	
+	for (unsigned int i=0; i<divisions; i++)
+	{
+		// get local region
+		ImageType::RegionType localRegion = splitter->GetSplit(i,divisions,fullRegion);
+
+		//// validate region
+		//ImageType::IndexType localIndex = localRegion.GetIndex();
+		//ImageType::SizeType localSize = localRegion.GetSize();
+
+		//for (int j=0; j<3; j++)
+		//{
+		//	int over = ( localIndex[j] + localSize[j] ) - fullRegion.GetSize()[j];
+
+		//	if (over > 0)
+		//	{
+		//		localSize[j] -= over;
+		//	}
+		//}
+		//localRegion.SetSize(localSize);
+
+		// set otsu region
+		otsuCalculator->SetRegion(localRegion);
+		std::stringstream ss;
+		ss << i << "_intensity.csv";
+		otsuCalculator->SetPrintHistogram(ss.str());
+		otsuCalculator->Compute();
+		
+		PixelType otsu = otsuCalculator->GetThreshold();
+		std::cout << "otsu " << i << ": " << otsu << std::endl;
+
+		// set bounds on local tissue stool threshold
+		if ( otsu < 100 || otsu > 700 )
+		{
+			otsu = globalOtsu;
+		}
+
+		// fill map with otsu value
+		FloatIteratorType oit(otsuMap,localRegion);
+		for (oit.GoToBegin(); !oit.IsAtEnd(); ++oit)
+		{
+			oit.Set(i);
+		}
+
+		ApplyThresholdRules(input,localRegion,gradientMagnitude,vmap,colon,otsu);
+
+		/* write input in local region
+		std::stringstream ss;
+		ss << "region" << i << ".nii";
+
+		Write( Crop(input,localRegion) , ss.str() );	*/
+
+		/*std::stringstream ss;
+		ss << "vmap" << i << ".nii";
+		Write(vmap,ss.str());*/
+	}
+
+	std::stringstream ss;
+	ss << "vmapLocal_ " << divisions << ".nii";
+	Write(vmap,ss.str());
+
+	ApplyThresholdRules(input,fullRegion,gradientMagnitude,vmap,colon,globalOtsu);
+	Write(vmap,"vmapGlobal.nii");
+
+	Write(otsuMap,"otsuMap.nii");
 }
 
 void LevelSet(ImageType::Pointer &input, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradientMagnitude)
@@ -585,7 +724,7 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 		}
 	}
 
-	Write(inputOriginal,"output.nii");
+	Write2(inputOriginal,"output.nii");
 
 	return inputOriginal;
 }
@@ -795,7 +934,7 @@ void Setup(std::string dataset, ImageType::Pointer  &inputOriginal, ImageType::P
 	// Set global region
 	REGION = inputOriginal->GetLargestPossibleRegion();	
 
-	Write(inputOriginal,"inputOriginal.nii");
+	Write2(inputOriginal,"inputOriginal.nii");
 
 	// Get image minimum and set as global background
 	typedef itk::MinimumMaximumImageCalculator<ImageType> MinimumMaximumImageCalculatorType;
@@ -950,7 +1089,7 @@ PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType
 	otsuCalculator->SetMinMax(true);
 	otsuCalculator->SetHistogramMin(-300);
 	otsuCalculator->SetHistogramMax(1500);
-	otsuCalculator->SetPrintHistogram(note+"_intensity.csv");
+	//otsuCalculator->SetPrintHistogram(note+"_intensity.csv");
 	otsuCalculator->Compute();
 
 	PixelType tissueStoolThreshold = otsuCalculator->GetThreshold();
@@ -959,7 +1098,7 @@ PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType
 	//----------------------------------------------
 	// Apply initial threshold rules
 	//----------------------------------------------
-	ApplyThresholdRules( input, gradientMagnitude, vmap, colon, tissueStoolThreshold );
+	ApplyThresholdRules( input, input->GetLargestPossibleRegion(), gradientMagnitude, vmap, colon, tissueStoolThreshold );
 
 	Write(vmap,"vmap.nii");
 
@@ -996,12 +1135,12 @@ PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType
 	return tissueStoolThreshold;
 }
 
-void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gradientMagnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissueStoolThreshold )
+void ApplyThresholdRules( ImageType::Pointer &input, ImageType::RegionType localRegion, FloatImageType::Pointer &gradientMagnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissueStoolThreshold )
 {
-	IteratorType inputIt(input,REGION);
-	FloatIteratorType gradientMagnitudeIt(gradientMagnitude,REGION);
-	VoxelIteratorType vmapIt(vmap,REGION);
-	ByteIteratorType colonIt(colon,REGION);
+	IteratorType inputIt(input,localRegion);
+	FloatIteratorType gradientMagnitudeIt(gradientMagnitude,localRegion);
+	VoxelIteratorType vmapIt(vmap,localRegion);
+	ByteIteratorType colonIt(colon,localRegion);
 
 	for ( inputIt.GoToBegin(), gradientMagnitudeIt.GoToBegin(), vmapIt.GoToBegin(), colonIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++gradientMagnitudeIt, ++vmapIt, ++colonIt)
 	{

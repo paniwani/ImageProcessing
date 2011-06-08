@@ -53,7 +53,7 @@ FloatImageType::Pointer AllocateFloatImage(FloatImageType::Pointer &in)
 	return out;
 }
 
-ByteImageType::Pointer BinaryThreshold(ImageType::Pointer &in, PixelType t1, PixelType t2)
+ByteImageType::Pointer BinaryThreshold(ImageType::Pointer &in, PixelType t1=itk::NumericTraits<PixelType>::NonpositiveMin(), PixelType t2=itk::NumericTraits<PixelType>::max())
 {
 	ByteImageType::Pointer out = AllocateByteImage(in);
 	
@@ -190,6 +190,16 @@ void Rescale(FloatImageType::Pointer &in, float min, float max)
 	rescaler->SetOutputMinimum(min);
 	rescaler->Update();
 	in = rescaler->GetOutput();
+}
+
+ImageType::Pointer Crop(ImageType::Pointer &input, ImageType::RegionType requestedRegion)
+{
+	typedef itk::RegionOfInterestImageFilter<ImageType,ImageType> CropType;
+	CropType::Pointer cropper = CropType::New();
+	cropper->SetInput(input);
+	cropper->SetRegionOfInterest(requestedRegion);
+	cropper->Update();
+	return cropper->GetOutput();
 }
 
 

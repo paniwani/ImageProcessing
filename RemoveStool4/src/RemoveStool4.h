@@ -65,6 +65,8 @@
 #include <itkBinaryImageToShapeLabelMapFilter.h>
 #include <itkHessianRecursiveGaussianImageFilter.h>
 #include <itkResampleImageFilter.h>
+#include <itkImageRegionMultidimensionalSplitter.h>
+#include <itkAdaptiveOtsuThresholdImageFilter.h>
 
 
 #define CDF_SIGMA 0.27
@@ -112,12 +114,9 @@ typedef itk::ImageRegionIteratorWithIndex<VectorImageType>							VectorIteratorT
 typedef itk::ImageRegionIteratorWithIndex<ArrayImageType>							ArrayIteratorType;
 typedef itk::ImageRegionIteratorWithIndex<LabelImageType>							LabelIteratorType;
 
-
-
-
 void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::Pointer &input, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradient_magnitude);
 PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon);
-void ApplyThresholdRules( ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissue_stool_threshold );
+void ApplyThresholdRules( ImageType::Pointer &input, ImageType::RegionType localRegion, FloatImageType::Pointer &gradientMagnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissueStoolThreshold );
 void Dilate(ByteImageType::Pointer &img, unsigned int radius);
 void DirectionalGradient(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap);
 ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &inputOriginal, ByteImageType::Pointer &colon, ArrayImageType::Pointer &partial, VoxelImageType::Pointer &vmap);
@@ -132,14 +131,27 @@ void FixATT(ImageType::Pointer &input, ArrayImageType::Pointer &partial, VoxelIm
 FloatImageType::Pointer StandardDeviation(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius);
 FloatImageType::Pointer StandardDeviation(FloatImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius);
 
+void LocalThreshold(ImageType::Pointer &input, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradientMagnitude, VoxelImageType::Pointer &vmap);
+
+void AdaptiveThreshold(ImageType::Pointer &input, ByteImageType::Pointer &colon);
+
+struct point{
+	int intensity;
+	int size;
+	int order;
+};
+
+typedef struct point ptype;
+
 
 // Global vars
 ImageType::RegionType OLDREGION;
 ImageType::RegionType REGION;
 bool write_num = true;
 int write_count = 1;
-bool truncateOn = false;
-unsigned int truncateArray[2] = {85,90};
+bool truncateOn = true;
+//int truncateArray[2] = {85,-1};
+unsigned int truncateArray[2] = {130,200};
 //unsigned int truncateArray[2] = {85,110};
 //unsigned int truncateArray[2] = {95,105};
 std::string note;

@@ -695,7 +695,7 @@ void FixATT(ImageType::Pointer &input, ArrayImageType::Pointer &partial, VoxelIm
 	otsu->SetMinMax(true);
 	otsu->SetHistogramMin(min);
 	otsu->SetHistogramMax(max);
-	otsu->SetPrintHistogram("sdHistogram.csv");
+	//otsu->SetPrintHistogram("sdHistogram.csv");
 	otsu->Compute();
 	float ot = otsu->GetThreshold();
 

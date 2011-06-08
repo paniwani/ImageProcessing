@@ -105,10 +105,10 @@ OtsuThresholdImageCalculatorModified<TInputImage>
 		m_NumberOfHistogramBins = m_HistogramMax - m_HistogramMin;
 	}
 
-	std::cout << "Total number of pixels: " << totalPixels << std::endl;
+	/*std::cout << "Total number of pixels: " << totalPixels << std::endl;
 	std::cout << "HistogramMin: " << m_HistogramMin << std::endl;
 	std::cout << "HistogramMax: " << m_HistogramMax << std::endl;
-	std::cout << "PrintHistogram: " << m_PrintHistogram << std::endl;
+	std::cout << "PrintHistogram: " << m_PrintHistogram << std::endl;*/
 	
 	/////////////////////////////////////////////////////////////////////
 	

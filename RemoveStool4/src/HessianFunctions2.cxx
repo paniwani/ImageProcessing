@@ -483,7 +483,76 @@ FloatImageType::Pointer SatoResponse(ImageType::Pointer input_aniso_short, doubl
 	return output_aniso;
 }
 
-void HessianAnalysis(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, FloatImageType::Pointer &smax, ArrayImageType::Pointer &partial, PixelType tissueStoolThreshold)
+
+
+bool compare(ptype a, ptype b)
+{
+	if(a.size > b.size)
+	{
+		return true;
+	}
+	else return false;
+}
+
+bool compareintensity(ptype a, ptype b)
+{
+	if(a.intensity < b.intensity)
+	{
+		return true;
+	}
+	else return false;
+}
+
+void Relabel(LabelImageType::Pointer &image, unsigned int minSize=0)
+{
+	LabelIteratorType it(image, image->GetLargestPossibleRegion());
+	unsigned int maxintensity = 0;
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > maxintensity)
+		{
+			maxintensity = it.Get();
+		}
+	}
+	
+	std::vector<ptype> count;
+	for(unsigned int i = 1; i <= maxintensity; i++)
+	{
+		ptype a;
+		a.intensity = i;
+		a.size = 0;
+		count.push_back(a);
+	}
+
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > 0)
+		{
+			++count[it.Get() - 1].size;
+		}
+	}
+
+	sort(count.begin(), count.end(), compare);
+
+	for(unsigned int i = 0; i < count.size(); i++)
+	{
+		count[i].order = i + 1;
+	}
+
+	sort(count.begin(), count.end(), compareintensity);
+
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > 0 && count[it.Get()-1].size > minSize)
+		{
+			it.Set(count[it.Get() - 1].order);
+		} else {
+			it.Set(0);
+		}
+	}
+}
+
+void HessianAnalysis(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, ArrayImageType::Pointer &partial, PixelType tissueStoolThreshold)
 {
 	// get region
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
@@ -511,6 +580,8 @@ void HessianAnalysis(ImageType::Pointer &input, ByteImageType::Pointer &colon, V
 	ByteImageType::Pointer hbin = BinaryThreshold(hessian,.2);
 	Write(hbin,"hbin20.nii");
 
+	hessian.~SmartPointer();
+
 	// ------------------------------------------------------------------------
 	// for each hessian component, count number of times it touches largest component of tissue
 	// ------------------------------------------------------------------------
@@ -520,8 +591,16 @@ void HessianAnalysis(ImageType::Pointer &input, ByteImageType::Pointer &colon, V
 	ConnectedType::Pointer connecter = ConnectedType::New();
 	connecter->SetInput(hbin);
 	connecter->SetBackgroundValue(0);
+	connecter->Update();
+	LabelImageType::Pointer cc = connecter->GetOutput();
 	
-	typedef itk::RelabelComponentImageFilter<LabelImageType, LabelImageType> RelabelType;
+	Relabel(cc,3);
+
+	LabelIteratorType ccIt(cc,region);
+
+	Write(cc,"ccRelabel.nii");
+	
+	/*typedef itk::RelabelComponentImageFilter<LabelImageType, LabelImageType> RelabelType;
 	RelabelType::Pointer relabeler = RelabelType::New();
 	relabeler->SetInput(connecter->GetOutput());
 	relabeler->SetMinimumObjectSize(3);
@@ -531,12 +610,19 @@ void HessianAnalysis(ImageType::Pointer &input, ByteImageType::Pointer &colon, V
 	unsigned long numOfObjects = relabeler->GetNumberOfObjects();
 
 	std::cout << "Original # of objects: " << originalNumOfObjects << std::endl;
-	std::cout << "Number of objects: " << numOfObjects << std::endl;
+	std::cout << "Number of objects: " << numOfObjects << std::endl;*/
+	
+	unsigned int numOfObjects = 0;
 
-	LabelImageType::Pointer cc = relabeler->GetOutput();
-	LabelIteratorType ccIt(cc,region);
+	for (ccIt.GoToBegin(); !ccIt.IsAtEnd(); ++ccIt)
+	{
+		if (ccIt.Get() > numOfObjects)
+		{
+			numOfObjects = ccIt.Get();
+		}
+	}	
 
-	Write(cc,"ccRelabel.nii");
+	std::cout << "number of objects: " << numOfObjects << std::endl;
 
 	std::vector<unsigned int> countVector;
 	countVector.resize(numOfObjects+1);
@@ -573,6 +659,8 @@ void HessianAnalysis(ImageType::Pointer &input, ByteImageType::Pointer &colon, V
 				countVector[ ccIt.Get() ]++;
 		}
 	}
+
+	tissueLarge.~SmartPointer();
 
 	ByteIteratorType hbinIt(hbin,region);
 
