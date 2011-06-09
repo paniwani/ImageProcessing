@@ -31,6 +31,9 @@ int main(int argc, char * argv[])
 	// Load images and segment colon
 	Setup(argv[1],inputOriginal,input,colon,gradientMagnitude);
 
+	TextureTest(input,colon);
+
+	//ConnectedTest(input,gradientMagnitude,colon);
 	//AdaptiveThreshold(input,colon);
 	//LocalThreshold(input,colon,gradientMagnitude,vmap);
 
@@ -72,6 +75,143 @@ int main(int argc, char * argv[])
 
 	system("pause");
 	return 0;
+}
+
+void TextureTest(ImageType::Pointer &input, ByteImageType::Pointer &colon)
+{
+	ImageType::Pointer range = Range(input,colon,1);
+	Write(range,"range.nii");
+
+	FloatImageType::Pointer sd = StandardDeviation(input,colon,1);
+	Write(sd,"sd.nii");	
+}
+
+
+
+void ConnectedTest(ImageType::Pointer &input, FloatImageType::Pointer &gradientMagnitude, ByteImageType::Pointer &colon)
+{
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	/*smooth input
+	typedef itk::FastBilateralImageFilter<ImageType,ImageType> SmoothFilterType;
+	SmoothFilterType::Pointer smoother = SmoothFilterType::New();
+	smoother->SetInput(input);
+
+	double rangeSigma = 50.0;
+	double domainSigma = 10.0;
+
+	smoother->SetRangeSigma(rangeSigma);
+	smoother->SetDomainSigma(domainSigma);
+	smoother->Update();
+	input = smoother->GetOutput();
+	WriteITK <ImageType> (inputSmooth,"inputSmooth.nii");*/
+
+	// get conservative tissue estimate
+	ByteImageType::Pointer tmap = AllocateByteImage(input);
+
+	ByteIteratorType tIt(tmap,region);
+	ByteIteratorType cIt(colon,region);
+	IteratorType It(input,region);
+	FloatIteratorType gIt(gradientMagnitude,region);
+
+	for (It.GoToBegin(), tIt.GoToBegin(), gIt.GoToBegin(), cIt.GoToBegin(); !It.IsAtEnd(); ++It, ++tIt, ++gIt, ++cIt)
+	{
+		if (cIt.Get() != 0)
+		{
+			PixelType I = It.Get();
+			float G = gIt.Get();
+
+			if ( I >= -250 && I <= 150 && G <= 300)
+			{
+				tIt.Set(255);
+			}
+		}
+	}
+
+	Write(tmap,"tmap.nii");
+
+	//// keep components with large (>100 pixels) size only
+	//typedef itk::BinaryShapeOpeningImageFilter<ByteImageType> OpeningType;
+	//OpeningType::Pointer open = OpeningType::New();
+	//open->SetInput(tmap);
+	//open->SetForegroundValue(255);
+	//open->SetBackgroundValue(0);
+	//open->SetAttribute("Size");
+	//open->SetLambda(100);
+	//open->Update();
+	//ByteImageType::Pointer tmapBig = open->GetOutput();
+	//Write(tmapBig,"tmapBig1.nii");
+
+	//open->SetFullyConnected(true);
+	//open->Update();
+	//tmapBig = open->GetOutput();
+	//Write(tmapBig,"tmapBig2.nii");
+
+	// keep only those components that are fully surrounded by tissue
+
+	typedef itk::NeighborhoodIterator<ByteImageType> NeighborhoodIteratorType;
+	
+	ByteImageType::SizeType radius;
+	radius.Fill(1);
+
+	NeighborhoodIteratorType nIt(radius,tmap,region);
+
+	ByteImageType::Pointer tmap2 = AllocateByteImage(input);
+	ByteIteratorType t2It(tmap2,region);
+
+	for (nIt.GoToBegin(), t2It.GoToBegin(), cIt.GoToBegin(); !nIt.IsAtEnd(); ++nIt, ++t2It, ++cIt)
+	{
+		if (cIt.Get() != 0)
+		{
+			if ( nIt.GetCenterPixel() != 0)
+			{
+				bool surrounded = true;
+
+				for (unsigned int i=0; i<nIt.Size(); i++)
+				{
+					if ( i != ((nIt.Size()-1)/2) )
+					{
+						if ( nIt.GetPixel(i) == 0 )
+						{
+							surrounded = false;
+							break;
+						}
+					}
+				}
+
+				if (surrounded)
+				{
+					t2It.Set(255);
+				}
+			}
+		}
+	}
+
+	Write(tmap2,"tmap2.nii");
+
+	typedef itk::ConfidenceConnectedImageFilter<ImageType,ByteImageType> ConfidenceConnectedType;
+	ConfidenceConnectedType::Pointer connecter = ConfidenceConnectedType::New();
+	connecter->SetInput(input);
+	connecter->SetInitialNeighborhoodRadius(1);
+	connecter->SetMultiplier(2);
+	connecter->SetNumberOfIterations(1);
+	connecter->SetReplaceValue(255);
+
+	for (t2It.GoToBegin(); !t2It.IsAtEnd(); ++t2It)
+	{
+		if (t2It.Get() != 0)
+		{
+			connecter->AddSeed( t2It.GetIndex() );
+		}
+	}
+
+	connecter->Update();
+
+	std::cout << "mean: " << connecter->GetMean() << std::endl;
+	std::cout << "std: " << sqrt(connecter->GetVariance()) << std::endl;
+
+	Write(connecter->GetOutput(),"connected.nii");
+
 }
 
 void AdaptiveThreshold(ImageType::Pointer &input, ByteImageType::Pointer &colon)
@@ -1083,17 +1223,19 @@ PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType
 	// Compute otsu threshold separating tissue and stool
 	//----------------------------------------------
 
-	typedef itk::OtsuThresholdImageCalculatorModified< ImageType > OtsuThresholdImageCalculatorModifiedType;
-	OtsuThresholdImageCalculatorModifiedType::Pointer otsuCalculator = OtsuThresholdImageCalculatorModifiedType::New();
-	otsuCalculator->SetImage( input );
-	otsuCalculator->SetMinMax(true);
-	otsuCalculator->SetHistogramMin(-300);
-	otsuCalculator->SetHistogramMax(1500);
-	//otsuCalculator->SetPrintHistogram(note+"_intensity.csv");
-	otsuCalculator->Compute();
+	//typedef itk::OtsuThresholdImageCalculatorModified< ImageType > OtsuThresholdImageCalculatorModifiedType;
+	//OtsuThresholdImageCalculatorModifiedType::Pointer otsuCalculator = OtsuThresholdImageCalculatorModifiedType::New();
+	//otsuCalculator->SetImage( input );
+	//otsuCalculator->SetMinMax(true);
+	//otsuCalculator->SetHistogramMin(-300);
+	//otsuCalculator->SetHistogramMax(1500);
+	////otsuCalculator->SetPrintHistogram(note+"_intensity.csv");
+	//otsuCalculator->Compute();
 
-	PixelType tissueStoolThreshold = otsuCalculator->GetThreshold();
-	std::cout << "Tissue Stool Otsu Threshold: " << tissueStoolThreshold << std::endl;
+	//PixelType tissueStoolThreshold = otsuCalculator->GetThreshold();
+	//std::cout << "Tissue Stool Otsu Threshold: " << tissueStoolThreshold << std::endl;
+
+	PixelType tissueStoolThreshold = 180;
 
 	//----------------------------------------------
 	// Apply initial threshold rules

@@ -67,7 +67,9 @@
 #include <itkResampleImageFilter.h>
 #include <itkImageRegionMultidimensionalSplitter.h>
 #include <itkAdaptiveOtsuThresholdImageFilter.h>
-
+#include <itkFastBilateralImageFilter.h>
+#include <itkBinaryShapeOpeningImageFilter.h>
+#include <itkConfidenceConnectedImageFilter.h>
 
 #define CDF_SIGMA 0.27
 
@@ -135,6 +137,10 @@ void LocalThreshold(ImageType::Pointer &input, ByteImageType::Pointer &colon, Fl
 
 void AdaptiveThreshold(ImageType::Pointer &input, ByteImageType::Pointer &colon);
 
+void ConnectedTest(ImageType::Pointer &input, FloatImageType::Pointer &gradientMagnitude, ByteImageType::Pointer &colon);
+
+void TextureTest(ImageType::Pointer &input, ByteImageType::Pointer &colon);
+
 struct point{
 	int intensity;
 	int size;
@@ -151,7 +157,7 @@ bool write_num = true;
 int write_count = 1;
 bool truncateOn = true;
 //int truncateArray[2] = {85,-1};
-unsigned int truncateArray[2] = {130,200};
+unsigned int truncateArray[2] = {130,150};
 //unsigned int truncateArray[2] = {85,110};
 //unsigned int truncateArray[2] = {95,105};
 std::string note;

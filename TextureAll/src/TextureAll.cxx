@@ -4,28 +4,27 @@ average across offsets
 */
 
 #include "itkImage.h"
-#include "otbImage.h"
 #include <iostream>
 #include <otbScalarImageToTexturesFilter.h>
 #include <otbScalarImageToAdvancedTexturesFilter.h>
 #include <otbScalarImageToHigherOrderTexturesFilter.h>
 #include <itkRescaleIntensityImageFilter.h>
 #include <itkRegionOfInterestImageFilter.h>
-#include <otbImageFileReader.h>
-#include <otbImageFileWriter.h>
+#include <itkImageFileReader.h>
+#include <itkImageFileWriter.h>
 #include <itkNeighborhood.h>
 #include <itkDivideByConstantImageFilter.h>
 #include <itkAddImageFilter.h>
 
 typedef float PixelType;
-typedef otb::Image<PixelType,2> ImageType2D;
-typedef otb::Image<unsigned char,2> ByteImageType2D;
+typedef itk::Image<PixelType,2> ImageType2D;
+typedef itk::Image<unsigned char,2> ByteImageType2D;
 typedef ImageType2D::OffsetType OffsetType;
 
 template <typename T>
 typename T::Pointer ReadITK(char * fileName) {
 	std::cout << "Reading " <<  fileName << std::endl;
-	typedef otb::ImageFileReader< T > ReaderType;
+	typedef itk::ImageFileReader< T > ReaderType;
 	ReaderType::Pointer reader = ReaderType::New();
 	reader->SetFileName( fileName );
 
@@ -41,7 +40,7 @@ typename T::Pointer ReadITK(char * fileName) {
 
 template <typename T>
 void WriteITK(typename T::Pointer image, std::string name) {
-    typedef otb::ImageFileWriter< T >  WriterType;
+    typedef itk::ImageFileWriter< T >  WriterType;
     WriterType::Pointer writer = WriterType::New();
 	WriterType::SetGlobalWarningDisplay(false);
 	writer->SetFileName(name.c_str());
@@ -58,10 +57,10 @@ void WriteITK(typename T::Pointer image, std::string name) {
 int main()
 {
 	// load input
-	ImageType2D::Pointer input = ReadITK <ImageType2D> ("mr10_092_13p_i0134.png");
+	ImageType2D::Pointer input = ReadITK <ImageType2D> ("att.png");
 
 	// set radius
-	const unsigned int radius = 1;
+	const unsigned int radius = 2;
 	ImageType2D::SizeType rad;
 	rad.Fill(radius);
 

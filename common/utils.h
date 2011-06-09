@@ -27,6 +27,8 @@ struct point{
 	int intensity;
 	int size;
 	int order;
+	int border;
+	float centroidY;
 };
 
 typedef struct point ptype;
@@ -66,6 +68,7 @@ typename T::Pointer ReadITK(char * fileName) {
 	typedef itk::ImageFileReader< T > ReaderType;
 	ReaderType::Pointer reader = ReaderType::New();
 	reader->SetFileName( fileName );
+	reader->SetGlobalWarningDisplay(false);
 
 	try {
 		reader->Update();
@@ -170,6 +173,29 @@ ByteImageType::Pointer AllocateByteImage(FloatImageType::Pointer &in)
 	return out;
 }
 
+ByteImageType::Pointer AllocateByteImage(UIntImageType::Pointer &in)
+{
+	ByteImageType::Pointer out = ByteImageType::New();
+	out->SetRegions( in->GetLargestPossibleRegion() );
+	out->SetSpacing( in->GetSpacing() );
+	out->CopyInformation( in );
+	out->Allocate();
+	out->FillBuffer(0);
+	return out;
+}
+
+ByteImageType::Pointer AllocateByteImage(ByteImageType::Pointer &in)
+{
+	ByteImageType::Pointer out = ByteImageType::New();
+	out->SetRegions( in->GetLargestPossibleRegion() );
+	out->SetSpacing( in->GetSpacing() );
+	out->CopyInformation( in );
+	out->Allocate();
+	out->FillBuffer(0);
+	return out;
+}
+
+
 FloatImageType::Pointer AllocateFloatImage(ImageType::Pointer &in)
 {
 	FloatImageType::Pointer out = FloatImageType::New();
@@ -192,7 +218,7 @@ FloatImageType::Pointer AllocateFloatImage(FloatImageType::Pointer &in)
 	return out;
 }
 
-ByteImageType::Pointer BinaryThreshold(ImageType::Pointer &in, PixelType t1=itk::NumericTraits<PixelType>::NonpositiveMin(), PixelType t2=itk::NumericTraits<PixelType>::max())
+ByteImageType::Pointer BinaryThreshold(ImageType::Pointer &in, PixelType t1, PixelType t2)
 {
 	ByteImageType::Pointer out = AllocateByteImage(in);
 	
@@ -204,6 +230,66 @@ ByteImageType::Pointer BinaryThreshold(ImageType::Pointer &in, PixelType t1=itk:
 		if ( it.Get() > t1 && it.Get() < t2)
 		{
 			oit.Set(255);
+		}
+	}
+	
+	return out;
+}
+
+ByteImageType::Pointer BinaryThreshold(ImageType::Pointer &in, PixelType t, bool reverse=false)
+{
+	ByteImageType::Pointer out = AllocateByteImage(in);
+	
+	IteratorType it(in,in->GetLargestPossibleRegion());
+	ByteIteratorType oit(out,out->GetLargestPossibleRegion());
+
+	for (it.GoToBegin(), oit.GoToBegin(); !it.IsAtEnd(); ++it, ++oit)
+	{
+		if ( it.Get() < t )
+		{
+			if (reverse)
+			{
+				oit.Set(0);
+			} else {
+				oit.Set(255);
+			}
+		} else {
+			if (reverse)
+			{
+				oit.Set(255);
+			} else {
+				oit.Set(0);
+			}
+		}
+	}
+	
+	return out;
+}
+
+ByteImageType::Pointer BinaryThreshold(UIntImageType::Pointer &in, unsigned int t, bool reverse=false)
+{
+	ByteImageType::Pointer out = AllocateByteImage(in);
+	
+	UIntIteratorType it(in,in->GetLargestPossibleRegion());
+	ByteIteratorType oit(out,out->GetLargestPossibleRegion());
+
+	for (it.GoToBegin(), oit.GoToBegin(); !it.IsAtEnd(); ++it, ++oit)
+	{
+		if ( it.Get() < t )
+		{
+			if (reverse)
+			{
+				oit.Set(0);
+			} else {
+				oit.Set(255);
+			}
+		} else {
+			if (reverse)
+			{
+				oit.Set(255);
+			} else {
+				oit.Set(0);
+			}
 		}
 	}
 	
@@ -351,14 +437,37 @@ void GetMinMax(ImageType::Pointer &im, PixelType &min, PixelType &max)
 	max = calc->GetMaximum();
 }
 
-UIntImageType::Pointer CC(ByteImageType::Pointer &im)
+void GetMinMax(UIntImageType::Pointer &im, unsigned int &min, unsigned int &max)
+{
+	typedef itk::MinimumMaximumImageCalculator<UIntImageType> CalcType;
+	CalcType::Pointer calc = CalcType::New();
+	calc->SetImage(im);
+	calc->Compute();
+	min = calc->GetMinimum();
+	max = calc->GetMaximum();
+}
+
+void GetMinMax(ByteImageType::Pointer &im, unsigned char &min, unsigned char &max)
+{
+	typedef itk::MinimumMaximumImageCalculator<ByteImageType> CalcType;
+	CalcType::Pointer calc = CalcType::New();
+	calc->SetImage(im);
+	calc->Compute();
+	min = calc->GetMinimum();
+	max = calc->GetMaximum();
+}
+
+UIntImageType::Pointer CC(ByteImageType::Pointer &im, bool fullConnect=false)
 {
 	typedef itk::ConnectedComponentImageFilter<ByteImageType,UIntImageType> CCFilterType;
 	CCFilterType::Pointer ccer = CCFilterType::New();
 	ccer->SetInput(im);
+	ccer->SetFullyConnected(fullConnect);
 	ccer->Update();
 	return ccer->GetOutput();
 }
+
+bool compare(unsigned int i,unsigned int j) { return (i<j); }
 
 bool compareSize(ptype a, ptype b)
 {
@@ -372,6 +481,24 @@ bool compareSize(ptype a, ptype b)
 bool compareIntensity(ptype a, ptype b)
 {
 	if(a.intensity < b.intensity)
+	{
+		return true;
+	}
+	else return false;
+}
+
+bool compareBorder(ptype a, ptype b)
+{
+	if(a.border > b.border)
+	{
+		return true;
+	}
+	else return false;
+}
+
+bool compareCentroidY(ptype a, ptype b)
+{
+	if(a.centroidY > b.centroidY)
 	{
 		return true;
 	}
@@ -396,6 +523,8 @@ void RelabelSize(UIntImageType::Pointer &image, unsigned int minSize = 0)
 		ptype a;
 		a.intensity = i;
 		a.size = 0;
+		a.border = 0;
+		a.centroidY = 0;
 		count.push_back(a);
 	}
 	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
@@ -425,6 +554,228 @@ void RelabelSize(UIntImageType::Pointer &image, unsigned int minSize = 0)
 	}
 }
 
+void RelabelCentroidY(UIntImageType::Pointer &image, unsigned int minCentroidY = 0)
+{
+	UIntIteratorType it(image, image->GetLargestPossibleRegion());
+	int maxintensity = 0;
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > maxintensity)
+		{
+			maxintensity = it.Get();
+		}
+	}
+	
+	std::vector<ptype> count;
+	for(int i = 1; i <= maxintensity; i++)
+	{
+		ptype a;
+		a.intensity = i;
+		a.size = 0;
+		a.border = 0;
+		a.centroidY = 0;
+		count.push_back(a);
+	}
+	
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > 0)
+		{
+			ByteImageType::IndexType idx = it.GetIndex();
+			count[it.Get() - 1].centroidY += idx[1];
+			++count[it.Get() - 1].size;
+		}
+	}
+
+	for(int i = 0; i < count.size(); i++)
+	{
+		count[i].centroidY /= (float) count[i].size;
+	}
+
+	sort(count.begin(), count.end(), compareCentroidY);
+
+	for(int i = 0; i < count.size(); i++)
+	{
+		count[i].order = i + 1;
+	}
+
+	sort(count.begin(), count.end(), compareIntensity);
+
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > 0 && count[it.Get() - 1].centroidY > minCentroidY)
+		{
+			it.Set(count[it.Get() - 1].order);
+		}
+	}
+}
+
+void RelabelCentroidY(ByteImageType::Pointer &image, unsigned int minCentroidY = 0)
+{
+	ByteIteratorType it(image, image->GetLargestPossibleRegion());
+	int maxintensity = 0;
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > maxintensity)
+		{
+			maxintensity = it.Get();
+		}
+	}
+	
+	std::vector<ptype> count;
+	for(int i = 1; i <= maxintensity; i++)
+	{
+		ptype a;
+		a.intensity = i;
+		a.size = 0;
+		a.border = 0;
+		a.centroidY = 0;
+		count.push_back(a);
+	}
+	
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > 0)
+		{
+			ByteImageType::IndexType idx = it.GetIndex();
+			count[it.Get() - 1].centroidY += idx[1];
+			++count[it.Get() - 1].size;
+		}
+	}
+
+	for(int i = 0; i < count.size(); i++)
+	{
+		count[i].centroidY /= (float) count[i].size;
+	}
+
+	sort(count.begin(), count.end(), compareCentroidY);
+
+	for(int i = 0; i < count.size(); i++)
+	{
+		count[i].order = i + 1;
+	}
+
+	sort(count.begin(), count.end(), compareIntensity);
+
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > 0 && count[it.Get() - 1].centroidY > minCentroidY)
+		{
+			it.Set(count[it.Get() - 1].order);
+		}
+	}
+}
+
+
+
+void RelabelBorder(UIntImageType::Pointer &image, unsigned int minBorder = 0)
+{
+	UIntIteratorType it(image, image->GetLargestPossibleRegion());
+	int maxintensity = 0;
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > maxintensity)
+		{
+			maxintensity = it.Get();
+		}
+	}
+	
+	std::vector<ptype> count;
+	for(int i = 1; i <= maxintensity; i++)
+	{
+		ptype a;
+		a.intensity = i;
+		a.size = 0;
+		a.border = 0;
+		a.centroidY = 0;
+		count.push_back(a);
+	}
+
+	UIntImageType::SizeType size = image->GetLargestPossibleRegion().GetSize();
+
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > 0)
+		{
+			ByteImageType::IndexType idx = it.GetIndex();
+			if (idx[0] == 0 || idx[0] == size[0] || idx[1] == 0 || idx[1] == size[1])
+				++count[it.Get() - 1].border;
+		}
+	}
+	
+
+	sort(count.begin(), count.end(), compareBorder);
+
+	for(int i = 0; i < count.size(); i++)
+	{
+		count[i].order = i + 1;
+	}
+
+	sort(count.begin(), count.end(), compareIntensity);
+
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > 0 && count[it.Get() - 1].border > minBorder)
+		{
+			it.Set(count[it.Get() - 1].order);
+		}
+	}
+}
+
+void RelabelBorder(ByteImageType::Pointer &image, unsigned int minBorder = 0)
+{
+	ByteIteratorType it(image, image->GetLargestPossibleRegion());
+	int maxintensity = 0;
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > maxintensity)
+		{
+			maxintensity = it.Get();
+		}
+	}
+	
+	std::vector<ptype> count;
+	for(int i = 1; i <= maxintensity; i++)
+	{
+		ptype a;
+		a.intensity = i;
+		a.size = 0;
+		a.border = 0;
+		a.centroidY = 0;
+		count.push_back(a);
+	}
+
+	ByteImageType::SizeType size = image->GetLargestPossibleRegion().GetSize();
+
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > 0)
+		{
+			ByteImageType::IndexType idx = it.GetIndex();
+			if (idx[0] == 0 || idx[0] == size[0] || idx[1] == 0 || idx[1] == size[1])
+				++count[it.Get() - 1].border;
+		}
+	}
+	
+
+	sort(count.begin(), count.end(), compareBorder);
+
+	for(int i = 0; i < count.size(); i++)
+	{
+		count[i].order = i + 1;
+	}
+
+	sort(count.begin(), count.end(), compareIntensity);
+
+	for(it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if(it.Get() > 0 && count[it.Get() - 1].border > minBorder)
+		{
+			it.Set(count[it.Get() - 1].order);
+		}
+	}
+}
+
 
 void Threshold(UIntImageType::Pointer &im, unsigned int a, unsigned int b)
 {
@@ -437,4 +788,42 @@ void Threshold(UIntImageType::Pointer &im, unsigned int a, unsigned int b)
 			it.Set(0);
 		}
 	}
+}
+
+ByteImageType::Pointer Binarize(UIntImageType::Pointer &im)
+{
+	ByteImageType::Pointer output = AllocateByteImage(im);
+	ByteIteratorType oit(output,output->GetLargestPossibleRegion());
+
+	UIntIteratorType it(im,im->GetLargestPossibleRegion());
+	for (it.GoToBegin(), oit.GoToBegin(); !it.IsAtEnd(); ++it, ++oit)
+	{
+		if (it.Get() > 0)
+		{
+			oit.Set(255);
+		} else {
+			oit.Set(0);
+		} 
+	}
+
+	return output;
+}
+
+ByteImageType::Pointer Binarize(ByteImageType::Pointer &im)
+{
+	ByteImageType::Pointer output = AllocateByteImage(im);
+	ByteIteratorType oit(output,output->GetLargestPossibleRegion());
+
+	ByteIteratorType it(im,im->GetLargestPossibleRegion());
+	for (it.GoToBegin(), oit.GoToBegin(); !it.IsAtEnd(); ++it, ++oit)
+	{
+		if (it.Get() > 0)
+		{
+			oit.Set(255);
+		} else {
+			oit.Set(0);
+		} 
+	}
+
+	return output;
 }
