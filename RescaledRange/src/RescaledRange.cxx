@@ -4,17 +4,26 @@
 #include <itkNeighborhood.h>
 #include <itkNeighborhoodIterator.h>
 #include <itkLabelImageToLabelMapFilter.h>
+#include <itkLabelMapToLabelImageFilter.h>
+#include <itkRelabelLabelMapFilter.h>
 //#include <itkShapedNeighborhoodIterator.h>
 
-float ComputeSlope(std::vector<float> x, std::vector<float> y);
+float ComputeLogSlope(std::vector<float> x, std::vector<float> y);
 
 int main(int argc, char * argv[])				
-{ 												
+{ 			
+	if( argc < 3 )
+	{
+		std::cerr << "Usage: " << std::endl;
+		std::cerr << "RescaledRange inputImage radius";
+		return EXIT_FAILURE;
+	}
+
 	// Load image
-	ByteImageType2D::Pointer input = ReadITK <ByteImageType2D> ("att.png");
+	ByteImageType2D::Pointer input = ReadITK <ByteImageType2D> (argv[1]);
 	ByteImageType2D::RegionType region = input->GetLargestPossibleRegion();
 
-	int radius = 3;
+	int radius = atoi(argv[2]);
 
 	// Make map image
 	ByteImageType2D::Pointer map = ByteImageType2D::New();
@@ -52,16 +61,20 @@ int main(int argc, char * argv[])
 		
 		unsigned char d = off[0]*off[0] + off[1]*off[1];
 
-		if ( d <= 10 )
+		// make octagonal shape
+		/*if ( d <= 10 )
 		{
 			mapIt.Set(d);
 		} else {
 			mapIt.Set(0);
-		}
+		}*/
+
+		mapIt.Set(d);
+
 		count++;
 	}
 
-	WriteITK <ByteImageType2D> (map,"map.nii");
+	//WriteITK <ByteImageType2D> (map,"map.nii");
 
 	// Convert map to label map to get number of distance classes
 	typedef itk::LabelImageToLabelMapFilter<ByteImageType2D> LabelImageToLabelMapFilterType;
@@ -76,28 +89,31 @@ int main(int argc, char * argv[])
 	std::vector< LabelType > labelVector = labelMap->GetLabels();
 	
 	unsigned int numClasses = labelVector.size();
-
-	labelMap.~SmartPointer();
 	
 	// Make distance vector
 	std::vector<float> dv;
 	dv.resize(numClasses);
 	for (int i=0; i<numClasses; i++)
 	{
-		dv[i] = log( sqrt( (float) labelVector[i] ) );
+		dv[i] = sqrt( (float) labelVector[i] );
 	}
 
-	// Rescale map
-	typedef itk::RescaleIntensityImageFilter<ByteImageType2D,ByteImageType2D> RescalerType;
-	RescalerType::Pointer rescaler = RescalerType::New();
-	rescaler->SetInput(map);
-	rescaler->SetOutputMaximum(numClasses);
-	rescaler->SetOutputMinimum(0);
-	rescaler->Update();
-	map = rescaler->GetOutput();
+	// Relabel map consecutively to correspond to each distance class	
+	typedef itk::RelabelLabelMapFilter<LabelMapType> RelabelLabelMapFilterType;
+	RelabelLabelMapFilterType::Pointer relabeler = RelabelLabelMapFilterType::New();
+	relabeler->SetInput(labelMap);
+	
+	typedef itk::LabelMapToLabelImageFilter<LabelMapType,ByteImageType2D> LabelMapToLabelImageFilterType;
+	LabelMapToLabelImageFilterType::Pointer labelMapToImageFilter = LabelMapToLabelImageFilterType::New();
+	labelMapToImageFilter->SetInput(relabeler->GetOutput());
+	labelMapToImageFilter->Update();
+
+	map = labelMapToImageFilter->GetOutput();
 	mapIt = ByteIteratorType2D(map,mapRegion);
 
-	WriteITK <ByteImageType2D> (map,"map2.nii");
+	labelMap.~SmartPointer();
+
+	//WriteITK <ByteImageType2D> (map,"map2.nii");
 
 	// Allocate range vector to store min and max for each class
 	struct srange {
@@ -116,9 +132,14 @@ int main(int argc, char * argv[])
 		rangeVector.push_back(r);
 	}
 
+	//std::cout << "Number of classes: " << numClasses << std::endl;
+	//std::cout << "rangeVector.size(): " << rangeVector.size() << std::endl;
+
 	// Allocate vector to store final range values
 	std::vector<float> rv;
 	rv.resize(numClasses);
+
+	//std::cout << "rv.size() " << rv.size() << std::endl;
 
 	// Allocate output image
 	FloatImageType2D::Pointer out = FloatImageType2D::New();
@@ -139,7 +160,7 @@ int main(int argc, char * argv[])
 	{
 
 		// Reset range vector
-		for (int i=0; i<rangeVector.size(); i++)
+		for (int i=0; i<numClasses; i++)
 		{
 			rangeVector[i].min = itk::NumericTraits<unsigned char>::max();
 			rangeVector[i].max = itk::NumericTraits<unsigned char>::NonpositiveMin();
@@ -168,24 +189,25 @@ int main(int argc, char * argv[])
 		}
 
 		// Compute range for each distance class
-		for (int i=0; i<rangeVector.size(); i++)
+		for (int i=0; i<numClasses; i++)
 		{
-			rv[i] = log( (float) rangeVector[i].max - (float) rangeVector[i].min );
+			rv[i] = (float) rangeVector[i].max - (float) rangeVector[i].min;
 		}
 
 		// Get slope
-		float slope = ComputeSlope(dv,rv);
+		float slope = ComputeLogSlope(dv,rv);
 
 		oit.Set(slope);
 	}
 
-	WriteITK <FloatImageType2D> (out,"out.nii");
-	
-	system("pause"); 							
+	std::stringstream ss;
+	ss << "rr" << radius << ".nii";
+	WriteITK <FloatImageType2D> (out,ss.str());
+							
 	return 0; 									
 } 							
 
-float ComputeSlope(std::vector<float> x, std::vector<float> y)
+float ComputeLogSlope(std::vector<float> x, std::vector<float> y)
 {
 /*
 To find the
@@ -214,7 +236,6 @@ B = ( s2*t0 - s1*t1 ) / (s0*s2 - s1*s1)
 and the regression line is given by 
 
 y = Mx + B*/
-
 	
 	unsigned int N = x.size();
 	float s0,s1,s2,t0,t1;
@@ -222,29 +243,31 @@ y = Mx + B*/
 	s0 = N+1;
 	s1 = 0; s2=0; t0=0; t1=0;
 
-	// check that range is not all 0
-	bool isZero = true;
 	for (int i=0; i<N; i++)
 	{
-		if (y[i] != 0)
+		if (y[i] > 0) // ensure non-zero range is used to compute log-slope
 		{
-			isZero = false;
-			break;
+			float lx = log(x[i]);
+			float ly = log(y[i]);
+
+			s1 += lx;
+			s2 += lx*lx;
+			t0 += ly;
+			t1 += lx*ly;
+		} else {
+			s0 -= -1;
 		}
 	}
 
-	if (!isZero)
+	// Don't divide by zero
+	float num = s0*t1 - s1*t0;
+	float den = s0*s2 - s1*s1;
+
+	if (den == 0)
 	{
-		for (int i=0; i<N; i++)
-		{
-			s1 += x[i];
-			s2 += x[i]*x[i];
-			t0 += y[i];
-			t1 += x[i]*y[i];
-		}
-
-		return ( s0*t1 - s1*t0 ) / ( s0*s2 - s1*s1 );
-	} else {
 		return 0;
+	} else {
+		return num/den;
 	}
+
 }
