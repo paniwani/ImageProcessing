@@ -70,6 +70,10 @@
 #include <itkFastBilateralImageFilter.h>
 #include <itkBinaryShapeOpeningImageFilter.h>
 #include <itkConfidenceConnectedImageFilter.h>
+#include <itkNeighborhood.h>
+#include <itkLabelImageToLabelMapFilter.h>
+#include <itkLabelMapToLabelImageFilter.h>
+#include <itkRelabelLabelMapFilter.h>
 
 #define CDF_SIGMA 0.27
 
@@ -97,6 +101,7 @@ typedef itk::Image<PixelType, 3>													ImageType;
 typedef itk::Image<BytePixelType, 3>												ByteImageType;
 typedef itk::Image<PixelType, 2>													ImageType2D;
 typedef itk::Image<BytePixelType, 2>												ByteImageType2D;
+typedef itk::Image<float, 2>														FloatImageType2D;
 typedef itk::Image<unsigned int,3>													LabelImageType;
 	
 
@@ -141,6 +146,10 @@ void ConnectedTest(ImageType::Pointer &input, FloatImageType::Pointer &gradientM
 
 void TextureTest(ImageType::Pointer &input, ByteImageType::Pointer &colon);
 
+float ComputeLogSlope(std::vector<float> x, std::vector<float> y);
+
+FloatImageType::Pointer RescaledRange(ImageType::Pointer &input, unsigned int radius);
+
 struct point{
 	int intensity;
 	int size;
@@ -153,13 +162,13 @@ typedef struct point ptype;
 // Global vars
 ImageType::RegionType OLDREGION;
 ImageType::RegionType REGION;
-bool write_num = true;
+bool write_num = false;
 int write_count = 1;
 bool truncateOn = true;
 //int truncateArray[2] = {85,-1};
-unsigned int truncateArray[2] = {130,150};
-//unsigned int truncateArray[2] = {85,110};
-//unsigned int truncateArray[2] = {95,105};
+unsigned int truncateArray[2] = {130,135};
+//unsigned int truncateArray[2] = {85,90};
+//unsigned int truncateArray[2] = {0,105};
 std::string note;
 PixelType BACKGROUND = 0;
 double PI=3.1415926;

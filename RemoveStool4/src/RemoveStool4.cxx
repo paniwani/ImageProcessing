@@ -6,6 +6,59 @@
 #include "EM.cxx"
 #include "HessianFunctions2.cxx"
 
+void Test(ImageType::Pointer &inputOriginal, ImageType::Pointer &input, ByteImageType::Pointer &colon)
+{
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	//// get 2d grad mag
+	//typedef itk::GradientMagnitudeImageFilter<ImageType2D,FloatImageType2D> GradientMagnitudeImageFilterType2D;
+	//typedef itk::SliceBySliceImageFilter<ImageType,FloatImageType,GradientMagnitudeImageFilterType2D> SliceBySliceImageFilterType;
+
+	//GradientMagnitudeImageFilterType2D::Pointer gf = GradientMagnitudeImageFilterType2D::New();
+
+	//SliceBySliceImageFilterType::Pointer sgf = SliceBySliceImageFilterType::New();
+	//sgf->SetInput(input);
+	//sgf->SetFilter(gf);
+	//sgf->Update();
+	//FloatImageType::Pointer gm = sgf->GetOutput();
+
+	//Write(gm,"gm2D.nii");
+
+	//// allocate vmap
+	//VoxelImageType::Pointer vmap = VoxelImageType::New();
+	//vmap->SetRegions(region);
+	//vmap->Allocate();
+	//vmap->FillBuffer(Unclassified);
+
+	//ApplyThresholdRules(input, region, gm, vmap, colon, 180);
+
+	//Write(vmap,"vmap.nii");
+
+	//// Do scatter correction
+
+	//ImageType::Pointer inputScatter = ScatterCorrection(inputOriginal,colon);
+	//Write(inputScatter,"inputScatter.nii");
+
+	//// Show change in scatter correction
+	//typedef itk::SubtractImageFilter<ImageType,ImageType> SubtracterType;
+	//SubtracterType::Pointer subtracter = SubtracterType::New();
+	//subtracter->SetInput1(input);
+	//subtracter->SetInput2(inputScatter);
+	//subtracter->Update();
+	//Write(subtracter->GetOutput(),"scatterChange.nii");
+
+	//// Get vmap with updated input
+	//vmap->FillBuffer(Unclassified);
+	//ApplyThresholdRules(input, region, gm, vmap, colon, 180);
+
+	typedef itk::FastBilateralImageFilter<ImageType,ImageType> FastBilateralImageFilterType;
+	FastBilateralImageFilter::Pointer bilateralFilter = FastBilateralImageFilter::New();
+	bilateralFilter->SetInput(input);
+	bilateralFilter->SetDomainSigma(
+
+
+}
+
 int main(int argc, char * argv[])
 {
 	// Start clock
@@ -31,51 +84,85 @@ int main(int argc, char * argv[])
 	// Load images and segment colon
 	Setup(argv[1],inputOriginal,input,colon,gradientMagnitude);
 
-	TextureTest(input,colon);
 
+	Test(inputOriginal,input,colon);
+
+
+	/*for (int i=1; i<10; i++)
+	{
+		std::stringstream ss;
+		ss << "rr" << i << ".nii";
+
+		FloatImageType::Pointer rr = RescaledRange(input,3);
+		Write(rr,ss.str());
+	}*/	
+
+	/*for (int i=1; i<5; i++)
+	{
+		std::stringstream ss;
+		ss << "sd" << i << ".nii";
+
+		FloatImageType::Pointer sd = StandardDeviation(input,colon,i);
+		Write(sd,ss.str());
+	}
+
+	for (int i=1; i<5; i++)
+	{
+		std::stringstream ss;
+		ss << "range" << i << ".nii";
+
+		ImageType::Pointer range = Range(input,colon,i);
+		Write(range,ss.str());
+	}*/
+
+
+
+	//TextureTest(input,colon);
 	//ConnectedTest(input,gradientMagnitude,colon);
 	//AdaptiveThreshold(input,colon);
 	//LocalThreshold(input,colon,gradientMagnitude,vmap);
 
 	// Initial segmentation, save tissue stool threshold
-	PixelType tst = SingleMaterialClassification(input, gradientMagnitude, vmap, colon);
+	//PixelType tst = SingleMaterialClassification(input, gradientMagnitude, vmap, colon);
 
-	// Apply scatter correction
-	input = ScatterCorrection(inputOriginal,colon,vmap);
+	//// Apply scatter correction
+	//input = ScatterCorrection(inputOriginal,colon,vmap);
 
-	// Update vmap with new scatter input
-	ApplyThresholdRules(input,REGION,gradientMagnitude,vmap,colon,tst);
+	//// Update vmap with new scatter input
+	//ApplyThresholdRules(input,REGION,gradientMagnitude,vmap,colon,tst);
 
-	Write(vmap,"vmapScatter.nii");	
+	//Write(vmap,"vmapScatter.nii");	
 
-	// Determine boundary types
-	FloatImageType::Pointer smax = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
+	//// Determine boundary types
+	//FloatImageType::Pointer smax = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
 
-	gradientMagnitude.~SmartPointer();
+	//gradientMagnitude.~SmartPointer();
 
-	ArrayImageType::Pointer partial = ComputePartials(input,vmap,colon,smax);
-	
-	FixATT(input,partial,vmap,colon,smax,tst);
+	//ArrayImageType::Pointer partial = ComputePartials(input,vmap,colon,smax);
+	//
+	//FixATT(input,partial,vmap,colon,smax,tst);
 
-	smax.~SmartPointer();
+	//smax.~SmartPointer();
 
-	// Perform hessian analysis
-	HessianAnalysis(input,colon,vmap,partial,tst);	
+	//// Perform hessian analysis
+	//HessianAnalysis(input,colon,vmap,partial,tst);	
 
-	// Expectation Maximization
-	EM(partial,colon,input);
+	//// Expectation Maximization
+	//EM(partial,colon,input);
 
-	// Perform subtraction
-	ImageType::Pointer carstonOutput = Subtraction(input,inputOriginal,colon,partial,vmap);
+	//// Perform subtraction
+	//ImageType::Pointer carstonOutput = Subtraction(input,inputOriginal,colon,partial,vmap);
 
-	// End clock
-	final = clock() - init;
+	//// End clock
+	//final = clock() - init;
 
-	std::cout << (double) final / ((double) CLOCKS_PER_SEC) <<  " seconds" << std::endl;
+	//std::cout << (double) final / ((double) CLOCKS_PER_SEC) <<  " seconds" << std::endl;
 
-	system("pause");
+	//system("pause");
 	return 0;
 }
+
+
 
 void TextureTest(ImageType::Pointer &input, ByteImageType::Pointer &colon)
 {
@@ -1074,7 +1161,7 @@ void Setup(std::string dataset, ImageType::Pointer  &inputOriginal, ImageType::P
 	// Set global region
 	REGION = inputOriginal->GetLargestPossibleRegion();	
 
-	Write2(inputOriginal,"inputOriginal.nii");
+	//Write2(inputOriginal,"inputOriginal.nii");
 
 	// Get image minimum and set as global background
 	typedef itk::MinimumMaximumImageCalculator<ImageType> MinimumMaximumImageCalculatorType;
@@ -1198,8 +1285,8 @@ void Setup(std::string dataset, ImageType::Pointer  &inputOriginal, ImageType::P
 	REGION = colon->GetLargestPossibleRegion();
 
 	Write(input,"input.nii");
-	Write(colon,"colon.nii");
-	Write(gradientMagnitude,"gradientMagnitude.nii");
+	//Write(colon,"colon.nii");
+	Write(gradientMagnitude,"gradientMagnitudeSmoothed.nii");
 }
 
 /*********************************************************
@@ -1357,3 +1444,279 @@ ImageType::Pointer Range(ImageType::Pointer &input, ByteImageType::Pointer &mask
 
 	return out;
 }
+
+float ComputeLogSlope(std::vector<float> x, std::vector<float> y)
+{
+/*
+To find the
+"least squares regression line" , y = Mx + B
+for the points (x(i),y(i)) for i = 1,N
+
+you would do the following :
+
+s0 = N+1
+
+s1 = sum_of(x(i)) for i = 1,N
+
+s2 = sum_of(x(i)*x(i)) for i = 1,N
+
+t0 = sum_of(y(i)) for i = 1,N
+
+t1 = sum_of(x(i)*y(i)) for i = 1,N
+
+
+then 
+
+M = ( s0*t1 - s1*t0 ) / (s0*s2 - s1*s1)
+
+B = ( s2*t0 - s1*t1 ) / (s0*s2 - s1*s1)
+
+and the regression line is given by 
+
+y = Mx + B*/
+	
+	unsigned int N = x.size();
+	float s0,s1,s2,t0,t1;
+	
+	s0 = N+1;
+	s1 = 0; s2=0; t0=0; t1=0;
+
+	for (int i=0; i<N; i++)
+	{
+		if (y[i] > 0) // ensure non-zero range is used to compute log-slope
+		{
+			float lx = log(x[i]);
+			float ly = log(y[i]);
+
+			s1 += lx;
+			s2 += lx*lx;
+			t0 += ly;
+			t1 += lx*ly;
+		} else {
+			s0 -= -1;
+		}
+	}
+
+	// Don't divide by zero
+	float num = s0*t1 - s1*t0;
+	float den = s0*s2 - s1*s1;
+
+	if (den == 0)
+	{
+		return 0;
+	} else {
+		return num/den;
+	}
+
+}
+
+FloatImageType::Pointer RescaledRange(ImageType::Pointer &input, unsigned int radius)
+{
+
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	// Make map image
+	ImageType::Pointer map = ImageType::New();
+	
+	ImageType::RegionType mapRegion;
+	
+	ImageType::IndexType mapIndex;
+	ImageType::SizeType mapSize;
+
+	for (int i=0; i<3; i++)
+	{
+		mapIndex[i] = 0;
+		mapSize[i] = 2*radius+1;
+	}
+
+	mapRegion.SetIndex(mapIndex);
+	mapRegion.SetSize(mapSize);
+
+	map->SetRegions(mapRegion);
+
+	map->Allocate();
+	map->FillBuffer(0);
+
+	IteratorType mapIt(map,mapRegion);
+
+	// Setup neighborhood and fill map with distance squared
+	typedef itk::Neighborhood<PixelType,3> NeighborhoodType;
+	NeighborhoodType hood;
+	hood.SetRadius(radius);
+
+	typedef ImageType::OffsetType OffsetType;
+	
+	int count=0;
+
+	for (mapIt.GoToBegin(); !mapIt.IsAtEnd(); ++mapIt)
+	{
+		OffsetType off = hood.GetOffset(count);
+		
+		PixelType d = 0;
+
+		for (int i=0; i<3; i++)
+		{
+			d += off[i]*off[i];
+		}
+
+		// make octagonal shape
+		/*if ( d <= 10 )
+		{
+			mapIt.Set(d);
+		} else {
+			mapIt.Set(0);
+		}*/
+
+		mapIt.Set(d);
+
+		count++;
+	}
+
+	Write(map,"map.nii");
+
+	// Convert map to label map to get number of distance classes
+	typedef itk::LabelImageToLabelMapFilter<ImageType> LabelImageToLabelMapFilterType;
+	typedef LabelImageToLabelMapFilterType::OutputImageType LabelMapType;
+	typedef LabelImageToLabelMapFilterType::LabelObjectType LabelObjectType;
+	typedef LabelObjectType::LabelType LabelType;
+	
+	LabelImageToLabelMapFilterType::Pointer converter = LabelImageToLabelMapFilterType::New();
+	converter->SetInput(map);
+	converter->Update();
+	LabelMapType::Pointer labelMap = converter->GetOutput();
+	std::vector< LabelType > labelVector = labelMap->GetLabels();
+	
+	// Remove bkg 0 label
+	if (labelVector[0] == 0)
+		labelVector.erase(labelVector.begin());
+
+	unsigned int numClasses = labelVector.size(); //ignore bkg label
+	
+	// Make distance vector
+	std::vector<float> dv;
+	dv.resize(numClasses);
+	for (int i=0; i<numClasses; i++)
+	{
+		dv[i] = sqrt( (float) labelVector[i] );
+	}
+
+	// Relabel map consecutively to correspond to each distance class	
+	typedef itk::RelabelLabelMapFilter<LabelMapType> RelabelLabelMapFilterType;
+	RelabelLabelMapFilterType::Pointer relabeler = RelabelLabelMapFilterType::New();
+	relabeler->SetInput(labelMap);
+	
+	typedef itk::LabelMapToLabelImageFilter<LabelMapType,ImageType> LabelMapToLabelImageFilterType;
+	LabelMapToLabelImageFilterType::Pointer labelMapToImageFilter = LabelMapToLabelImageFilterType::New();
+	labelMapToImageFilter->SetInput(relabeler->GetOutput());
+	labelMapToImageFilter->Update();
+
+	map = labelMapToImageFilter->GetOutput();
+	mapIt = IteratorType(map,mapRegion);
+
+	labelMap.~SmartPointer();
+
+	Write(map,"map2.nii");
+
+	// Allocate vectors to store min and max for each class
+	std::vector<PixelType> minVector;
+	std::vector<PixelType> maxVector;
+
+	minVector.resize(numClasses);
+	maxVector.resize(numClasses);
+
+	for (int i=0; i<numClasses; i++)
+	{
+		minVector[i] = ( itk::NumericTraits<PixelType>::max() );
+		maxVector[i] = ( itk::NumericTraits<PixelType>::NonpositiveMin() );
+	}
+	
+	/*struct srange {
+		PixelType min;
+		PixelType max;
+	};
+	
+	std::vector<srange> rangeVector;
+	rangeVector.resize(numClasses);
+
+	for (int i=0; i<numClasses; i++)
+	{
+		struct srange r;
+		r.min = itk::NumericTraits<PixelType>::max();
+		r.max = itk::NumericTraits<PixelType>::NonpositiveMin();
+		rangeVector.push_back(r);
+	}*/
+
+	//std::cout << "Number of classes: " << numClasses << std::endl;
+	//std::cout << "rangeVector.size(): " << rangeVector.size() << std::endl;
+
+	// Allocate vector to store final range values
+	std::vector<float> rv;
+	rv.resize(numClasses);
+
+	//std::cout << "rv.size() " << rv.size() << std::endl;
+
+	// Allocate output image
+	FloatImageType::Pointer out = FloatImageType::New();
+	out->SetRegions(region);
+	out->CopyInformation(input);
+	out->Allocate();
+	out->FillBuffer(0);
+	FloatIteratorType oit(out,region);
+
+	// Iterate through image
+	ImageType::SizeType rad;
+	rad.Fill(radius);
+	
+	typedef itk::NeighborhoodIterator<ImageType> NeighborhoodIteratorType;
+	NeighborhoodIteratorType nit(rad,input,region);
+
+	for (nit.GoToBegin(), oit.GoToBegin(); !nit.IsAtEnd(); ++nit, ++oit)
+	{
+
+		// Reset min and max vectors
+		for (int i=0; i<numClasses; i++)
+		{
+			minVector[i] = itk::NumericTraits<PixelType>::max();
+			maxVector[i] = itk::NumericTraits<PixelType>::NonpositiveMin();
+
+			rv[i] = 0;
+		}
+
+		// Iterate neighborhood and map image together
+		int j=0;
+
+		for (mapIt.GoToBegin(); !mapIt.IsAtEnd(); ++mapIt)
+		{
+			if ( mapIt.Get() > 0 )
+			{
+				PixelType val = nit.GetPixel(j);
+				PixelType m = mapIt.Get() - 1;
+
+				if ( val < minVector[m] )
+					minVector[m] = val;
+
+				if ( val > maxVector[m] )
+					maxVector[m] = val;
+			}
+
+			j++;
+		}
+
+		// Compute range for each distance class
+		for (int i=0; i<numClasses; i++)
+		{
+			rv[i] = (float) maxVector[i] - (float) minVector[i];
+		}
+
+		// Get slope
+		float slope = ComputeLogSlope(dv,rv);
+
+		oit.Set(slope);
+	}
+
+	/*std::stringstream ss;
+	ss << "rr" << radius << ".nii";
+	WriteITK <FloatImageType2D> (out,ss.str());*/
+							
+	return out; 									
+} 							
