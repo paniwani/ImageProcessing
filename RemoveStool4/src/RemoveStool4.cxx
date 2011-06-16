@@ -8,8 +8,37 @@
 
 void Test(ImageType::Pointer &inputOriginal, ImageType::Pointer &input, ByteImageType::Pointer &colon)
 {
+	// Get region
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
 
+	// First, address psuedoenhancement using scatter correction and hessian
+
+	// Get scatter corrected input
+	ImageType::Pointer scatterInput = ScatterCorrection(inputOriginal,colon);
+	Write(scatterInput,"scatterInput.nii");
+
+	// Show change in scatter
+	typedef itk::SubtractImageFilter<ImageType> SubtracterType;
+	SubtracterType::Pointer subtracter = SubtracterType::New();
+	subtracter->SetInput1(input);
+	subtracter->SetInput2(scatterInput);
+	subtracter->Update();
+	Write(subtracter->GetOutput(),"scatterDiff.nii");
+
+
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
 	//// get 2d grad mag
 	//typedef itk::GradientMagnitudeImageFilter<ImageType2D,FloatImageType2D> GradientMagnitudeImageFilterType2D;
 	//typedef itk::SliceBySliceImageFilter<ImageType,FloatImageType,GradientMagnitudeImageFilterType2D> SliceBySliceImageFilterType;
@@ -51,10 +80,10 @@ void Test(ImageType::Pointer &inputOriginal, ImageType::Pointer &input, ByteImag
 	//vmap->FillBuffer(Unclassified);
 	//ApplyThresholdRules(input, region, gm, vmap, colon, 180);
 
-	typedef itk::FastBilateralImageFilter<ImageType,ImageType> FastBilateralImageFilterType;
+	/*typedef itk::FastBilateralImageFilter<ImageType,ImageType> FastBilateralImageFilterType;
 	FastBilateralImageFilter::Pointer bilateralFilter = FastBilateralImageFilter::New();
 	bilateralFilter->SetInput(input);
-	bilateralFilter->SetDomainSigma(
+	bilateralFilter->SetDomainSigma(*/
 
 
 }
@@ -79,7 +108,7 @@ int main(int argc, char * argv[])
 	FloatImageType::Pointer			gradientMagnitude		= FloatImageType::New();
 	VoxelImageType::Pointer			vmap					= VoxelImageType::New();
 
-	debug.open("debug.txt");
+	std::string in = argv[1];
 
 	// Load images and segment colon
 	Setup(argv[1],inputOriginal,input,colon,gradientMagnitude);

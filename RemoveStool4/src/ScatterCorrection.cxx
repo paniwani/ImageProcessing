@@ -914,12 +914,17 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::
 	typedef itk::CastImageFilter<ByteImageType,FloatImageType> CastImageFilterType;
 	CastImageFilterType::Pointer caster = CastImageFilterType::New();
 	caster->SetInput( scaleImageITK );
-	caster->Update();
+
+	typedef itk::RegionOfInterestImageFilter<FloatImageType,FloatImageType> RegionOfInterestImageFilterFloatType;
+	RegionOfInterestImageFilterFloatType::Pointer cropperScale = RegionOfInterestImageFilterFloatType::New();
+	cropperScale->SetInput(caster->GetOutput());
+	cropperScale->SetRegionOfInterest(OLDREGION);
+	cropperScale->Update();
 
 	std::stringstream ss;
 	ss << "scaleImage_" << SCALE << ".nii";
 
-	Write(caster->GetOutput(), ss.str());
+	Write(cropperScale->GetOutput(), ss.str());
 
 	// Perform scatter correction
 	scatterCorrection(img,DAB,size[0],size[1],size[2]);

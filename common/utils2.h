@@ -128,7 +128,7 @@ typename T::Pointer ReadDicom( std::string path, int slice1=0, int slice2=-1)
 }
 
 template <typename T1, typename T2>
-void Mask(typename T1::Pointer &im, typename T2::Pointer &m, typename T1::PixelType outsideValue)
+void Mask(typename T1::Pointer &im, typename T2::Pointer &m, typename T1::PixelType outsideValue=0)
 {
 	typedef itk::MaskImageFilter<T1,T2> MaskerType;
 	MaskerType::Pointer masker = MaskerType::New();
@@ -288,14 +288,14 @@ typename T::RegionType BinaryCrop(typename T::Pointer &im, unsigned int pad=5, b
 }
 
 template <typename T>
-void CropByRegion(typename T::Pointer &im, typename T::RegionType region)
+typename T::Pointer CropByRegion(typename T::Pointer &im, typename T::RegionType region)
 {
 	typedef itk::RegionOfInterestImageFilter<T,T> RegionOfInterestImageFilterType;
 	RegionOfInterestImageFilterType::Pointer cropper = RegionOfInterestImageFilterType::New();
 	cropper->SetInput( im );
 	cropper->SetRegionOfInterest( region );
 	cropper->Update();
-	im = cropper->GetOutput();
+	return cropper->GetOutput();
 }	
 
 template <typename T>

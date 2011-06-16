@@ -13,12 +13,13 @@
 #include <itkBinaryImageToShapeLabelMapFilter.h>
 #include <itkOtsuThresholdImageCalculatorModified.h>
 #include <itkLabelMapToLabelImageFilter.h>
+#include <itkGradientMagnitudeImageFilter.h>
 
 
 int main(int argc, char * argv[])				
 { 		
 	// Load image
-	ImageType2D::Pointer input = ReadITK <ImageType2D> ("C:/ImageData/mr10-uncleansed/mr10_092_13p.i0344/dcm/mr10_092_13p_i0246.dcm");
+	ImageType2D::Pointer input = ReadITK <ImageType2D> ("C:/ImageData/mr10-uncleansed/mr10_092_13p.i0344/dcm/mr10_092_13p_i0127.dcm");
 	WriteITK <ImageType2D> (input,"input.nii");
 
 	ImageType2D::RegionType region = input->GetLargestPossibleRegion();
@@ -128,13 +129,18 @@ int main(int argc, char * argv[])
 	otsuCalculator->SetMinMax(true);
 	otsuCalculator->SetHistogramMin(-300);
 	otsuCalculator->SetHistogramMax(1500);
+	otsuCalculator->SetNumberOfHistogramBins(128);
+
 
 	// Setup thresholdImage image
 	ImageType2D::Pointer thresholdImage = ImageType2D::New();
 	thresholdImage->SetRegions(region);
 	thresholdImage->CopyInformation(input);
 	thresholdImage->Allocate();
-	thresholdImage->FillBuffer(0);
+
+	// Set initial threshold
+	PixelType intialThreshold = 200;
+	thresholdImage->FillBuffer(intialThreshold);
 
 	// Get label attributes
 	typedef itk::BinaryImageToShapeLabelMapFilter<ByteImageType2D> BinaryImageToShapeLabelMapFilterType;
@@ -191,18 +197,85 @@ int main(int argc, char * argv[])
 
 		otsuCalculator->Compute();
 
-		// Store threshold in image
+		PixelType ot = otsuCalculator->GetThreshold();
+
+		// Store largest threshold in image
 		IteratorType2D it(thresholdImage,labelRegion);
 
 		for (it.GoToBegin(); !it.IsAtEnd(); ++it)
 		{
-		it.Set(otsuCalculator->GetThreshold());
+			if (ot > it.Get())
+			{
+				it.Set(ot);
+			}
 		}
 
 	}
 
 	WriteITK <ImageType2D> (thresholdImage,"thresholdImage.nii");
 
-	system("pause"); 							
+	// Get gradient magnitude
+	typedef itk::GradientMagnitudeImageFilter<ImageType2D,FloatImageType2D> GradientMagnitudeImageFilterType;
+	GradientMagnitudeImageFilterType::Pointer gmFilter = GradientMagnitudeImageFilterType::New();
+	gmFilter->SetInput(input);
+	gmFilter->Update();
+	FloatImageType2D::Pointer gm = gmFilter->GetOutput();
+	
+
+	// Allocate output classified image
+	ByteImageType2D::Pointer out = ByteImageType2D::New();
+	out->SetRegions(region);
+	out->Allocate();
+	out->FillBuffer(0);
+
+	FloatIteratorType2D gmIt(gm,region);
+	IteratorType2D inputIt(input,region);
+	IteratorType2D thIt(thresholdImage,region);
+	ByteIteratorType2D colonIt(colon,region);
+	ByteIteratorType2D outIt(out,region);
+
+	for (gmIt.GoToBegin(), inputIt.GoToBegin(), colonIt.GoToBegin(), outIt.GoToBegin(), thIt.GoToBegin(); !gmIt.IsAtEnd(); ++gmIt, ++inputIt, ++colonIt, ++outIt, ++thIt)
+	{
+		if (colonIt.Get() != 0)
+		{
+			PixelType I = inputIt.Get();
+			PixelType T = 200;//thIt.Get();
+			float G = gmIt.Get();
+
+			if ( ( I >= T && G < 0.8*I ) || I > 1000 )
+			{
+				outIt.Set(1);
+			} else if ( I <= -700 ) {
+				outIt.Set(2);
+			} else if ( I < T && I > -300 && G <= 300 ) {
+				outIt.Set(3);
+			}
+		}
+	}
+
+	WriteITK <ByteImageType2D> (out,"outPre.nii");
+
+	for (gmIt.GoToBegin(), inputIt.GoToBegin(), colonIt.GoToBegin(), outIt.GoToBegin(), thIt.GoToBegin(); !gmIt.IsAtEnd(); ++gmIt, ++inputIt, ++colonIt, ++outIt, ++thIt)
+	{
+		if (colonIt.Get() != 0)
+		{
+			PixelType I = inputIt.Get();
+			PixelType T = thIt.Get();
+			float G = gmIt.Get();
+
+			if ( ( I >= T && G < 0.8*I ) || I > 1000 )
+			{
+				outIt.Set(1);
+			} else if ( I <= -700 ) {
+				outIt.Set(2);
+			} else if ( I < T && I > -300 && G <= 300 ) {
+				outIt.Set(3);
+			}
+		}
+	}
+
+	WriteITK <ByteImageType2D> (out,"outPost.nii");
+
+	//system("pause"); 							
 	return 0; 									
 }
