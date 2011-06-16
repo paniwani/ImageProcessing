@@ -10,28 +10,93 @@ void Test(ImageType::Pointer &inputOriginal, ImageType::Pointer &input, ByteImag
 {
 	// Get region
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
+	IteratorType it(input,region);
 
-	// First, address psuedoenhancement using scatter correction and hessian
+	//// First, see vmap with no pseudoenhancement correction
+	//VoxelImageType::Pointer vmap = VoxelImageType::New();
+	//vmap->SetRegions(region);
+	//vmap->Allocate();
+	//vmap->FillBuffer(Unclassified);
 
-	// Get scatter corrected input
-	ImageType::Pointer scatterInput = ScatterCorrection(inputOriginal,colon);
-	Write(scatterInput,"scatterInput.nii");
+	//// Get gradient magnitude
+	//typedef itk::GradientMagnitudeImageFilter<ImageType,FloatImageType> GradientMagnitudeImageFilterType;
+	//GradientMagnitudeImageFilterType::Pointer gmFilter = GradientMagnitudeImageFilterType::New();
+	//gmFilter->SetInput(input);
+	//gmFilter->Update();
+	//FloatImageType::Pointer gm = gmFilter->GetOutput();	
+	//
+	//ApplyThresholdRules(input, region, gm, vmap, colon, 200 );
+	//Write(vmap,"vmapOriginal.nii");
 
-	// Show change in scatter
-	typedef itk::SubtractImageFilter<ImageType> SubtracterType;
-	SubtracterType::Pointer subtracter = SubtracterType::New();
-	subtracter->SetInput1(input);
-	subtracter->SetInput2(scatterInput);
-	subtracter->Update();
-	Write(subtracter->GetOutput(),"scatterDiff.nii");
+	//// Second, address psuedoenhancement using scatter correction and hessian
+
+	//// Get scatter corrected input
+	//ImageType::Pointer scatterInput = ScatterCorrection(inputOriginal,colon);
+	//IteratorType sit(scatterInput,region);
+	////Write(scatterInput,"scatterInput.nii");
+
+	//// Show change in scatter
+	//typedef itk::SubtractImageFilter<ImageType> SubtracterType;
+	//SubtracterType::Pointer subtracter = SubtracterType::New();
+	//subtracter->SetInput1(input);
+	//subtracter->SetInput2(scatterInput);
+	//subtracter->Update();
+	//Write(subtracter->GetOutput(),"scatterDiff.nii");
+
+	//// Use scatter corrected input in high intensity regions only
+	//for (it.GoToBegin(),sit.GoToBegin(); !it.IsAtEnd(); ++it,++sit)
+	//{
+	//	if (it.Get() > 200)
+	//	{
+	//		it.Set( sit.Get() );
+	//	}
+	//}
+	//Write(input,"inputScatterModified.nii");
+
+	//vmap->FillBuffer(Unclassified);
+
+	//gmFilter = GradientMagnitudeImageFilterType::New();
+	//gmFilter->SetInput(input);
+	//gmFilter->Update();
+	//gm = gmFilter->GetOutput();	
+	//
+	//ApplyThresholdRules(input, region, gm, vmap, colon, 200 );
+	//Write(vmap,"vmapPostScatter.nii");	
+
+
+	// get hessian response
+	double alpha = 0.25;
+	double gamma = 0.5;
+
+	/*std::vector<float> sigmaVector;
+	sigmaVector.resize(5);
+
+	sigmaVector[0] = 0.56;
+	sigmaVector[1] = 1.4;
+	sigmaVector[2] = 3;
+	sigmaVector[3] = 6;
+	sigmaVector[4] = 10;*/
+
+	FloatImageType::Pointer hessian = SatoResponse2(input,alpha,gamma);
+	Write(hessian,"hessian.nii");
+
+	// Remove bottom 30% of hessian
+	FloatIteratorType hit(hessian,region);
+	for (hit.GoToBegin(); !hit.IsAtEnd(); ++hit)
+	{
+		if (hit.Get() < 0.30)
+		{
+			hit.Set(0);
+		}
+	}
+
+	Write(hessian,"hessianThresholded.nii");
+
+	// Mask hessian with low gradient
 
 
 
-	
-	
-	
-	
-	
+
 	
 	
 	
@@ -113,8 +178,47 @@ int main(int argc, char * argv[])
 	// Load images and segment colon
 	Setup(argv[1],inputOriginal,input,colon,gradientMagnitude);
 
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
 
-	Test(inputOriginal,input,colon);
+	// get hessian response
+	double alpha = 0.25;
+	double gamma = 0.5;
+
+	FloatImageType::Pointer hessian = SatoResponse2(input,alpha,gamma);
+	Write(hessian,"hessian.nii");
+
+	// Remove bottom 30% of hessian and remove regions with gradient > 300
+	FloatIteratorType git(gradientMagnitude,region);
+	FloatIteratorType hit(hessian,region);
+
+	for (hit.GoToBegin(), git.GoToBegin(); !hit.IsAtEnd(); ++hit, ++git)
+	{
+		if (hit.Get() < 0.30 || git.Get() > 300)
+		{
+			hit.Set(0);
+		}
+	}
+
+	Write(hessian,"hessianThresholded.nii");
+
+	// Remove small components
+	typedef itk::BinaryShapeOpeningImageFilter<FloatImageType> OpenerType;
+	OpenerType::Pointer opener = OpenerType::New();
+	opener->SetInput(hessian);
+	opener->Set
+
+
+
+
+
+
+
+	
+	
+	
+	
+	
+	//Test(inputOriginal,input,colon);
 
 
 	/*for (int i=1; i<10; i++)

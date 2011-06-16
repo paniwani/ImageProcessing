@@ -74,6 +74,7 @@
 #include <itkLabelImageToLabelMapFilter.h>
 #include <itkLabelMapToLabelImageFilter.h>
 #include <itkRelabelLabelMapFilter.h>
+#include <itkMaximumImageFilter.h>
 
 #define CDF_SIGMA 0.27
 
@@ -166,7 +167,7 @@ bool write_num = false;
 int write_count = 1;
 bool truncateOn = true;
 //int truncateArray[2] = {85,-1};
-unsigned int truncateArray[2] = {140,160};
+unsigned int truncateArray[2] = {85,100};
 //unsigned int truncateArray[2] = {85,90};
 //unsigned int truncateArray[2] = {0,105};
 std::string note;

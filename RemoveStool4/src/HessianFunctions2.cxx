@@ -314,7 +314,7 @@ FloatImageType::Pointer ResampleImage(FloatImageType::Pointer input, FloatImageT
 }
 
 
-FloatImageType::Pointer SatoResponse(ImageType::Pointer input_aniso_short, double alpha, double gamma)
+FloatImageType::Pointer SatoResponse(ImageType::Pointer input_aniso_short, double alpha, double gamma, std::vector<float> sigmaVector)
 {	
 	// Cast input to float
 	typedef itk::CastImageFilter<ImageType,FloatImageType> CastType;
@@ -324,7 +324,7 @@ FloatImageType::Pointer SatoResponse(ImageType::Pointer input_aniso_short, doubl
 	FloatImageType::Pointer input_aniso = caster->GetOutput();
 
 	// Set intensity and lambda thresholds
-	float intensity_threshold_lower = 150;
+	float intensity_threshold_lower = 200;
 	float intensity_threshold_upper = 1200;
 	float lambda1_threshold = 0;
 
@@ -349,10 +349,10 @@ FloatImageType::Pointer SatoResponse(ImageType::Pointer input_aniso_short, doubl
 	FloatIteratorType output_iter(output,region);
 
 	// Compute hessian across sigma scales
-	double sigma[2] = {0.56, 1.4};
+	//double sigma[2] = {0.56, 1.4};
 	//double sigma[7] = {0.5,1,2,4,6,8,10};
 
-	for (int k=0; k<2; k++)
+	for (int k=0; k<sigmaVector.size(); k++)
 	{
 		// Reset buffer
 		//output->FillBuffer(0);
@@ -378,7 +378,7 @@ FloatImageType::Pointer SatoResponse(ImageType::Pointer input_aniso_short, doubl
 		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
 		hessianFilter->SetInput(input);
 		hessianFilter->SetNormalizeAcrossScale(true);
-		hessianFilter->SetSigma(sigma[k]);
+		hessianFilter->SetSigma(sigmaVector[k]);
 		hessianFilter->Update();
 		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
 
@@ -456,7 +456,7 @@ FloatImageType::Pointer SatoResponse(ImageType::Pointer input_aniso_short, doubl
 		for (int i=0; i<3; i++)
 		{
 			std::stringstream ss;
-			ss << "sigma_" << sigma[k] << "_lambda_abs_" << i << ".nii";
+			ss << "sigma_" << sigmaVector[k] << "_lambda_" << i << ".nii";
 			Write(  LambdaImageVector[i], ss.str());
 		}
 
@@ -469,12 +469,145 @@ FloatImageType::Pointer SatoResponse(ImageType::Pointer input_aniso_short, doubl
 		////Write( ResampleImage( w2, aniso_spacing ) , ss.str() );
 
 		std::stringstream ss;
-		ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_sato_output.nii";
+		ss << "sigma_" << sigmaVector[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_sato_output.nii";
 		Write( output, ss.str() );
 
 	}
 
 	FloatImageType::Pointer output_aniso = ResampleImage(output, aniso_spacing);
+
+	std::stringstream ss;
+	ss << "Sato_Hessian_alpha_" << alpha << "_gamma_" << gamma  << ".nii";
+	Write(output_aniso, ss.str());
+
+	return output_aniso;
+}
+
+
+FloatImageType::Pointer SatoResponse2(ImageType::Pointer input_aniso_short, double alpha, double gamma)
+{	
+	// Cast input to float
+	typedef itk::CastImageFilter<ImageType,FloatImageType> CastType;
+	CastType::Pointer caster = CastType::New();
+	caster->SetInput(input_aniso_short);
+	caster->Update();
+	FloatImageType::Pointer input_aniso = caster->GetOutput();
+
+	// Set intensity and lambda thresholds
+	float intensity_threshold_lower = 200;
+	float intensity_threshold_upper = 1200;
+	float lambda1_threshold = 0;
+
+	// Make image isotropic
+	FloatImageType::SpacingType aniso_spacing = input_aniso->GetSpacing();
+
+	FloatImageType::SpacingType iso_spacing = aniso_spacing;
+	iso_spacing[1] = iso_spacing[0];
+	iso_spacing[2] = iso_spacing[0];
+
+	FloatImageType::Pointer input = ResampleImage(input_aniso, iso_spacing);
+	Write(input,"input_isotropic.nii");
+
+	// Get input info
+	FloatImageType::RegionType region = input->GetLargestPossibleRegion();
+
+	// Create response images
+	FloatImageType::Pointer output1 = AllocateFloatImage(input);
+	output1->SetSpacing(iso_spacing);
+
+	FloatImageType::Pointer output2 = AllocateFloatImage(input);
+	output2->SetSpacing(iso_spacing);
+
+
+
+	FloatIteratorType input_iter(input,region);
+	FloatIteratorType output1_iter(output1,region);
+	FloatIteratorType output2_iter(output2,region);
+
+
+	// Compute hessian across sigma scales
+	double sigma[2] = {0.56, 1.4};
+
+	for (int k=0; k<2; k++)
+	{
+		// Compute smoothed Hessian
+		typedef itk::HessianRecursiveGaussianImageFilter<FloatImageType> HessianGaussianFilterType;
+		HessianGaussianFilterType::Pointer hessianFilter = HessianGaussianFilterType::New();
+		hessianFilter->SetInput(input);
+		hessianFilter->SetNormalizeAcrossScale(true);
+		hessianFilter->SetSigma(sigma[k]);
+		hessianFilter->Update();
+		itk::ImageRegionConstIterator<HessianGaussianFilterType::OutputImageType> hessian_iter(hessianFilter->GetOutput(),region);
+
+		hessian_iter.GoToBegin();
+		input_iter.GoToBegin();
+		output1_iter.GoToBegin();
+		output2_iter.GoToBegin();
+
+		int count=0;
+
+		while (!hessian_iter.IsAtEnd()) 
+		{
+			// Set submerged and non-submerged conditions
+			if ( input_iter.Get() >= intensity_threshold_lower && input_iter.Get() <= intensity_threshold_upper )
+			{				
+				EigenValueArrayType lambda;
+
+				// Get eigenvalues
+				hessian_iter.Get().ComputeEigenValues(lambda);
+				std::sort(lambda.Begin(),lambda.End(),OrderByValueDesc);
+
+				//double val = S_blob_dark(lambda, gamma);
+				double val = S_sheet_dark(lambda, alpha, gamma);
+
+				if (k == 0)
+				{
+					output1_iter.Set(val);
+				} else {
+					output2_iter.Set(val);
+				}
+			}
+
+			if (++count % 500000 == 0)
+			{
+				std::cout << count << std::endl;
+			}	
+
+			++hessian_iter;
+			++input_iter;
+			++output1_iter;
+			++output2_iter;
+		}
+
+		//std::stringstream ss;
+		//ss << "sigma_" << sigma[k] << "_alpha_" << alpha << "_gamma_" << gamma << "_sato_output.nii";
+		//Write( output, ss.str() );
+
+	}
+
+	// Get max of each response image scaled from [0,1]
+	typedef itk::RescaleIntensityImageFilter<FloatImageType> RescalerType;
+	RescalerType::Pointer rescaler = RescalerType::New();
+	rescaler->SetInput(output1);
+	rescaler->SetOutputMaximum(1);
+	rescaler->SetOutputMinimum(0);
+	rescaler->Update();
+	output1 = rescaler->GetOutput();
+
+	rescaler = RescalerType::New();
+	rescaler->SetInput(output2);
+	rescaler->SetOutputMaximum(1);
+	rescaler->SetOutputMinimum(0);
+	rescaler->Update();
+	output2 = rescaler->GetOutput();
+
+	typedef itk::MaximumImageFilter<FloatImageType> MaximumFilterType;
+	MaximumFilterType::Pointer maxFilter = MaximumFilterType::New();
+	maxFilter->SetInput1(output1);
+	maxFilter->SetInput2(output2);
+	maxFilter->Update();
+
+	FloatImageType::Pointer output_aniso = ResampleImage(maxFilter->GetOutput(), aniso_spacing);
 
 	std::stringstream ss;
 	ss << "Sato_Hessian_alpha_" << alpha << "_gamma_" << gamma  << ".nii";
@@ -552,182 +685,182 @@ void Relabel(LabelImageType::Pointer &image, unsigned int minSize=0)
 	}
 }
 
-void HessianAnalysis(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, ArrayImageType::Pointer &partial, PixelType tissueStoolThreshold)
-{
-	// get region
-	ImageType::RegionType region = input->GetLargestPossibleRegion();
-		
-	// get hessian response
-	double alpha = 0.25;
-	double gamma = 0.5;
-
-	FloatImageType::Pointer hessian = SatoResponse(input,alpha,gamma);
-	Write(hessian,"hessian.nii");
-
-	// mask with stool and tissue
-	hessian = Mask(hessian,BinaryOr(BinaryThreshold(vmap,Stool), BinaryThreshold(vmap,Tissue)));
-	Write(hessian,"hessianMaskedStoolAndTissue.nii");
-
-	//// mask with colon
-	//hessian = Mask(hessian,colon);
-	//Write(hessian,"hessianMaskedColon.nii");
-
-	// rescale to [0,1]
-	Rescale(hessian,0,1);
-	Write(hessian,"hessianRescaled.nii");
-
-	// remove lowest 20%
-	ByteImageType::Pointer hbin = BinaryThreshold(hessian,.2);
-	Write(hbin,"hbin20.nii");
-
-	hessian.~SmartPointer();
-
-	// ------------------------------------------------------------------------
-	// for each hessian component, count number of times it touches largest component of tissue
-	// ------------------------------------------------------------------------
-
-	// get connected components		
-	typedef itk::ConnectedComponentImageFilter<ByteImageType, LabelImageType> ConnectedType;
-	ConnectedType::Pointer connecter = ConnectedType::New();
-	connecter->SetInput(hbin);
-	connecter->SetBackgroundValue(0);
-	connecter->Update();
-	LabelImageType::Pointer cc = connecter->GetOutput();
-	
-	Relabel(cc,3);
-
-	LabelIteratorType ccIt(cc,region);
-
-	Write(cc,"ccRelabel.nii");
-	
-	/*typedef itk::RelabelComponentImageFilter<LabelImageType, LabelImageType> RelabelType;
-	RelabelType::Pointer relabeler = RelabelType::New();
-	relabeler->SetInput(connecter->GetOutput());
-	relabeler->SetMinimumObjectSize(3);
-	relabeler->Update();
-
-	unsigned long originalNumOfObjects = relabeler->GetOriginalNumberOfObjects();
-	unsigned long numOfObjects = relabeler->GetNumberOfObjects();
-
-	std::cout << "Original # of objects: " << originalNumOfObjects << std::endl;
-	std::cout << "Number of objects: " << numOfObjects << std::endl;*/
-	
-	unsigned int numOfObjects = 0;
-
-	for (ccIt.GoToBegin(); !ccIt.IsAtEnd(); ++ccIt)
-	{
-		if (ccIt.Get() > numOfObjects)
-		{
-			numOfObjects = ccIt.Get();
-		}
-	}	
-
-	std::cout << "number of objects: " << numOfObjects << std::endl;
-
-	std::vector<unsigned int> countVector;
-	countVector.resize(numOfObjects+1);
-
-	typedef itk::NeighborhoodIterator<ByteImageType> NeighborhoodIteratorByteType;
-
-	ByteImageType::SizeType radiusByte;
-	radiusByte.Fill(1);
-
-	ByteImageType::Pointer tissueLarge = BinaryKeeper(BinaryThreshold(vmap,Tissue), "Size", 1);
-	Write(tissueLarge,"tissueLarge.nii");
-
-	NeighborhoodIteratorByteType tIt(radiusByte,tissueLarge,region);
-
-	for (tIt.GoToBegin(), ccIt.GoToBegin(); !tIt.IsAtEnd(); ++tIt, ++ccIt)
-	{
-		if ( ccIt.Get() > 0 )
-		{
-			bool tissueNeighbor = false;
-
-			for (int i=0; i<tIt.Size(); i++)
-			{
-				if ( i != (tIt.Size()-1)/2 )
-				{
-					if ( tIt.GetPixel(i) != 0 )
-					{
-						tissueNeighbor = true;
-						break;
-					}
-				}
-			}
-
-			if (tissueNeighbor)
-				countVector[ ccIt.Get() ]++;
-		}
-	}
-
-	tissueLarge.~SmartPointer();
-
-	ByteIteratorType hbinIt(hbin,region);
-
-	for (ccIt.GoToBegin(), hbinIt.GoToBegin(); !ccIt.IsAtEnd(); ++ccIt, ++hbinIt)
-	{
-		if ( countVector[ ccIt.Get() ] < 6 )
-		{
-			hbinIt.Set( 0 );	
-		}
-	}
-
-	Write(hbin,"hbinConnected.nii");
-
-	VoxelIteratorType vmapIt(vmap,region);
-
-	for (vmapIt.GoToBegin(), hbinIt.GoToBegin(); !vmapIt.IsAtEnd(); ++vmapIt, ++hbinIt)
-	{
-		if (hbinIt.Get() != 0)
-			vmapIt.Set(Tissue);
-	}
-
-	Write(vmap,"vmapHessian.nii");
-
-	/* overlay with largest tissue component
-	hbin = BinaryOr(hbin,
-		BinaryKeeper( BinaryThreshold(vmap,Tissue) , "Size", 1) );
-	Write(hbin,"hbinWithTissue.nii");
-
-	 keep largest
-	hbin = BinaryKeeper(hbin,"Size",1);
-	Write(hbin,"hbinLargest.nii");*/
-
-	//IteratorType inputIt(input,region);
-	//FloatIteratorType smaxIt(smax,region);
-	//ArrayIteratorType partialIt(partial,region);
-
-	//for (inputIt.GoToBegin(), smaxIt.GoToBegin(), partialIt.GoToBegin(), hbinIt.GoToBegin(); !inputIt.IsAtEnd();
-	//	 ++inputIt, ++smaxIt, ++partialIt, ++hbinIt)
-	//{
-	//	if (hbinIt.Get() != 0)
-	//	{
-	//		float I = (float) inputIt.Get();
-	//		float S = (float) smaxIt.Get();
-
-	//		ArrayType p;
-
-	//		if ( S > 0 )
-	//		{
-	//			p[0] = 0;
-
-	//			p[1] = 1 - (I/S);
-
-	//			// bounds check
-	//			p[1] = (p[1] > 1) ? 1 : p[1];
-	//			p[1] = (p[1] < 0) ? 0 : p[1];
-
-	//			p[2] = 1 - p[1];
-
-	//		} else {
-	//			p[0] = 0;
-	//			p[1] = 1;
-	//			p[2] = 0;
-	//		}
-
-	//		partialIt.Set( p );
-	//	}
-	//}
-
-	//Write(partial,"hessianPartial.nii");	
-}
+//void HessianAnalysis(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, ArrayImageType::Pointer &partial, PixelType tissueStoolThreshold)
+//{
+//	// get region
+//	ImageType::RegionType region = input->GetLargestPossibleRegion();
+//		
+//	// get hessian response
+//	double alpha = 0.25;
+//	double gamma = 0.5;
+//
+//	FloatImageType::Pointer hessian = SatoResponse(input,alpha,gamma);
+//	Write(hessian,"hessian.nii");
+//
+//	// mask with stool and tissue
+//	hessian = Mask(hessian,BinaryOr(BinaryThreshold(vmap,Stool), BinaryThreshold(vmap,Tissue)));
+//	Write(hessian,"hessianMaskedStoolAndTissue.nii");
+//
+//	//// mask with colon
+//	//hessian = Mask(hessian,colon);
+//	//Write(hessian,"hessianMaskedColon.nii");
+//
+//	// rescale to [0,1]
+//	Rescale(hessian,0,1);
+//	Write(hessian,"hessianRescaled.nii");
+//
+//	// remove lowest 20%
+//	ByteImageType::Pointer hbin = BinaryThreshold(hessian,.2);
+//	Write(hbin,"hbin20.nii");
+//
+//	hessian.~SmartPointer();
+//
+//	// ------------------------------------------------------------------------
+//	// for each hessian component, count number of times it touches largest component of tissue
+//	// ------------------------------------------------------------------------
+//
+//	// get connected components		
+//	typedef itk::ConnectedComponentImageFilter<ByteImageType, LabelImageType> ConnectedType;
+//	ConnectedType::Pointer connecter = ConnectedType::New();
+//	connecter->SetInput(hbin);
+//	connecter->SetBackgroundValue(0);
+//	connecter->Update();
+//	LabelImageType::Pointer cc = connecter->GetOutput();
+//	
+//	Relabel(cc,3);
+//
+//	LabelIteratorType ccIt(cc,region);
+//
+//	Write(cc,"ccRelabel.nii");
+//	
+//	/*typedef itk::RelabelComponentImageFilter<LabelImageType, LabelImageType> RelabelType;
+//	RelabelType::Pointer relabeler = RelabelType::New();
+//	relabeler->SetInput(connecter->GetOutput());
+//	relabeler->SetMinimumObjectSize(3);
+//	relabeler->Update();
+//
+//	unsigned long originalNumOfObjects = relabeler->GetOriginalNumberOfObjects();
+//	unsigned long numOfObjects = relabeler->GetNumberOfObjects();
+//
+//	std::cout << "Original # of objects: " << originalNumOfObjects << std::endl;
+//	std::cout << "Number of objects: " << numOfObjects << std::endl;*/
+//	
+//	unsigned int numOfObjects = 0;
+//
+//	for (ccIt.GoToBegin(); !ccIt.IsAtEnd(); ++ccIt)
+//	{
+//		if (ccIt.Get() > numOfObjects)
+//		{
+//			numOfObjects = ccIt.Get();
+//		}
+//	}	
+//
+//	std::cout << "number of objects: " << numOfObjects << std::endl;
+//
+//	std::vector<unsigned int> countVector;
+//	countVector.resize(numOfObjects+1);
+//
+//	typedef itk::NeighborhoodIterator<ByteImageType> NeighborhoodIteratorByteType;
+//
+//	ByteImageType::SizeType radiusByte;
+//	radiusByte.Fill(1);
+//
+//	ByteImageType::Pointer tissueLarge = BinaryKeeper(BinaryThreshold(vmap,Tissue), "Size", 1);
+//	Write(tissueLarge,"tissueLarge.nii");
+//
+//	NeighborhoodIteratorByteType tIt(radiusByte,tissueLarge,region);
+//
+//	for (tIt.GoToBegin(), ccIt.GoToBegin(); !tIt.IsAtEnd(); ++tIt, ++ccIt)
+//	{
+//		if ( ccIt.Get() > 0 )
+//		{
+//			bool tissueNeighbor = false;
+//
+//			for (int i=0; i<tIt.Size(); i++)
+//			{
+//				if ( i != (tIt.Size()-1)/2 )
+//				{
+//					if ( tIt.GetPixel(i) != 0 )
+//					{
+//						tissueNeighbor = true;
+//						break;
+//					}
+//				}
+//			}
+//
+//			if (tissueNeighbor)
+//				countVector[ ccIt.Get() ]++;
+//		}
+//	}
+//
+//	tissueLarge.~SmartPointer();
+//
+//	ByteIteratorType hbinIt(hbin,region);
+//
+//	for (ccIt.GoToBegin(), hbinIt.GoToBegin(); !ccIt.IsAtEnd(); ++ccIt, ++hbinIt)
+//	{
+//		if ( countVector[ ccIt.Get() ] < 6 )
+//		{
+//			hbinIt.Set( 0 );	
+//		}
+//	}
+//
+//	Write(hbin,"hbinConnected.nii");
+//
+//	VoxelIteratorType vmapIt(vmap,region);
+//
+//	for (vmapIt.GoToBegin(), hbinIt.GoToBegin(); !vmapIt.IsAtEnd(); ++vmapIt, ++hbinIt)
+//	{
+//		if (hbinIt.Get() != 0)
+//			vmapIt.Set(Tissue);
+//	}
+//
+//	Write(vmap,"vmapHessian.nii");
+//
+//	/* overlay with largest tissue component
+//	hbin = BinaryOr(hbin,
+//		BinaryKeeper( BinaryThreshold(vmap,Tissue) , "Size", 1) );
+//	Write(hbin,"hbinWithTissue.nii");
+//
+//	 keep largest
+//	hbin = BinaryKeeper(hbin,"Size",1);
+//	Write(hbin,"hbinLargest.nii");*/
+//
+//	//IteratorType inputIt(input,region);
+//	//FloatIteratorType smaxIt(smax,region);
+//	//ArrayIteratorType partialIt(partial,region);
+//
+//	//for (inputIt.GoToBegin(), smaxIt.GoToBegin(), partialIt.GoToBegin(), hbinIt.GoToBegin(); !inputIt.IsAtEnd();
+//	//	 ++inputIt, ++smaxIt, ++partialIt, ++hbinIt)
+//	//{
+//	//	if (hbinIt.Get() != 0)
+//	//	{
+//	//		float I = (float) inputIt.Get();
+//	//		float S = (float) smaxIt.Get();
+//
+//	//		ArrayType p;
+//
+//	//		if ( S > 0 )
+//	//		{
+//	//			p[0] = 0;
+//
+//	//			p[1] = 1 - (I/S);
+//
+//	//			// bounds check
+//	//			p[1] = (p[1] > 1) ? 1 : p[1];
+//	//			p[1] = (p[1] < 0) ? 0 : p[1];
+//
+//	//			p[2] = 1 - p[1];
+//
+//	//		} else {
+//	//			p[0] = 0;
+//	//			p[1] = 1;
+//	//			p[2] = 0;
+//	//		}
+//
+//	//		partialIt.Set( p );
+//	//	}
+//	//}
+//
+//	//Write(partial,"hessianPartial.nii");	
+//}

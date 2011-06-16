@@ -1,4 +1,4 @@
-const unsigned int Dimension = 3;
+const unsigned int Dimension = 2;
 #include <itkImage.h> 						
 #include <iostream>
 #include <utils2.h>
@@ -14,7 +14,7 @@ const unsigned int Dimension = 3;
 int main(int argc, char * argv[])				
 { 					
 	// Load image
-	ImageType::Pointer input = ReadDicom <ImageType> ("C:/ImageData/mr10-uncleansed/mr10_092_13p.i0344/dcm",140,160);
+	ImageType::Pointer input = ReadITK <ImageType> ("C:/ImageData/mr10-uncleansed/mr10_092_13p.i0344/dcm/mr10_092_13p_i0140.dcm");
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
 		
 	// Segment colon
@@ -105,6 +105,9 @@ int main(int argc, char * argv[])
 	std::cout << "Mean: " << mean << std::endl;
 	std::cout << "Std: " << sqrt(variance) << std::endl;
 
+	// Set input to air where gradient is too high
+	Mask <ImageType, ByteImageType> (input,gmLow,-1024);
+	WriteITK <ImageType> (input,"inputLowGm.nii");
 
 	// Fuzzy with several standard deviations
 	typedef itk::SimpleFuzzyConnectednessScalarImageFilter<ImageType,ByteImageType> FuzzySegmentationFilterType;

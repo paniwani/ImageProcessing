@@ -34,9 +34,10 @@ struct point{
 typedef struct point ptype;
 
 typedef short PixelType;
+typedef unsigned char BytePixelType;
 
 typedef itk::Image<PixelType, Dimension> ImageType;
-typedef itk::Image<unsigned char, Dimension> ByteImageType;
+typedef itk::Image<BytePixelType, Dimension> ByteImageType;
 typedef itk::Image<float, Dimension> FloatImageType;
 typedef itk::Image<int, Dimension> IntImageType;
 typedef itk::Image<unsigned int, Dimension> UIntImageType;
