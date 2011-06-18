@@ -178,7 +178,7 @@ AdaptiveOtsuThresholdImageFilterModified<TInputImage, TOutputImage>
   filter->SetNumberOfLevels( m_NumberOfLevels );
 
   // Define the parametric domain.
-  filter->SetOrigin( input->GetOrigin() );
+  filter->SetOrigin( input->GetOrigin() ); 
   filter->SetSpacing( input->GetSpacing() );
   filter->SetSize( inputRegion.GetSize() );
   filter->SetInput( m_PointSet );

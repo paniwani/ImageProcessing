@@ -179,6 +179,11 @@ public:
     m_PointSet = pt;
     }
 
+  PointSetPointer GetPointSet()
+  {
+	return m_PointSet;
+  }
+
 protected:
 
   AdaptiveOtsuThresholdImageFilterModified();
