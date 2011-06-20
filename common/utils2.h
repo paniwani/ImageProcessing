@@ -11,6 +11,8 @@
 #include <itkRegionOfInterestImageFilter.h>
 #include <itkMinimumMaximumImageCalculator.h>
 #include <itkConnectedComponentImageFilter.h>
+#include <itkAddImageFilter.h>
+#include <itkDivideByConstantImageFilter.h>
 
 enum VoxelType {
 	Stool=1,
@@ -126,6 +128,28 @@ typename T::Pointer ReadDicom( std::string path, int slice1=0, int slice2=-1)
 	T::Pointer output = reader->GetOutput();
 	
     return output;
+}
+
+template <typename T1, typename T2>
+typename T2::Pointer Rescale(typename T1::Pointer &im, typename T2::PixelType v1, typename T2::PixelType v2)
+{
+	typedef itk::RescaleIntensityImageFilter<T1,T2> RescalerType;
+	RescalerType::Pointer rescaler = RescalerType::New();
+	rescaler->SetInput(im);
+	rescaler->SetOutputMinimum(v1);
+	rescaler->SetOutputMaximum(v2);
+	rescaler->Update();
+	return rescaler->GetOutput();
+}
+
+template <typename T1, typename T2>
+typename T2::Pointer Cast(typename T1::Pointer &im)
+{
+	typedef itk::CastImageFilter<T1,T2> CasterType;
+	CasterType::Pointer caster = CasterType::New();
+	caster->SetInput(im);
+	caster->Update();
+	return caster->GetOutput();
 }
 
 template <typename T1, typename T2>
@@ -307,4 +331,26 @@ typename T::Pointer Duplicate(typename T::Pointer &im)
 	duplicator->SetInputImage(im);
 	duplicator->Update();
 	return duplicator->GetOutput();
+} 
+
+template <typename T>
+typename T::Pointer Add(typename T::Pointer &im1, typename T::Pointer &im2)
+{
+	typedef itk::AddImageFilter<T> AdderType;
+	AdderType::Pointer adder = AdderType::New();
+	adder->SetInput1(im1);
+	adder->SetInput2(im2);
+	adder->Update();
+	return adder->GetOutput();
+}	
+
+template <typename T>
+void DivideByConstant(typename T::Pointer &im, typename T::PixelType c)
+{
+	typedef itk::DivideByConstantImageFilter<T,T::PixelType,T> DividerType;
+	DividerType::Pointer divider = DividerType::New();
+	divider->SetInput(im);
+	divider->SetConstant(c);
+	divider->Update();
+	im = divider->GetOutput();
 }

@@ -17,7 +17,7 @@ const unsigned int Dimension = 2;
 int main(int argc, char * argv[])				
 { 					
 	// Load image
-	ImageType::Pointer input = ReadITK <ImageType> ("C:/ImageData/mr10_092_13p.i0344/dcm/mr10_092_13p_i0091.dcm");
+	ImageType::Pointer input = ReadITK <ImageType> ("C:/ImageData/mr10-uncleansed/mr10_092_13p.i0344/dcm/mr10_092_13p_i0091.dcm");
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
 		
 	// Segment colon
