@@ -75,6 +75,9 @@
 #include <itkLabelMapToLabelImageFilter.h>
 #include <itkRelabelLabelMapFilter.h>
 #include <itkMaximumImageFilter.h>
+#include <itkBlackTopHatImageFilter.h>
+#include <itkMedianImageFilter.h>
+#include <itkNearestNeighborInterpolateImageFunction.h>
 
 #define CDF_SIGMA 0.27
 
@@ -94,7 +97,7 @@ typedef unsigned char																BytePixelType;
 typedef itk::BinaryBallStructuringElement<PixelType, 3>								StructuringElementType;
 typedef itk::CovariantVector<float,3>												VectorType;
 typedef itk::FixedArray<float,3>													ArrayType;
-typedef  itk::FixedArray< double, 3 >												EigenValueArrayType;
+typedef itk::FixedArray< double, 3 >												EigenValueArrayType;
 
 typedef itk::Image<unsigned long,1> ImageType1D;
 typedef itk::ImageRegionIteratorWithIndex<ImageType1D> IteratorType1D;
@@ -151,6 +154,8 @@ float ComputeLogSlope(std::vector<float> x, std::vector<float> y);
 
 FloatImageType::Pointer RescaledRange(ImageType::Pointer &input, unsigned int radius);
 
+void BinaryFillHoles(ByteImageType::Pointer &im);
+
 struct point{
 	int intensity;
 	int size;
@@ -163,11 +168,11 @@ typedef struct point ptype;
 // Global vars
 ImageType::RegionType OLDREGION;
 ImageType::RegionType REGION;
-bool write_num = false;
+bool write_num = true;
 int write_count = 1;
 bool truncateOn = true;
 //int truncateArray[2] = {85,-1};
-unsigned int truncateArray[2] = {85,100};
+unsigned int truncateArray[2] = {0,100};
 //unsigned int truncateArray[2] = {85,90};
 //unsigned int truncateArray[2] = {0,105};
 std::string note;

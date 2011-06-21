@@ -54,37 +54,38 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 
 	typedef itk::BinaryDilateImageFilter< ByteImageType, ByteImageType, StructuringElementType> DilateFilterType;
 
+	typedef itk::BinaryErodeImageFilter< ByteImageType, ByteImageType, StructuringElementType> ErodeFilterType;
+
 	typedef itk::ConnectedThresholdImageFilter< InputImageType, ByteImageType> ConnectedThresholdImageFilterType;
 
 	typedef itk::IsolatedConnectedImageFilter< InputImageType, ByteImageType > IsolatedConnectedImageFilterType;
 
 	typedef itk::BinaryShapeKeepNObjectsImageFilter< ByteImageType > BinaryShapeKeepNObjectsImageFilterType;
+	
+	WriteITK(input,"input.nii");
 		
-	
-	// Find air components
-	ByteImageType::Pointer air = ByteImageType::New();
-	air->SetRegions(region);
-	air->SetSpacing(spacing);
-	air->SetDirection(input->GetDirection());
-	air->Allocate();
-	
-	ByteIteratorType air_iter(air,region);
+	// First, segment body 
+	ByteImageType::Pointer body = ByteImageType::New();
+	body->SetRegions(region);
+	body->CopyInformation(input);
+	body->Allocate();
+	ByteIteratorType body_iter(body,region);
 
-	for (input_iter.GoToBegin(), air_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++air_iter)
+	for (input_iter.GoToBegin(), body_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++body_iter)
 	{
-		if (input_iter.Get() < -600)
+		if (input_iter.Get() > -250 && input_iter.Get() < 200)
 		{
-			air_iter.Set(255);
+			body_iter.Set(255);
 		} else {
-			air_iter.Set(0);
+			body_iter.Set(0);
 		}
 	}
 
-	WriteITK(air, "air_lumen.nii" );
+	WriteITK(body,"body.nii");
 
-	// Apply median filter to remove noise
+	// Apply median filter to remove table
 	BinaryMedianFilterType::Pointer medianFilter = BinaryMedianFilterType::New();
-	medianFilter->SetInput( air );
+	medianFilter->SetInput( body );
 	medianFilter->SetBackgroundValue( 0 );
 	medianFilter->SetForegroundValue( 255 );
 
@@ -95,14 +96,11 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 
 	medianFilter->SetRadius( radius );
 	medianFilter->Update();
-	air = medianFilter->GetOutput();
-	air_iter = ByteIteratorType(air,region);
+	body = medianFilter->GetOutput();
 
-	WriteITK(air, "air_median.nii");
+	WriteITK(body, "body_median.nii");
 
-	// Remove background air component
-	// Remove components in 2D that are touching XY slice border [REQUIRES 3D INPUT]
-
+	// Remove background (components that are touching XY slice border)
 	if (InputImageDimension == 3)
 	{
 		typedef Image< unsigned char, 2 > ByteImageType2D;
@@ -111,32 +109,73 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 
 		BinaryShapeOpeningImageFilter2D::Pointer bkgFilter2D = BinaryShapeOpeningImageFilter2D::New();
 		bkgFilter2D->SetAttribute("SizeOnBorder");
-		bkgFilter2D->SetBackgroundValue(0);
-		bkgFilter2D->SetForegroundValue(255);
-		bkgFilter2D->SetLambda(0);
-		bkgFilter2D->SetReverseOrdering(true);
+		bkgFilter2D->SetBackgroundValue(255);
+		bkgFilter2D->SetForegroundValue(0);
+		bkgFilter2D->SetLambda(1);
+		bkgFilter2D->SetReverseOrdering(false);
 		
 		SliceBySliceImageFilterBackgroundType::Pointer bkgRemover = SliceBySliceImageFilterBackgroundType::New();
-		bkgRemover->SetInput( air );
+		bkgRemover->SetInput( body );
 		bkgRemover->SetFilter( bkgFilter2D );
 		bkgRemover->Update();
-		air = bkgRemover->GetOutput();
+		body = bkgRemover->GetOutput();
 	} else {
 		typedef itk::BinaryShapeOpeningImageFilter< ByteImageType > BinaryShapeOpeningImageFilter;
 		BinaryShapeOpeningImageFilter::Pointer bkgFilter = BinaryShapeOpeningImageFilter::New();
-		bkgFilter->SetInput( air );
+		bkgFilter->SetInput( body );
 		bkgFilter->SetAttribute("SizeOnBorder");
-		bkgFilter->SetBackgroundValue(0);
-		bkgFilter->SetForegroundValue(255);
-		bkgFilter->SetLambda(0);
-		bkgFilter->SetReverseOrdering(true);
+		bkgFilter->SetBackgroundValue(255);
+		bkgFilter->SetForegroundValue(0);
+		bkgFilter->SetLambda(1);
+		bkgFilter->SetReverseOrdering(false);
 		bkgFilter->Update();
-		air = bkgFilter->GetOutput();
+		body = bkgFilter->GetOutput();
 	}
 
-	air_iter = ByteIteratorType(air,region);
+	WriteITK(body,"body_no_bkg.nii");
 
-	WriteITK(air,"air_no_bkg.nii");	
+	// Shrink body so air on border is not selected
+	radius.Fill(0);
+	radius[0] = 3;
+	radius[1] = 3;
+
+	StructuringElementType ball;
+	ball.SetRadius( radius );
+	ball.CreateStructuringElement();	
+
+	ErodeFilterType::Pointer eroder = ErodeFilterType::New();
+	eroder->SetBackgroundValue(0);
+	eroder->SetForegroundValue(255);
+	eroder->SetInput( body );
+	eroder->SetKernel( ball );
+	eroder->Update();
+	body = eroder->GetOutput();
+	body_iter = ByteIteratorType(body,region);
+
+	WriteITK(body,"body_erode.nii");
+
+	// Find air components
+	ByteImageType::Pointer air = ByteImageType::New();
+	air->SetRegions(region);
+	air->SetSpacing(spacing);
+	air->SetDirection(input->GetDirection());
+	air->Allocate();
+	air->FillBuffer(0);
+	
+	ByteIteratorType air_iter(air,region);
+
+	for (input_iter.GoToBegin(), air_iter.GoToBegin(), body_iter.GoToBegin(); !input_iter.IsAtEnd(); ++input_iter, ++air_iter, ++body_iter)
+	{
+		if (body_iter.Get() != 0)
+		{
+			if (input_iter.Get() < -600)
+			{
+				air_iter.Set(255);
+			}
+		}
+	}
+
+	WriteITK(air, "air_lumen.nii" );
 	
 	if ( m_RemoveBoneLung )
 	{
@@ -184,14 +223,13 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 	}
 	
 	// Dilate air
-
 	radius.Fill(0);
 	radius[0] = 3;
 	radius[1] = 3;
 
-	StructuringElementType ball;
+	/*StructuringElementType ball;
 	ball.SetRadius( radius );
-	ball.CreateStructuringElement();	
+	ball.CreateStructuringElement();*/	
 
 	DilateFilterType::Pointer dilater = DilateFilterType::New();
 	dilater->SetBackgroundValue(0);
@@ -248,6 +286,21 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 
 		WriteITK(bone,"bone.nii");
 		
+		typedef itk::BinaryThresholdImageFilter<InputImageType,ByteImageType> ThresholdType;
+		ThresholdType::Pointer thresholder = ThresholdType::New();
+		thresholder->SetInput(input);
+		thresholder->SetInsideValue(255);
+		thresholder->SetLowerThreshold(200);
+		
+		typedef itk::SubtractImageFilter<ByteImageType,ByteImageType> SubtracterType;
+		SubtracterType::Pointer subtracter = SubtracterType::New();
+		subtracter->SetInput1(thresholder->GetOutput());
+		subtracter->SetInput2(bone);
+		subtracter->Update();
+		tagged = subtracter->GetOutput();
+		
+		
+		/*
 		IsolatedConnectedImageFilterType::Pointer isolatedGrower = IsolatedConnectedImageFilterType::New();
 		isolatedGrower->SetInput( input );
 		isolatedGrower->SetLower(m_TaggedValue);
@@ -278,6 +331,7 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 		std::cout << "Bone / Stool Isolating Threshold: " << isolatedGrower->GetIsolatedValue() << std::endl;
 
 		tagged = isolatedGrower->GetOutput();
+		*/
 
 		WriteITK(tagged,"tagged_without_bone.nii");	
 	
@@ -341,8 +395,8 @@ ColonSegmentationFilter<TInputImage,TOutputImage>
 	dilater->SetInput( tagged );
 	
 	radius.Fill(0);
-	radius[0] = 8;
-	radius[1] = 8;
+	radius[0] = 10;
+	radius[1] = 10;
 
 	ball.SetRadius( radius );
 	ball.CreateStructuringElement();
@@ -413,6 +467,23 @@ WriteITK(typename ByteImageType::Pointer image, std::string name)
 		
 		
 		typedef itk::ImageFileWriter< ByteImageType >  WriterType;
+		WriterType::Pointer writer = WriterType::New();
+		WriterType::SetGlobalWarningDisplay(false);
+		writer->SetFileName(name.c_str());
+		writer->SetInput(image);
+		std::cout<<"Writing: "<<name<<std::endl;
+		writer->Update();
+	}
+}
+
+template <class TInputImage, class TOutputImage >
+void
+ColonSegmentationFilter<TInputImage,TOutputImage>::
+WriteITK(typename InputImageType::Pointer image, std::string name)
+{
+	if (m_PrintImages)
+	{	
+		typedef itk::ImageFileWriter< InputImageType >  WriterType;
 		WriterType::Pointer writer = WriterType::New();
 		WriterType::SetGlobalWarningDisplay(false);
 		writer->SetFileName(name.c_str());

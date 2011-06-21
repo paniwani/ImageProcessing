@@ -97,6 +97,7 @@ protected:
   virtual ~ColonSegmentationFilter() {};
   void PrintSelf(std::ostream& os, Indent indent) const;
   void WriteITK(typename ByteImageType::Pointer image, std::string name);
+  void WriteITK(typename InputImageType::Pointer image, std::string name);
 
   /** This method implements the actual reflection of the image.
    *

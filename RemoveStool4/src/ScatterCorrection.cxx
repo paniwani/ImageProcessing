@@ -949,12 +949,6 @@ ImageType::Pointer ScatterCorrection( ImageType::Pointer &input, ByteImageType::
 	return masker->GetOutput();
 
 
-
-
-
-
-
-
 	//// Only make changes inside colon, inside tag mask, if voxel was unclassified or stool
 	//VoxelIteratorType vmapIt(vmap,REGION);
 	//colonIt = ByteIteratorType(colon,REGION);

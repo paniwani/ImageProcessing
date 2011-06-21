@@ -177,121 +177,109 @@ int main(int argc, char * argv[])
 
 	// Load images and segment colon
 	Setup(argv[1],inputOriginal,input,colon,gradientMagnitude);
+	Write(inputOriginal,"inputOriginal.nii");
 
+	// Smooth input
+	/*typedef itk::FastBilateralImageFilter<ImageType,ImageType> BilateralFilterType;
+	BilateralFilterType::Pointer bilateralFilter = BilateralFilterType::New();
+	bilateralFilter->SetInput(input);
+	bilateralFilter->SetRangeSigma(200);
+	bilateralFilter->SetDomainSigma(5);
+	bilateralFilter->Update();
+	input = bilateralFilter->GetOutput();
+	Write(input,"inputSmoothed.nii");
+	*/
+
+	// Get region
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
 
-	// get hessian response
-	double alpha = 0.25;
-	double gamma = 0.5;
+	//// Scatter correction
+	//ImageType::Pointer inputScatter = ScatterCorrection(inputOriginal,colon);
+	//Write(inputScatter,"inputScatter.nii");
 
-	FloatImageType::Pointer hessian = SatoResponse2(input,alpha,gamma);
-	Write(hessian,"hessian.nii");
+	//// Make changes only in tagged regions (HU > 200)
+	//IteratorType is(inputScatter,region);
+	//IteratorType it(input,region);
+	//ByteIteratorType cit(colon,region);
 
-	// Remove bottom 30% of hessian and remove regions with gradient > 300
-	FloatIteratorType git(gradientMagnitude,region);
-	FloatIteratorType hit(hessian,region);
+	//for (it.GoToBegin(), is.GoToBegin(), cit.GoToBegin(); !it.IsAtEnd(); ++it, ++is, ++cit)
+	//{
+	//	if (cit.Get() != 0)
+	//	{
+	//		if (it.Get() > 200)
+	//		{
+	//			it.Set( is.Get() );
+	//		}
+	//	}
+	//}
 
-	for (hit.GoToBegin(), git.GoToBegin(); !hit.IsAtEnd(); ++hit, ++git)
-	{
-		if (hit.Get() < 0.30 || git.Get() > 300)
-		{
-			hit.Set(0);
-		}
-	}
+	//inputScatter.~SmartPointer();
 
-	Write(hessian,"hessianThresholded.nii");
+	//Write(input,"inputAfterScatter.nii");
 
-	// Remove small components
-	typedef itk::BinaryShapeOpeningImageFilter<FloatImageType> OpenerType;
-	OpenerType::Pointer opener = OpenerType::New();
-	opener->SetInput(hessian);
-	opener->Set
+	// Single material classification, i.e. conservative intensity/gradient thresholding
+	PixelType tst = SingleMaterialClassification(input, gradientMagnitude, vmap, colon);
 
+	//// Get black top hat
+	//typedef itk::BlackTopHatImageFilter<ImageType,ImageType,StructuringElementType> BlackTopHatType;
+	//BlackTopHatType::Pointer bthF = BlackTopHatType::New();
+	//bthF->SetInput( input );
 
+	//float radArray[3] = {1,2,3};
 
+	//for (int i=0; i<3; i++)
+	//{
+	//	StructuringElementType se;
+	//	
+	//	ByteImageType::SizeType rad;
+	//	rad.Fill(radArray[i]);
 
+	//	se.SetRadius( rad );
+	//	se.CreateStructuringElement();
 
+	//	bthF->SetKernel(se);
+	//	bthF->Update();
+	//	ImageType::Pointer bth = bthF->GetOutput();
 
+	//	bth = Mask(bth,BinaryThreshold(vmap,Stool));
 
+	//	std::stringstream ss;
+	//	ss << "bth" << radArray[i] << ".nii";
+	//	Write(bth,ss.str());
+	//}
 	
+	//// Perform hessian analysis
+	//HessianAnalysis(input,colon,vmap,partial,tst);
+
+	// Determine boundary types
+	FloatImageType::Pointer smax = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
+
+	gradientMagnitude.~SmartPointer();
+
+	ArrayImageType::Pointer partial = ComputePartials(input,vmap,colon,smax);
 	
-	
-	
-	
-	//Test(inputOriginal,input,colon);
-
-
-	/*for (int i=1; i<10; i++)
-	{
-		std::stringstream ss;
-		ss << "rr" << i << ".nii";
-
-		FloatImageType::Pointer rr = RescaledRange(input,3);
-		Write(rr,ss.str());
-	}*/	
-
-	/*for (int i=1; i<5; i++)
-	{
-		std::stringstream ss;
-		ss << "sd" << i << ".nii";
-
-		FloatImageType::Pointer sd = StandardDeviation(input,colon,i);
-		Write(sd,ss.str());
-	}
-
-	for (int i=1; i<5; i++)
-	{
-		std::stringstream ss;
-		ss << "range" << i << ".nii";
-
-		ImageType::Pointer range = Range(input,colon,i);
-		Write(range,ss.str());
-	}*/
-
-
-
-	//TextureTest(input,colon);
-	//ConnectedTest(input,gradientMagnitude,colon);
-	//AdaptiveThreshold(input,colon);
-	//LocalThreshold(input,colon,gradientMagnitude,vmap);
-
-	// Initial segmentation, save tissue stool threshold
-	//PixelType tst = SingleMaterialClassification(input, gradientMagnitude, vmap, colon);
-
-	//// Apply scatter correction
-	//input = ScatterCorrection(inputOriginal,colon,vmap);
-
-	//// Update vmap with new scatter input
-	//ApplyThresholdRules(input,REGION,gradientMagnitude,vmap,colon,tst);
-
-	//Write(vmap,"vmapScatter.nii");	
-
-	//// Determine boundary types
-	//FloatImageType::Pointer smax = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
-
-	//gradientMagnitude.~SmartPointer();
-
-	//ArrayImageType::Pointer partial = ComputePartials(input,vmap,colon,smax);
-	//
 	//FixATT(input,partial,vmap,colon,smax,tst);
 
 	//smax.~SmartPointer();
 
-	//// Perform hessian analysis
+	FloatImageType::Pointer hessian = SatoResponse4(input,colon,vmap,partial,0.25,1);
+	Write(hessian,"hessian.nii");
+
+	// Perform hessian analysis
 	//HessianAnalysis(input,colon,vmap,partial,tst);	
 
 	//// Expectation Maximization
-	//EM(partial,colon,input);
+	EM(partial,colon,input);
 
 	//// Perform subtraction
-	//ImageType::Pointer carstonOutput = Subtraction(input,inputOriginal,colon,partial,vmap);
+	ImageType::Pointer carstonOutput = Subtraction(input,inputOriginal,colon,partial,vmap);
 
 	//// End clock
-	//final = clock() - init;
+	final = clock() - init;
 
-	//std::cout << (double) final / ((double) CLOCKS_PER_SEC) <<  " seconds" << std::endl;
+	std::cout << (double) final / ((double) CLOCKS_PER_SEC) <<  " seconds" << std::endl;
 
-	//system("pause");
+	system("pause");
 	return 0;
 }
 
@@ -917,7 +905,7 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 
 	for (ptbIt.GoToBegin(), partialIt.GoToBegin(); !ptbIt.IsAtEnd(); ++ptbIt, ++partialIt)
 	{
-		if (partialIt.Get()[1] > 0)
+		if (partialIt.Get()[1] > 0.3)
 		{
 			ptbIt.Set(255);
 		}
@@ -925,16 +913,8 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 
 	Write(ptb,"partialTissueBinaryMask.nii");
 
-	// keep only largest component
-	typedef itk::BinaryShapeKeepNObjectsImageFilter<ByteImageType> KeeperType;
-	KeeperType::Pointer keeper = KeeperType::New();
-	keeper->SetInput(ptb);
-	keeper->SetForegroundValue(255);
-	keeper->SetBackgroundValue(0);
-	keeper->SetNumberOfObjects(1);
-	keeper->SetAttribute("Size");
-	keeper->Update();
-	ptb = keeper->GetOutput();
+	// keep only largest components
+	ptb = BinaryOpen(ptb,"Size",200);
 	Write(ptb,"partialTissueBinaryMaskCompd.nii");
 	
 	// update partial image
@@ -1009,7 +989,6 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 
 	// dilate air edge
 	Dilate(air,3);
-
 	Write(air,"airEdgesDilated.nii");
 
 	// smooth only near edge tissue interface
@@ -1029,13 +1008,14 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 	Write(inputSmooth,"inputSmooth.nii");
 
 	IteratorType inputSmoothIt(inputSmooth,region);
+	VoxelIteratorType vmapIt(vmap,region);
 
 	airIt = ByteIteratorType(air,region);
 	inputIt = IteratorType(input,region);
 
 	for (inputIt.GoToBegin(), airIt.GoToBegin(), inputSmoothIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++inputSmoothIt, ++airIt)
 	{
-		if (airIt.Get() != 0)
+		if (airIt.Get() != 0 /*&& vmapIt.Get() != TissueAir*/) // do not smooth tissue air
 		{
 			inputIt.Set( inputSmoothIt.Get() );
 		}
@@ -1087,6 +1067,42 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 	Write2(inputOriginal,"output.nii");
 
 	return inputOriginal;
+}
+
+void BinaryFillHoles(ByteImageType::Pointer &im)
+{
+	// Invert image
+	ByteIteratorType it(im,im->GetLargestPossibleRegion());
+	for (it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if (it.Get() == 255)
+		{
+			it.Set(0);
+		} else {
+			it.Set(255);
+		}
+	}
+
+	// Find largest background component
+	ByteImageType::Pointer bkg = BinaryKeeper(im,"Size",1);
+
+	// Invert image back and fill holes
+	ByteIteratorType bit(bkg,bkg->GetLargestPossibleRegion());
+
+	for (it.GoToBegin(),bit.GoToBegin(); !it.IsAtEnd(); ++it,++bit)
+	{
+		if (it.Get() == 255)
+		{
+			it.Set(0);
+		} else {
+			it.Set(255);
+		}
+
+		if (bit.Get() == 0)
+		{
+			it.Set(255);
+		}
+	}
 }
 
 //void TextureAnalysis(ImageType::Pointer &input)
@@ -1311,13 +1327,14 @@ void Setup(std::string dataset, ImageType::Pointer  &inputOriginal, ImageType::P
 	colonSegmenter->SetInput( inputOriginal );
 	colonSegmenter->SetOutputForegroundValue( 255 );
 	colonSegmenter->SetOutputBackgroundValue( 0 );
-	//colonSegmenter->SetPrintImages(true);
+	colonSegmenter->SetPrintImages(true);
 
-	if ( truncateOn )
-		colonSegmenter->SetRemoveBoneLung( false );
+	//if ( truncateOn )
+	//	colonSegmenter->SetRemoveBoneLung( false );
 
 	colonSegmenter->Update();
 	colon = colonSegmenter->GetOutput();
+	BinaryFillHoles(colon);
 
 	//----------------------------------------------
 	// Mask input with colon
@@ -1418,7 +1435,7 @@ void Setup(std::string dataset, ImageType::Pointer  &inputOriginal, ImageType::P
 	REGION = colon->GetLargestPossibleRegion();
 
 	Write(input,"input.nii");
-	//Write(colon,"colon.nii");
+	Write(colon,"colon.nii");
 	Write(gradientMagnitude,"gradientMagnitudeSmoothed.nii");
 }
 
@@ -1455,12 +1472,14 @@ PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType
 	//PixelType tissueStoolThreshold = otsuCalculator->GetThreshold();
 	//std::cout << "Tissue Stool Otsu Threshold: " << tissueStoolThreshold << std::endl;
 
-	PixelType tissueStoolThreshold = 180;
+	PixelType tissueStoolThreshold = 200;
 
 	//----------------------------------------------
 	// Apply initial threshold rules
 	//----------------------------------------------
-	ApplyThresholdRules( input, input->GetLargestPossibleRegion(), gradientMagnitude, vmap, colon, tissueStoolThreshold );
+
+	// Use smoothed input to eliminate noise
+	ApplyThresholdRules( Median(input), input->GetLargestPossibleRegion(), gradientMagnitude, vmap, colon, tissueStoolThreshold );
 
 	Write(vmap,"vmap.nii");
 
@@ -1513,7 +1532,7 @@ void ApplyThresholdRules( ImageType::Pointer &input, ImageType::RegionType local
 			short I = inputIt.Get();
 			float G = gradientMagnitudeIt.Get();
 
-			if ( ( I >= tissueStoolThreshold && G < 0.8*I ) || I > 1000 )
+			if ( ( I >= tissueStoolThreshold && G < 0.8*I ) || I > 800 )
 			{
 				voxel = Stool;
 			} else if ( I <= -700 ) {

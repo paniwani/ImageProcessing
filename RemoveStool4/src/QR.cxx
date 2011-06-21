@@ -372,14 +372,17 @@ ArrayImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageTyp
 
 				case TissueAir:
 
-					value[1]=1+(I/1000);
+					/*value[1]=1+(I/1000);
 
 					if (value[1] <= 0) { value[1] = 0; }
 					if (value[1] >= 1) { value[1] = 1; }
 
 					value[0]=1-value[1];
 
-					value[2]=0;
+					value[2]=0;*/
+					value[0] = 0; // leave tissue air untouched (pt=1)
+					value[1] = 1;
+					value[2] = 0;
 
 					break;
 
@@ -493,11 +496,11 @@ FloatImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 	gradInterp->SetSplineOrder(3);
 	gradInterp->SetInputImage( multiplier->GetOutput() );
 
-	// interp input
+	// interp a smoothed input
 	typedef itk::BSplineInterpolateImageFunction<ImageType> InterpolatorType;
 	InterpolatorType::Pointer inputInterp = InterpolatorType::New();
 	inputInterp->SetSplineOrder(3);
-	inputInterp->SetInputImage( input );
+	inputInterp->SetInputImage( Median(input) );
 
 	// assign voxel boundaries to transition types
 	ByteIteratorType colonIt(colon,REGION);

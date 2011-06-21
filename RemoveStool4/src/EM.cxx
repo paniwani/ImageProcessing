@@ -268,8 +268,8 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
 		std::stringstream ss2;
 		ss2<<"EM"<<emNum+1<<".nii";
 
-		//Write(partial,ss2.str());
+		Write(partial,ss2.str());
     }
 
-	debug.close();
+	//debug.close();
 }

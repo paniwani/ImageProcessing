@@ -151,6 +151,20 @@ ByteImageType::Pointer BinaryKeeper(ByteImageType::Pointer &in, std::string attr
 	return keeper->GetOutput();
 }
 
+ByteImageType::Pointer BinaryOpen(ByteImageType::Pointer &in, std::string attribute, double lambda, bool reverse=false)
+{
+	typedef itk::BinaryShapeOpeningImageFilter<ByteImageType> OpenerType;
+	OpenerType::Pointer opener = OpenerType::New();
+	opener->SetInput(in);
+	opener->SetAttribute(attribute);
+	opener->SetLambda(lambda);
+	opener->SetReverseOrdering(reverse);
+	opener->SetForegroundValue(255);
+	opener->SetBackgroundValue(0);
+	opener->Update();
+	return opener->GetOutput();
+}
+
 ByteImageType::Pointer BinaryOr(ByteImageType::Pointer &im1, ByteImageType::Pointer &im2)
 {	
 	typedef itk::OrImageFilter<ByteImageType> OrType;
@@ -200,6 +214,22 @@ ImageType::Pointer Crop(ImageType::Pointer &input, ImageType::RegionType request
 	cropper->SetRegionOfInterest(requestedRegion);
 	cropper->Update();
 	return cropper->GetOutput();
+}
+
+ImageType::Pointer Median(ImageType::Pointer &im)
+{
+	typedef itk::MedianImageFilter<ImageType,ImageType> MedianType;
+	MedianType::Pointer medianFilter = MedianType::New();
+	medianFilter->SetInput(im);
+
+	ImageType::SizeType radius;
+	radius.Fill(0);
+	radius[0] = 1;
+	radius[1] = 1;
+
+	medianFilter->SetRadius(radius);
+	medianFilter->Update();
+	return medianFilter->GetOutput();
 }
 
 
