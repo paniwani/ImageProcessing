@@ -1,6 +1,6 @@
 #include "RemoveStool4.h"
 #include "utility.cxx"
-#include "io.cxx"
+#include "io2.cxx"
 #include "scattercorrection.cxx"
 #include "QR.cxx"
 #include "EM.cxx"
@@ -177,7 +177,7 @@ int main(int argc, char * argv[])
 
 	// Load images and segment colon
 	Setup(argv[1],inputOriginal,input,colon,gradientMagnitude);
-	Write(inputOriginal,"inputOriginal.nii");
+	Write2(inputOriginal,"inputOriginal.nii");
 
 	// Smooth input
 	/*typedef itk::FastBilateralImageFilter<ImageType,ImageType> BilateralFilterType;
@@ -1001,7 +1001,7 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 	sigmaArray[1] = 0.7;
 	sigmaArray[2] = 0;*/
 
-	smoother->SetVariance(0.7*0.7);
+	smoother->SetVariance(1);
 	smoother->Update();
 	ImageType::Pointer inputSmooth = smoother->GetOutput();
 
@@ -1013,6 +1013,30 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 	airIt = ByteIteratorType(air,region);
 	inputIt = IteratorType(input,region);
 
+	// Smooth only the surrounding air next to the tissue
+	for (inputIt.GoToBegin(), airIt.GoToBegin(), inputSmoothIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++inputSmoothIt, ++airIt)
+	{
+		if (airIt.Get() != 0 /*&& vmapIt.Get() != TissueAir*/) // do not smooth tissue air
+		{
+			if (inputIt.Get() < -400)
+			{
+				inputIt.Set( inputSmoothIt.Get() );
+			}
+			
+		}
+	}
+
+	Write(input,"inputPostSmoothNearTissueOnly.nii");
+
+	// Smooth air and tissue together at a lower sigma
+	smoother = SmoothType::New();
+	smoother->SetInput(input);
+	smoother->SetVariance(0.7*0.7);
+	smoother->Update();
+	inputSmooth = smoother->GetOutput();
+	
+	inputSmoothIt = IteratorType(inputSmooth,region);
+
 	for (inputIt.GoToBegin(), airIt.GoToBegin(), inputSmoothIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++inputSmoothIt, ++airIt)
 	{
 		if (airIt.Get() != 0 /*&& vmapIt.Get() != TissueAir*/) // do not smooth tissue air
@@ -1021,7 +1045,8 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 		}
 	}
 
-	Write(input,"inputPostSmoothNearAir.nii");
+	Write(input,"inputPostSmoothAll.nii");
+
 
 	//// blur input within air edge mask
 	//typedef itk::GaussianBlurImageFunction< ImageType > GFunctionType;
@@ -1085,6 +1110,56 @@ void BinaryFillHoles(ByteImageType::Pointer &im)
 
 	// Find largest background component
 	ByteImageType::Pointer bkg = BinaryKeeper(im,"Size",1);
+
+	// Invert image back and fill holes
+	ByteIteratorType bit(bkg,bkg->GetLargestPossibleRegion());
+
+	for (it.GoToBegin(),bit.GoToBegin(); !it.IsAtEnd(); ++it,++bit)
+	{
+		if (it.Get() == 255)
+		{
+			it.Set(0);
+		} else {
+			it.Set(255);
+		}
+
+		if (bit.Get() == 0)
+		{
+			it.Set(255);
+		}
+	}
+}
+
+void BinaryFillHoles2D(ByteImageType::Pointer &im)
+{
+	// Invert image
+	ByteIteratorType it(im,im->GetLargestPossibleRegion());
+	for (it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if (it.Get() == 255)
+		{
+			it.Set(0);
+		} else {
+			it.Set(255);
+		}
+	}
+
+	// Find largest background component in each 2D slice
+	typedef itk::BinaryShapeKeepNObjectsImageFilter< ByteImageType2D > KeeperType2D;
+	typedef itk::SliceBySliceImageFilter< ByteImageType, ByteImageType, KeeperType2D > SliceKeeperType;
+
+	KeeperType2D::Pointer keeper = KeeperType2D::New();
+	keeper->SetForegroundValue(255);
+	keeper->SetBackgroundValue(0);
+	keeper->SetAttribute("Size");
+	keeper->SetNumberOfObjects(1);
+	
+	SliceKeeperType::Pointer slicer = SliceKeeperType::New();
+	slicer->SetInput(im);
+	slicer->SetFilter(keeper);
+	slicer->Update();
+
+	ByteImageType::Pointer bkg = slicer->GetOutput();
 
 	// Invert image back and fill holes
 	ByteIteratorType bit(bkg,bkg->GetLargestPossibleRegion());
@@ -1327,14 +1402,16 @@ void Setup(std::string dataset, ImageType::Pointer  &inputOriginal, ImageType::P
 	colonSegmenter->SetInput( inputOriginal );
 	colonSegmenter->SetOutputForegroundValue( 255 );
 	colonSegmenter->SetOutputBackgroundValue( 0 );
-	colonSegmenter->SetPrintImages(true);
+	//colonSegmenter->SetPrintImages(true);
 
-	//if ( truncateOn )
-	//	colonSegmenter->SetRemoveBoneLung( false );
+	if ( truncateOn )
+		colonSegmenter->SetRemoveBoneLung( false );
 
 	colonSegmenter->Update();
 	colon = colonSegmenter->GetOutput();
-	BinaryFillHoles(colon);
+	Write(colon,"colonFull.nii");
+	BinaryFillHoles2D(colon);
+	Write(colon,"colonFullFilled.nii");
 
 	//----------------------------------------------
 	// Mask input with colon

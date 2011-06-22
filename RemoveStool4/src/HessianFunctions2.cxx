@@ -1059,7 +1059,7 @@ FloatImageType::Pointer SatoResponse4(ImageType::Pointer &input, ByteImageType::
 	Write(partial,"hessianPartial.nii");
 	Write(vmap,"hessianVmap.nii");
 
-	ByteImageType::Pointer sm = BinaryThreshold(vmap,Stool);
+	ByteImageType::Pointer sm = BinaryOr( BinaryThreshold(vmap,Stool) , BinaryThreshold(vmap,StoolAir) );
 	Write(sm,"stoolmask.nii");
 	BinaryFillHoles(sm);
 	Write(sm,"stoolmaskclosed.nii");
