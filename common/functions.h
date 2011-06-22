@@ -1,138 +1,3 @@
-#include <itkImageFileWriter.h>
-#include <itkImageFileReader.h>
-#include "itkRegularExpressionSeriesFileNames.h"
-#include "itkGDCMImageIO.h"
-#include "itkImageSeriesReader.h"
-#include "itkOrientImageFilter.h"
-#include <itkMaskImageFilter.h>
-#include <itkOrImageFilter.h>
-#include <itkSubtractImageFilter.h>
-#include <itkRescaleIntensityImageFilter.h>
-#include <itkRegionOfInterestImageFilter.h>
-#include <itkMinimumMaximumImageCalculator.h>
-#include <itkConnectedComponentImageFilter.h>
-#include <itkAddImageFilter.h>
-#include <itkDivideByConstantImageFilter.h>
-#include <itkBinaryMorphologicalOpeningImageFilter.h>
-
-enum VoxelType {
-	Stool=1,
-	Air=2,
-	Tissue=3,
-	Unclassified=4,
-	StoolAir=5,
-	TissueAir=6,
-	TissueStool=7,
-    ThinStool=8
-};
-
-struct point{
-	int intensity;
-	int size;
-	int order;
-	int border;
-	float centroidY;
-};
-
-typedef struct point ptype;
-
-typedef short PixelType;
-typedef unsigned char BytePixelType;
-
-typedef itk::Image<PixelType, Dimension> ImageType;
-typedef itk::Image<BytePixelType, Dimension> ByteImageType;
-typedef itk::Image<float, Dimension> FloatImageType;
-typedef itk::Image<double, Dimension> DoubleImageType;
-typedef itk::Image<int, Dimension> IntImageType;
-typedef itk::Image<unsigned int, Dimension> UIntImageType;
-typedef itk::Image< VoxelType, Dimension> VoxelImageType;
-
-typedef itk::ImageRegionIteratorWithIndex< ImageType > IteratorType;
-typedef itk::ImageRegionIteratorWithIndex< ByteImageType > ByteIteratorType;
-typedef itk::ImageRegionIteratorWithIndex< FloatImageType > FloatIteratorType;
-typedef itk::ImageRegionIteratorWithIndex< DoubleImageType > DoubleIteratorType;
-typedef itk::ImageRegionIteratorWithIndex< UIntImageType > IntIteratorType;
-typedef itk::ImageRegionIteratorWithIndex< VoxelImageType > VoxelIteratorType;
-typedef itk::ImageRegionIteratorWithIndex< UIntImageType > UIntIteratorType;
-
-template <typename T>
-typename T::Pointer ReadITK(char * fileName) {
-	std::cout << "Reading " <<  fileName << std::endl;
-	typedef itk::ImageFileReader< T > ReaderType;
-	ReaderType::Pointer reader = ReaderType::New();
-	reader->SetFileName( fileName );
-	reader->SetGlobalWarningDisplay(false);
-
-	try {
-		reader->Update();
-	} catch( itk::ExceptionObject & err ) {
-		std::cerr << "Error reading image: " << err << std::endl;
-		return NULL;
-	}
-
-	return reader->GetOutput();
-}
-
-template <typename T>
-void WriteITK(typename T::Pointer image, std::string name) {
-    typedef itk::ImageFileWriter< T >  WriterType;
-    WriterType::Pointer writer = WriterType::New();
-	WriterType::SetGlobalWarningDisplay(false);
-	writer->SetFileName(name.c_str());
-	writer->SetInput(image);
-	std::cout<<"Writing: "<<name<<std::endl;
-	
-	try {
-		writer->Update();
-	} catch( itk::ExceptionObject & err ) {
-		std::cerr << "Error writing image: " << err << std::endl;
-	}
-}
-
-template <typename T>
-typename T::Pointer ReadDicom( std::string path, int slice1=0, int slice2=-1)
-{	
-	// Create reader
-	itk::ImageSeriesReader<T>::Pointer reader = itk::ImageSeriesReader<T>::New();
-    itk::GDCMImageIO::Pointer dicomIO = itk::GDCMImageIO::New();
-    reader->SetImageIO( dicomIO );
-
-	itk::RegularExpressionSeriesFileNames::Pointer fit = itk::RegularExpressionSeriesFileNames::New();
-	
-	fit->SetDirectory( path );
-	fit->SetRegularExpression("[^.]*i([0-9]+).dcm");
-	fit->SetSubMatch(1);
-
-	std::vector<std::string> names = fit->GetFileNames();
-	
-	if (T::ImageDimension == 2 && slice2 == -1)
-	{
-		names.erase( names.begin(), names.begin()+slice1-1 );
-		names.erase( names.begin()+1, names.end() );
-	}
-	
-	if (slice2 > 0 && slice2 > slice1)
-	{
-		names.erase( names.begin(), names.begin()+slice1);
-		names.erase( names.begin()+slice2-slice1, names.end() );
-	}
-	
-    reader->SetFileNames( names );
-	try
-	{
-		reader->Update();
-	}
-	catch( itk::ExceptionObject & err )
-	{
-		std::cerr << "Error reading dicom: " << err << std::endl;
-		return 0;
-	}
-	
-	T::Pointer output = reader->GetOutput();
-	
-    return output;
-}
-
 template <typename T1, typename T2>
 typename T2::Pointer Rescale(typename T1::Pointer &im, typename T2::PixelType v1, typename T2::PixelType v2)
 {
@@ -406,4 +271,24 @@ void DivideByConstant(typename T::Pointer &im, typename T::PixelType c)
 	divider->SetConstant(c);
 	divider->Update();
 	im = divider->GetOutput();
+}
+
+template <typename T>
+typename T::Pointer Median(typename T::Pointer &im, unsigned int radius, bool use3D=false)
+{
+	typedef itk::MedianImageFilter<ImageType,ImageType> MedianType;
+	MedianType::Pointer medianFilter = MedianType::New();
+	medianFilter->SetInput(im);
+
+	ImageType::SizeType rad;
+	rad.Fill(0);
+	rad[0] = 1;
+	rad[1] = 1;
+	
+	if (Dimension == 3 && use3D)
+		rad[2] = radius;
+
+	medianFilter->SetRadius(rad);
+	medianFilter->Update();
+	return medianFilter->GetOutput();
 }

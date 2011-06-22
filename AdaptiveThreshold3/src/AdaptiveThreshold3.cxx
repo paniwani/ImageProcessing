@@ -93,12 +93,17 @@ int main(int argc, char * argv[])
 	binarizer->SetInsideValue(255);
 	binarizer->SetLowerThreshold(180);
 	binarizer->Update();
-	WriteITK <ByteImageType> (binarizer->GetOutput(),"allTagged.nii");
+	ByteImageType::Pointer tag = binarizer->GetOutput();
+	WriteITK <ByteImageType> (tag,"allTagged.nii");
+
+	// Open to separate thin stool connections
+	tag = BinaryOpen <ByteImageType> (tag,1,true);
+	WriteITK <ByteImageType> (tag,"tagOpened.nii");
 	
 	// Remove small components
 	typedef itk::BinaryShapeOpeningImageFilter<ByteImageType> BinaryOpeningType;
 	BinaryOpeningType::Pointer opener = BinaryOpeningType::New();
-	opener->SetInput(binarizer->GetOutput());
+	opener->SetInput(tag);
 	opener->SetAttribute("Size");
 	opener->SetForegroundValue(255);
 	opener->SetBackgroundValue(0);
@@ -106,7 +111,7 @@ int main(int argc, char * argv[])
 	opener->Update();
 	WriteITK <ByteImageType> (opener->GetOutput(),"allTaggedRemovedSmall.nii");
 
-	ByteImageType::Pointer tag = opener->GetOutput();
+	tag = opener->GetOutput();
 
 	/*
 	// Fill holes
@@ -150,6 +155,10 @@ int main(int argc, char * argv[])
 	otsuCalculator->SetHistogramMin(-300);
 	otsuCalculator->SetHistogramMax(1200);
 	otsuCalculator->SetNumberOfHistogramBins(128);
+	otsuCalculator->Compute();
+	PixelType otsuGlobal = otsuCalculator->GetThreshold();
+
+	std::cout << "global otsu: " << otsuGlobal << std::endl;
 
 	// Setup threshold image
 	ImageType::Pointer thresholdImage = ImageType::New();
@@ -262,7 +271,7 @@ int main(int argc, char * argv[])
 		if (colonIt.Get() != 0)
 		{
 			PixelType I = inputIt.Get();
-			PixelType T = 434;
+			PixelType T = 200;
 			float G = gmIt.Get();
 
 			if ( ( I >= T && G < 0.8*I ) || I > 1000 )
@@ -276,9 +285,31 @@ int main(int argc, char * argv[])
 		}
 	}
 
-	// Show classification with adaptive threshold
-	WriteITK <ByteImageType> (out,"outPre.nii");
+	WriteITK <ByteImageType> (out,"out200.nii");
 
+	// Show classification with global otsu threshold
+	for (gmIt.GoToBegin(), inputIt.GoToBegin(), colonIt.GoToBegin(), outIt.GoToBegin(), thIt.GoToBegin(); !gmIt.IsAtEnd(); ++gmIt, ++inputIt, ++colonIt, ++outIt, ++thIt)
+	{
+		if (colonIt.Get() != 0)
+		{
+			PixelType I = inputIt.Get();
+			PixelType T = otsuGlobal;
+			float G = gmIt.Get();
+
+			if ( ( I >= T && G < 0.8*I ) || I > 1000 )
+			{
+				outIt.Set(1);
+			} else if ( I <= -700 ) {
+				outIt.Set(2);
+			} else if ( I < T && I > -300 && G <= 300 ) {
+				outIt.Set(3);
+			}
+		}
+	}
+
+	WriteITK <ByteImageType> (out,"outGlobal.nii");
+
+	// Show classification with adaptive threshold
 	for (gmIt.GoToBegin(), inputIt.GoToBegin(), colonIt.GoToBegin(), outIt.GoToBegin(), thIt.GoToBegin(); !gmIt.IsAtEnd(); ++gmIt, ++inputIt, ++colonIt, ++outIt, ++thIt)
 	{
 		if (colonIt.Get() != 0)
@@ -298,7 +329,7 @@ int main(int argc, char * argv[])
 		}
 	}
 
-	WriteITK <ByteImageType> (out,"outPost.nii");
+	WriteITK <ByteImageType> (out,"outLocal.nii");
 
 	system("pause"); 							
 	return 0; 									

@@ -137,7 +137,7 @@ ImageType::Pointer Mask(ImageType::Pointer &im1, ByteImageType::Pointer &im2)
 	return masker->GetOutput();
 }
 
-ByteImageType::Pointer BinaryKeeper(ByteImageType::Pointer &in, std::string attribute, unsigned int numOfObjects, bool reverse=false)
+ByteImageType::Pointer BinaryShapeKeeper(ByteImageType::Pointer &in, std::string attribute, unsigned int numOfObjects, bool reverse=false)
 {
 	typedef itk::BinaryShapeKeepNObjectsImageFilter<ByteImageType> KeeperType;
 	KeeperType::Pointer keeper = KeeperType::New();
@@ -151,7 +151,7 @@ ByteImageType::Pointer BinaryKeeper(ByteImageType::Pointer &in, std::string attr
 	return keeper->GetOutput();
 }
 
-ByteImageType::Pointer BinaryOpen(ByteImageType::Pointer &in, std::string attribute, double lambda, bool reverse=false)
+ByteImageType::Pointer BinaryShapeOpen(ByteImageType::Pointer &in, std::string attribute, double lambda, bool reverse=false)
 {
 	typedef itk::BinaryShapeOpeningImageFilter<ByteImageType> OpenerType;
 	OpenerType::Pointer opener = OpenerType::New();
@@ -231,6 +231,75 @@ ImageType::Pointer Median(ImageType::Pointer &im)
 	medianFilter->Update();
 	return medianFilter->GetOutput();
 }
+
+ByteImageType::Pointer BinaryDilate(ByteImageType::Pointer &img, unsigned int radius)
+{
+	StructuringElementType se;
+	
+	ByteImageType::SizeType rad;
+	rad.Fill(0);
+	rad[0] = radius;
+	rad[1] = radius;
+
+	se.SetRadius( rad );
+	se.CreateStructuringElement();
+
+	typedef itk::BinaryDilateImageFilter<ByteImageType, ByteImageType, StructuringElementType> BinaryDilateImageFilterType;
+	BinaryDilateImageFilterType::Pointer dilater = BinaryDilateImageFilterType::New();
+	dilater->SetInput( img );
+	dilater->SetKernel( se );
+	dilater->SetForegroundValue(255);
+	dilater->SetBackgroundValue(0);
+	dilater->Update();
+
+	return dilater->GetOutput();
+}
+
+ByteImageType::Pointer BinaryErode(ByteImageType::Pointer &img, unsigned int radius)
+{
+	StructuringElementType se;
+	
+	ByteImageType::SizeType rad;
+	rad.Fill(0);
+	rad[0] = radius;
+	rad[1] = radius;
+
+	se.SetRadius( rad );
+	se.CreateStructuringElement();
+
+	typedef itk::BinaryErodeImageFilter<ByteImageType, ByteImageType, StructuringElementType> BinaryErodeImageFilterType;
+	BinaryErodeImageFilterType::Pointer eroder = BinaryErodeImageFilterType::New();
+	eroder->SetInput( img );
+	eroder->SetKernel( se );
+	eroder->SetForegroundValue(255);
+	eroder->SetBackgroundValue(0);
+	eroder->Update();
+
+	return eroder->GetOutput();
+}
+
+ByteImageType::Pointer BinaryOpen(ByteImageType::Pointer &img, unsigned int radius)
+{
+	StructuringElementType se;
+	
+	ByteImageType::SizeType rad;
+	rad.Fill(0);
+	rad[0] = radius;
+	rad[1] = radius;
+
+	se.SetRadius( rad );
+	se.CreateStructuringElement();	
+
+	typedef itk::BinaryMorphologicalOpeningImageFilter<ByteImageType, ByteImageType, StructuringElementType> BinaryMorphologicalOpeningImageFilterType;
+	BinaryMorphologicalOpeningImageFilterType::Pointer opener = BinaryMorphologicalOpeningImageFilterType::New();
+	opener->SetInput( img );
+	opener->SetKernel( se );
+	opener->SetForegroundValue(255);
+	opener->Update();
+	return opener->GetOutput();
+}
+
+
 
 
 

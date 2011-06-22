@@ -16,13 +16,17 @@ const unsigned int Dimension = 2;
 #include <otbScalarImageToTexturesFilter.h>
 #include <otbScalarImageToTexturesMaskFilter.h>
 #include <itkScalarImageToHistogramGenerator.h>
+#include <itkLabelImageToLabelMapFilter.h>
+#include <itkRelabelLabelMapFilter.h>
 
 ByteImageType::Pointer Range(ByteImageType::Pointer &input, unsigned int radius);
 FloatImageType::Pointer LocalEntropy(ByteImageType::Pointer &input, unsigned int radius, unsigned int numBins=256);
+std::vector<FloatImageType::Pointer> RescaledRange(ByteImageType::Pointer &input, unsigned int radius);
+std::vector<float> ComputeLogSlope(std::vector<float> x, std::vector<float> y);
  												
 int main(int argc, char * argv[])				
 { 					
-	if( argc < 2 )
+	if( argc < 3 )
     {
 		std::cerr << "Missing Parameters " << std::endl;
 		std::cerr << "Usage: " << argv[0];
@@ -92,81 +96,25 @@ int main(int argc, char * argv[])
 	WriteITK <ByteImageType> (range,ss.str());
 
 	// Get entropy
-	unsigned int numBins = 256;
+	unsigned int numBins = 128;
 
 	FloatImageType::Pointer entropy = LocalEntropy( input, Radius, numBins);
 	ss.str("");
 	ss << "entropy_radius_" << Radius << "_numBins_" << numBins << ".nii";
 	WriteITK <FloatImageType> (entropy,ss.str());
 
-	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	//// Haralick Textures
-	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	//
-	//// Setup 8 outputs
-	//std::vector<FloatImageType::Pointer> outVector;
-	//outVector.resize(8);
+	// Get rescaled range: slope and y-intercept
+	std::vector<FloatImageType::Pointer> rrVector = RescaledRange(input,Radius);
+	FloatImageType::Pointer rrSlope = rrVector[0];
+	FloatImageType::Pointer rrIntercept = rrVector[1];
 
-	//for (int i=0; i<8; i++)
-	//{
-	//	outVector[i] = FloatImageType::New();
-	//	outVector[i]->SetRegions(region);
-	//	outVector[i]->CopyInformation(input);
-	//	outVector[i]->Allocate();
-	//	outVector[i]->FillBuffer(0);
-	//}
+	ss.str("");
+	ss << "rrSlope_radius_" << Radius << ".nii";
+	WriteITK <FloatImageType> (rrSlope,ss.str());
 
-	//// Setup offsets
-	//typedef ByteImageType::OffsetType OffsetType;
-
-	//std::vector<OffsetType> offsetVector;
-	//offsetVector.resize(2);
-	//offsetVector[0][0] = 0; offsetVector[0][1] = 1;
-	//offsetVector[1][0] = 1; offsetVector[1][1] = 0;
-
-	//// Setup texture filter
-	//typedef otb::ScalarImageToTexturesFilter<FloatImageType,FloatImageType> TextureFilterType;
-	//TextureFilterType::Pointer textureFilter = TextureFilterType::New();
-	//textureFilter->SetInput( Rescale <ByteImageType,FloatImageType> (input,0,255) );
-	//textureFilter->SetInputImageMinimum(0);
-	//textureFilter->SetInputImageMaximum(255);
-	//textureFilter->SetNumberOfThreads(1);
-	////textureFilter->SetMaskImage( Cast <ByteImageType,FloatImageType> (colon) );
-
-	//ByteImageType::SizeType radius;
-	//radius.Fill(Radius);
-	//textureFilter->SetRadius(radius);
-
-	//for (int offcount = 0; offcount < 2; offcount++)
-	//{
-	//	// Get textures for a particular offset
-	//	textureFilter->SetOffset(offsetVector[offcount]);
-	//	textureFilter->Update();
-	//	
-	//	// Sum textures across offsets
-	//	for (int i=0; i<8; i++)
-	//	{
-	//		FloatImageType::Pointer texture = textureFilter->GetOutput(i);		
-	//		outVector[i] = Add <FloatImageType> (outVector[i],texture);
-
-	//		std::stringstream ss;
-	//		ss << "texture" << i << "_offset_" << offcount << ".nii";
-	//		//WriteITK <FloatImageType> (texture,ss.str());
-
-	//	}
-	//}
-
-	//// Average offsets
-	//for (int i=0; i<8; i++)
-	//{
-	//	DivideByConstant <FloatImageType> (outVector[i],offsetVector.size());
-
-	//	std::stringstream ss;
-	//	ss << "textureAveragedOffset" << i << "_radius_" << Radius << ".nii";
-	//	WriteITK <ByteImageType> ( Rescale <FloatImageType,ByteImageType> (outVector[i],0,255) ,ss.str());
-	//}
-
-
+	ss.str("");
+	ss << "rrIntercept_radius_" << Radius << ".nii";
+	WriteITK <FloatImageType> (rrIntercept,ss.str());
 
 	return 0;
 }
@@ -308,8 +256,7 @@ FloatImageType::Pointer LocalEntropy(ByteImageType::Pointer &input, unsigned int
 
 	return out;
 }
-
-FloatImageType::Pointer RescaledRange(ByteImageType::Pointer &input, unsigned int radius)
+std::vector<FloatImageType::Pointer> RescaledRange(ByteImageType::Pointer &input, unsigned int radius)
 {
 
 	ByteImageType::RegionType region = input->GetLargestPossibleRegion();
@@ -371,7 +318,7 @@ FloatImageType::Pointer RescaledRange(ByteImageType::Pointer &input, unsigned in
 		count++;
 	}
 
-	WriteITK <ByteImageType> (map,"map.nii");
+	//WriteITK <ByteImageType> (map,"map.nii");
 
 	// Convert map to label map to get number of distance classes
 	typedef itk::LabelImageToLabelMapFilter<ByteImageType> LabelImageToLabelMapFilterType;
@@ -410,11 +357,11 @@ FloatImageType::Pointer RescaledRange(ByteImageType::Pointer &input, unsigned in
 	labelMapToImageFilter->Update();
 
 	map = labelMapToImageFilter->GetOutput();
-	mapIt = IteratorType(map,mapRegion);
+	mapIt = ByteIteratorType(map,mapRegion);
 
 	labelMap.~SmartPointer();
 
-	Write(map,"map2.nii");
+	//WriteITK <ByteImageType> (map,"map2.nii");
 
 	// Allocate vectors to store min and max for each class
 	std::vector<BytePixelType> minVector;
@@ -438,13 +385,22 @@ FloatImageType::Pointer RescaledRange(ByteImageType::Pointer &input, unsigned in
 
 	//std::cout << "rv.size() " << rv.size() << std::endl;
 
-	// Allocate output image
-	FloatImageType::Pointer out = FloatImageType::New();
-	out->SetRegions(region);
-	out->CopyInformation(input);
-	out->Allocate();
-	out->FillBuffer(0);
-	FloatIteratorType oit(out,region);
+	// Allocate output images
+	std::vector<FloatImageType::Pointer> outVector;
+	outVector.resize(2);
+
+	for (int i=0; i<2; i++)
+	{
+		outVector[i] = FloatImageType::New();
+		outVector[i]->SetRegions(region);
+		outVector[i]->CopyInformation(input);
+		outVector[i]->Allocate();
+		outVector[i]->FillBuffer(0);
+		
+	}
+
+	FloatIteratorType oit1(outVector[0],region);
+	FloatIteratorType oit2(outVector[1],region);
 
 	// Iterate through image
 	ByteImageType::SizeType rad;
@@ -453,7 +409,7 @@ FloatImageType::Pointer RescaledRange(ByteImageType::Pointer &input, unsigned in
 	typedef itk::NeighborhoodIterator<ByteImageType> NeighborhoodIteratorType;
 	NeighborhoodIteratorType nit(rad,input,region);
 
-	for (nit.GoToBegin(), oit.GoToBegin(); !nit.IsAtEnd(); ++nit, ++oit)
+	for (nit.GoToBegin(), oit1.GoToBegin(), oit2.GoToBegin(); !nit.IsAtEnd(); ++nit, ++oit1, ++oit2)
 	{
 
 		// Reset min and max vectors
@@ -491,20 +447,21 @@ FloatImageType::Pointer RescaledRange(ByteImageType::Pointer &input, unsigned in
 			rv[i] = (float) maxVector[i] - (float) minVector[i];
 		}
 
-		// Get slope
-		float slope = ComputeLogSlope(dv,rv);
+		// Get slope and y intercept
+		std::vector<float> line = ComputeLogSlope(dv,rv);
 
-		oit.Set(slope);
+		oit1.Set(line[0]);
+		oit2.Set(line[1]);
 	}
 
 	/*std::stringstream ss;
 	ss << "rr" << radius << ".nii";
 	WriteITK <FloatImageType2D> (out,ss.str());*/
 							
-	return out; 									
+	return outVector; 									
 } 		
 
-float ComputeLogSlope(std::vector<float> x, std::vector<float> y)
+std::vector<float> ComputeLogSlope(std::vector<float> x, std::vector<float> y)
 {
 /*
 To find the
@@ -556,15 +513,18 @@ y = Mx + B*/
 		}
 	}
 
-	// Don't divide by zero
-	float num = s0*t1 - s1*t0;
-	float den = s0*s2 - s1*s1;
-
-	if (den == 0)
+	// output slope and intercept
+	std::vector<float> out;
+	out.resize(2);
+	
+	if ( ( s0*s2 - s1*s1 ) == 0 )
 	{
-		return 0;
+		out[0] = 0;
+		out[1] = 0;
 	} else {
-		return num/den;
+		out[0] = ( s0*t1 - s1*t0 ) / (s0*s2 - s1*s1);
+		out[1] = ( s2*t0 - s1*t1 ) / (s0*s2 - s1*s1);
 	}
 
+	return out;
 }

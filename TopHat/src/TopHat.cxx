@@ -17,7 +17,7 @@ const unsigned int Dimension = 2;
 int main(int argc, char * argv[])				
 { 					
 	// Load image
-	ImageType::Pointer input = ReadITK <ImageType> ("C:/ImageData/mr10-uncleansed/mr10_092_13p.i0344/dcm/mr10_092_13p_i0091.dcm");
+	ImageType::Pointer input = ReadITK <ImageType> ("C:/ImageData/mr9/mr2_002_13s.i0341/dcm/mr2_002_13s_i0089.dcm");
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
 		
 	// Segment colon
@@ -61,6 +61,20 @@ int main(int argc, char * argv[])
 	ByteImageType::Pointer tag = thresholder->GetOutput();
 	WriteITK <ByteImageType> (tag,"tag.nii");
 
+	// Get nonair mask
+	ByteImageType::Pointer nonair = AllocateImage <ByteImageType,ImageType> (input);
+	
+	ByteIteratorType nonairIt(nonair,region);
+	IteratorType inputIt(input,region);
+
+	for (inputIt.GoToBegin(), nonairIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++nonairIt)
+	{
+		if (inputIt.Get() > -600)
+		{
+			nonairIt.Set(255);
+		}
+	}
+
 	// Find local minima at several radii
 	unsigned int radius[4]  = {1,2,3,4};
 
@@ -85,8 +99,8 @@ int main(int argc, char * argv[])
 
 		ImageType::Pointer bth = blackTopHat->GetOutput();
 
-		// Mask with tagged
-		//Mask <ImageType,ByteImageType> (bth,tag);
+		// Mask with non-air regions
+		Mask <ImageType,ByteImageType> (bth,nonair);
 
 		std::stringstream ss;
 		ss << "bth_rad" << radius[i] << ".nii";
