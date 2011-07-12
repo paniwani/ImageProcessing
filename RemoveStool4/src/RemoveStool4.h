@@ -79,6 +79,11 @@
 #include <itkMedianImageFilter.h>
 #include <itkNearestNeighborInterpolateImageFunction.h>
 #include <itkBinaryMorphologicalOpeningImageFilter.h>
+#include <otbScalarImageToTexturesMaskFilter.h>
+#include <otbScalarImageToHaralicksCorrelationMaskFilter.h>
+#include <itksys/SystemTools.hxx>
+#include <itkImageSeriesWriter.h>
+#include <itkGDCMSeriesFileNames.h>
 
 #define CDF_SIGMA 0.27
 
@@ -95,7 +100,9 @@ enum VoxelType {
 
 typedef short			                                                            PixelType;
 typedef unsigned char																BytePixelType;
+const unsigned int Dimension = 3;
 typedef itk::BinaryBallStructuringElement<PixelType, 3>								StructuringElementType;
+typedef itk::FlatStructuringElement<3>												FlatStructuringElementType;
 typedef itk::CovariantVector<float,3>												VectorType;
 typedef itk::FixedArray<float,3>													ArrayType;
 typedef itk::FixedArray< double, 3 >												EigenValueArrayType;
@@ -118,6 +125,7 @@ typedef itk::BSplineInterpolateImageFunction<FloatImageType>::ContinuousIndexTyp
 	
 typedef itk::ImageRegionIteratorWithIndex<ImageType>							    IteratorType;
 typedef itk::ImageRegionIteratorWithIndex<ByteImageType>							ByteIteratorType;
+typedef itk::ImageRegionIteratorWithIndex<ByteImageType2D>							ByteIteratorType2D;
 //typedef itk::ImageRegionIteratorWithIndex<ShortImageType>							ShortIteratorType;
 typedef itk::ImageRegionIteratorWithIndex<FloatImageType>							FloatIteratorType;
 typedef itk::ImageRegionIteratorWithIndex<VoxelImageType>							VoxelIteratorType;
@@ -125,7 +133,7 @@ typedef itk::ImageRegionIteratorWithIndex<VectorImageType>							VectorIteratorT
 typedef itk::ImageRegionIteratorWithIndex<ArrayImageType>							ArrayIteratorType;
 typedef itk::ImageRegionIteratorWithIndex<LabelImageType>							LabelIteratorType;
 
-void Setup(std::string dataset, ImageType::Pointer  &input_original, ImageType::Pointer &input, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradient_magnitude);
+void Setup(ImageType::Pointer &inputOriginal, ImageType::Pointer &input, ByteImageType::Pointer &colon);
 PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType::Pointer &gradient_magnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon);
 void ApplyThresholdRules( ImageType::Pointer &input, ImageType::RegionType localRegion, FloatImageType::Pointer &gradientMagnitude, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, PixelType tissueStoolThreshold );
 void DirectionalGradient(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap);
@@ -149,11 +157,16 @@ void ConnectedTest(ImageType::Pointer &input, FloatImageType::Pointer &gradientM
 
 void TextureTest(ImageType::Pointer &input, ByteImageType::Pointer &colon);
 
-float ComputeLogSlope(std::vector<float> x, std::vector<float> y);
-
-FloatImageType::Pointer RescaledRange(ImageType::Pointer &input, unsigned int radius);
+std::vector<FloatImageType::Pointer> RescaledRange(ByteImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius);
+std::vector<float> ComputeLogSlope(std::vector<float> x, std::vector<float> y);
 
 void BinaryFillHoles(ByteImageType::Pointer &im);
+
+ByteImageType::Pointer SegmentColon(ImageType::Pointer &input);
+
+ImageType::Pointer LocalMIP(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int Radius);
+
+ImageType::Pointer RunAlgorithm( ImageType::Pointer &inputOriginal );
 
 struct point{
 	int intensity;
@@ -163,15 +176,14 @@ struct point{
 
 typedef struct point ptype;
 
-
 // Global vars
 ImageType::RegionType OLDREGION;
 ImageType::RegionType REGION;
 bool write_num = true;
 int write_count = 1;
-bool truncateOn = true;
+bool truncateOn = false;
 //int truncateArray[2] = {85,-1};
-unsigned int truncateArray[2] = {60,90};
+unsigned int truncateArray[2] = {0,30};
 //unsigned int truncateArray[2] = {85,90};
 //unsigned int truncateArray[2] = {0,105};
 std::string note;
@@ -179,3 +191,4 @@ PixelType BACKGROUND = 0;
 double PI=3.1415926;
 double neighbor_weight[3]={1,1,.5};
 std::ofstream debug;
+clock_t init;

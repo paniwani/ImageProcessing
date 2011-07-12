@@ -1060,10 +1060,28 @@ FloatImageType::Pointer SatoResponse4(ImageType::Pointer &input, ByteImageType::
 	Write(vmap,"hessianVmap.nii");
 
 	ByteImageType::Pointer sm = BinaryOr( BinaryThreshold(vmap,Stool) , BinaryThreshold(vmap,StoolAir) );
+
+	// check with partial map, which may have been more updated then vmap
+	ByteIteratorType smit(sm,region);
+
+	for (vit.GoToBegin(),smit.GoToBegin(),pit.GoToBegin(); !vit.IsAtEnd(); ++vit,++smit,++pit)
+	{
+		if (smit.Get() != 0)
+		{
+			if (vit.Get() == Stool || vit.Get() == StoolAir)
+			{
+				if (pit.Get()[1] > 0)
+				{
+					smit.Set(0);
+				}
+			}
+		}
+	}	
+	
 	Write(sm,"stoolmask.nii");
 	BinaryFillHoles(sm);
 	Write(sm,"stoolmaskclosed.nii");
-	ByteIteratorType smit(sm,region);
+	
 
 	for (smit.GoToBegin(),pit.GoToBegin(),vit.GoToBegin(); !smit.IsAtEnd(); ++smit, ++pit, ++vit)
 	{

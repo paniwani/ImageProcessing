@@ -1,6 +1,6 @@
 #include "RemoveStool4.h"
-//#include "io2.cxx"
-#include "io.cxx"
+#include "io2.cxx"
+//#include "io.cxx"
 #include "utility.cxx"
 #include "scattercorrection.cxx"
 #include "QR.cxx"
@@ -11,28 +11,156 @@
 int main(int argc, char * argv[])
 {
 	// Start clock
-	clock_t init,final;
 	init = clock();
 
-	if( argc < 2 )
+	if( argc < 3 )
 	{
 		std::cerr << "Usage: " << std::endl;
-		std::cerr << argv[0] << " DicomDirectory";
+		std::cerr << argv[0] << " InputDicomDirectory OutputDicomDirectory";
 		system("pause");
 		return EXIT_FAILURE;
 	}
+	
+	std::string inDir = argv[1];
+	std::string outDir = argv[2];
 
-	ImageType::Pointer				inputOriginal			= ImageType::New();
+	std::cout << "Input Directory: " << inDir << std::endl;
+	
+	////////////////////////////////////////////
+	// Load input
+	////////////////////////////////////////////
+	typedef itk::ImageSeriesReader< ImageType >     ReaderType;
+
+	typedef itk::GDCMImageIO                        ImageIOType;
+	typedef itk::GDCMSeriesFileNames                NamesGeneratorType;
+
+	ImageIOType::Pointer gdcmIO = ImageIOType::New();
+	NamesGeneratorType::Pointer namesGenerator = NamesGeneratorType::New();
+
+	namesGenerator->SetInputDirectory( inDir );
+
+	const ReaderType::FileNamesContainer & filenames = 
+						namesGenerator->GetInputFileNames();
+
+	unsigned int numberOfFilenames =  filenames.size();
+	std::cout << numberOfFilenames << std::endl; 
+
+	// copy names
+	std::vector<std::string> names;
+	names.resize( filenames.size() );
+
+	for (int i=0; i<names.size(); i++)
+	{
+	names[i] = filenames[i];
+	}
+
+	// reverse names
+	reverse(names.begin(),names.end());
+
+	/*for(unsigned int fni = 0; fni<numberOfFilenames; fni++)
+	{
+	std::cout << "filename # " << fni << " = ";
+	std::cout << names[fni] << std::endl;
+	}*/
+
+	ReaderType::Pointer reader = ReaderType::New();
+
+	reader->SetImageIO( gdcmIO );
+	reader->SetFileNames( names );
+
+	try
+	{
+		reader->Update();
+	}
+	catch (itk::ExceptionObject &excp)
+	{
+		std::cerr << "Exception thrown while writing the image" << std::endl;
+		std::cerr << excp << std::endl;
+		system("pause");
+	}
+
+	ImageType::Pointer output = reader->GetOutput();
+	Write(output,"inputDicom.nii");
+
+	////////////////////////////////////////////
+	// Run the algorithm
+	////////////////////////////////////////////
+	
+	output = RunAlgorithm( output );
+
+	Write2(output,"output.nii");
+	
+	////////////////////////////////////////////
+	// Write to DICOM
+	////////////////////////////////////////////
+
+	// Setup output folder
+	// Make output directory
+	std::vector<std::string> datasetArray = explode( "\\", inDir );
+	std::string dsname = datasetArray[ datasetArray.size() - 2 ];
+	std::cout << "Dataset: " << dsname << std::endl;
+	
+	outDir += "\\" + dsname + "\\dcm";
+	
+	std::cout << "Output Directory: " << outDir << std::endl;
+
+	// Change input path names to output path names
+	for (int i=0; i<names.size(); i++)
+	{
+		std::vector<std::string> namesArray = explode("/",names[i]);
+		names[i] = outDir + "\\" + namesArray[ namesArray.size() - 1 ];
+	}
+
+
+	typedef itk::ImageSeriesWriter< 
+                             ImageType, ImageType2D >  SeriesWriterType;
+
+	const char * outputDirectory = outDir.c_str();
+
+	itksys::SystemTools::MakeDirectory( outputDirectory );
+
+	 SeriesWriterType::Pointer seriesWriter = SeriesWriterType::New();
+
+	 seriesWriter->SetInput( output );
+	 
+	 seriesWriter->SetImageIO( gdcmIO );
+	
+	 namesGenerator->SetOutputDirectory( outputDirectory );
+
+	 seriesWriter->SetFileNames( namesGenerator->GetOutputFileNames() );
+	 
+	 seriesWriter->SetMetaDataDictionaryArray( 
+	                       reader->GetMetaDataDictionaryArray() );
+
+	 try
+	   {
+	   seriesWriter->Update();
+	   }
+	 catch( itk::ExceptionObject & excp )
+	   {
+		   std::cerr << "Exception thrown while writing the series " << std::endl;
+		   std::cerr << excp << std::endl;
+		   system("pause");
+			//return EXIT_FAILURE;
+	   }
+
+	return 0;
+
+}
+
+
+ImageType::Pointer RunAlgorithm( ImageType::Pointer &inputOriginal )
+{
+
+	//ImageType::Pointer				inputOriginal			= ImageType::New();
+	
 	ImageType::Pointer				input					= ImageType::New();
 	ByteImageType::Pointer			colon					= ByteImageType::New();
 	FloatImageType::Pointer			gradientMagnitude		= FloatImageType::New();
 	VoxelImageType::Pointer			vmap					= VoxelImageType::New();
 
-	std::string in = argv[1];
-
 	// Load images and segment colon
-	Setup(argv[1],inputOriginal,input,colon,gradientMagnitude);
-	Write2(inputOriginal,"inputOriginal.nii");
+	Setup(inputOriginal,input,colon);
 
 	// Smooth input
 	/*typedef itk::FastBilateralImageFilter<ImageType,ImageType> BilateralFilterType;
@@ -72,12 +200,61 @@ int main(int argc, char * argv[])
 
 	//Write(input,"inputAfterScatter.nii");
 
-	// Single material classification, i.e. conservative intensity/gradient thresholding
-
 	LocalThreshold(input,colon,gradientMagnitude,vmap);
 
+	//// Single material classification, i.e. conservative intensity/gradient thresholding
+	//typedef itk::RescaleIntensityImageFilter<ImageType,ByteImageType> RescalerType;
+	//RescalerType::Pointer rescaler = RescalerType::New();
+	//rescaler->SetInput(input);
+	//rescaler->SetOutputMaximum(255);
+	//rescaler->SetOutputMinimum(0);
+	//rescaler->Update();
+	//ByteImageType::Pointer inputByte = rescaler->GetOutput();
+	//Write(inputByte,"inputByte.nii");
+	//
+	//
+	//std::vector<FloatImageType::Pointer> rrVector = RescaledRange( inputByte ,colon,3);
+	//Write(rrVector[0],"rrSlope.nii");
 
-	PixelType tst = SingleMaterialClassification(input, gradientMagnitude, vmap, colon);
+	//ImageType::Pointer mip = LocalMIP(input,colon,1);
+	//Write(mip,"mip.nii");
+	//
+	//LocalThreshold(mip,colon,gradientMagnitude,vmap);*/
+
+	//ByteImageType::Pointer unclassifiedMask = BinaryThreshold(vmap,Unclassified);
+	//unclassifiedMask = Mask(unclassifiedMask,colon);
+	//unclassifiedMask = Mask(unclassifiedMask, BinaryThreshold(gradientMagnitude,0,300));
+
+	//FloatImageType::Pointer inputFloat = Cast <ByteImageType,FloatImageType> (inputByte);
+
+	//typedef otb::ScalarImageToHaralicksCorrelationMaskFilter<FloatImageType,FloatImageType,ByteImageType> TexturesFilterType;
+	//TexturesFilterType::Pointer textureFilter = TexturesFilterType::New();
+	//textureFilter->SetInput( inputFloat );
+	//textureFilter->SetMaskImage( unclassifiedMask );
+	//
+	//ImageType::SizeType radiusSize;
+	//radiusSize.Fill(0);
+	//radiusSize[0] = 2;
+	//radiusSize[1] = 2;
+	//
+	//textureFilter->SetRadius(radiusSize);
+
+	//ImageType::OffsetType offset;
+	//offset[0] = 1;
+	//offset[1] = 0;
+	//offset[2] = 0;
+
+	//textureFilter->SetOffset(offset);
+	//textureFilter->SetInputImageMinimum(0);
+	//textureFilter->SetInputImageMaximum(255);
+	//textureFilter->SetNumberOfBinsPerAxis( 32 );
+	//textureFilter->Update();
+
+	//std::stringstream ss;
+	//Write(textureFilter->GetOutput(),"haralick.nii");
+
+
+	//PixelType tst = SingleMaterialClassification(input, gradientMagnitude, vmap, colon);
 
 	//// Get black top hat
 	//typedef itk::BlackTopHatImageFilter<ImageType,ImageType,StructuringElementType> BlackTopHatType;
@@ -108,13 +285,11 @@ int main(int argc, char * argv[])
 	//}
 
 	// Determine boundary types
-	FloatImageType::Pointer smax = QuadraticRegression(input,colon,vmap,gradientMagnitude,tst);
+	ArrayImageType::Pointer partial = QuadraticRegression(input,colon,vmap,gradientMagnitude,200);
 
 	gradientMagnitude.~SmartPointer();
-
-	ArrayImageType::Pointer partial = ComputePartials(input,vmap,colon,smax);
 	
-	//FixATT(input,partial,vmap,colon,smax,tst);
+	//FixATT(input,partial,vmap,colon,smax);
 
 	//smax.~SmartPointer();
 
@@ -127,13 +302,72 @@ int main(int argc, char * argv[])
 	// Perform subtraction
 	ImageType::Pointer carstonOutput = Subtraction(input,inputOriginal,colon,partial,vmap);
 
-	// End clock
-	final = clock() - init;
+	return carstonOutput;
 
-	std::cout << (double) final / ((double) CLOCKS_PER_SEC) <<  " seconds" << std::endl;
+	/*Write(carstonOutput,"carstonOutput.nii");
+	Write(inputOriginal,"inputOriginal.nii");*/
 
-	system("pause");
-	return 0;
+	// Write dcm output
+	
+	//// Get dir names
+	//std::string inDir = argv[1];
+	//std::string outDir = argv[2];
+
+	//// Make output directory
+	//std::vector<std::string> datasetArray = explode( "\\", inDir );
+	//std::string dsname = datasetArray[ datasetArray.size() - 2 ];
+	//std::cout << "Dataset: " << dsname << std::endl;
+	//outDir += "\\" + dsname + "\\dcm";
+	//std::cout << "Output Directory: " << outDir << std::endl;
+
+	//const char * outputDirectory = outDir.c_str();
+	//
+	//itksys::SystemTools::MakeDirectory( outputDirectory );
+
+	//// Create series writer
+	//typedef itk::ImageSeriesWriter<ImageType,ImageType2D> SeriesWriterType;
+	//SeriesWriterType::Pointer seriesWriter = SeriesWriterType::New();
+	//
+	//itk::GDCMImageIO::Pointer dicomIO = itk::GDCMImageIO::New();
+	//seriesWriter->SetImageIO( dicomIO );
+
+	//// Change names to output folder names
+	//for (int i=0; i<names.size(); i++)
+	//{
+	//	std::vector<std::string> namesArray = explode("/",names[i]);
+	//	names[i] = outDir + "\\" + namesArray[ namesArray.size() - 1 ];
+	//}
+
+	//seriesWriter->SetFileNames( names );
+
+	//std::cout << "Number of filenames: " << names.size() << std::endl;
+	//std::cout << "Number of dictionary entries: " << metaDataDictionaryArray.size() << std::endl;
+
+	//for(int i=0; i<metaDataDictionaryArray.size(); i++)
+	//{
+	//	metaDataDictionaryArray[i] = &(dicomIO->GetMetaDataDictionary());
+	//}*/
+
+	//seriesWriter->SetMetaDataDictionaryArray( &metaDataDictionaryArray );//&metaDataDictionaryArray );
+	//seriesWriter->SetInput( inputOriginal );
+
+	//try
+	//{
+	//	seriesWriter->Update();
+	//}
+	//catch( itk::ExceptionObject & excp )
+	//{
+	//	std::cerr << "Exception thrown while writing the series " << std::endl;
+	//	std::cerr << excp << std::endl;
+	//	system("pause");
+	//	return EXIT_FAILURE;
+	//}
+
+	//// End clock
+	//std::cout << (double) (clock() - init) / ((double) CLOCKS_PER_SEC) <<  " seconds" << std::endl;
+
+	//system("pause");
+	//return 0;
 }
 
 
@@ -299,10 +533,23 @@ void AdaptiveThreshold(ImageType::Pointer &input, ByteImageType::Pointer &colon)
 }
 
 void LocalThreshold(ImageType::Pointer input, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradientMagnitude, VoxelImageType::Pointer &vmap)
-{
+{	
+	// Compute gradient magnitude
+	typedef itk::GradientMagnitudeRecursiveGaussianImageFilter<ImageType,FloatImageType> GradientMagnitudeRecursiveGaussianImageFilterType;
+	GradientMagnitudeRecursiveGaussianImageFilterType::Pointer gradientMagnitudeFilter = GradientMagnitudeRecursiveGaussianImageFilterType::New();
+	gradientMagnitudeFilter->SetInput( input );
+	gradientMagnitudeFilter->SetSigma( input->GetSpacing()[0] );
+	gradientMagnitudeFilter->Update();
+	gradientMagnitude = gradientMagnitudeFilter->GetOutput();
+	Write(gradientMagnitude,"gradientMagnitude.nii");
+	gradientMagnitudeFilter.~SmartPointer();
+
 	// Smooth input
-	input = Median(input);
+	input = Median(input,1);
 	Write(input,"inputMedian.nii");
+
+	// Mask input with colon
+	input = Mask(input,colon);
 
 	// Get region
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
@@ -314,7 +561,7 @@ void LocalThreshold(ImageType::Pointer input, ByteImageType::Pointer &colon, Flo
 	vmap->FillBuffer(Unclassified);
 
 	// Set initial threshold
-	PixelType intialThreshold = 200;
+	PixelType initialThreshold = 200;
 
 	// Find tagged
 	typedef itk::BinaryThresholdImageFilter<ImageType,ByteImageType> BinarizerType;
@@ -322,13 +569,13 @@ void LocalThreshold(ImageType::Pointer input, ByteImageType::Pointer &colon, Flo
 	binarizer->SetInput(input);
 	binarizer->SetOutsideValue(0);
 	binarizer->SetInsideValue(255);
-	binarizer->SetLowerThreshold(intialThreshold);
+	binarizer->SetLowerThreshold(initialThreshold);
 	binarizer->Update();
 	ByteImageType::Pointer tag = binarizer->GetOutput();
 	Write(tag,"allTagged.nii");
 
 	// Open to separate thin stool connections
-	tag = BinaryOpen(tag,1);
+	tag = BinaryOpen(tag,3);
 	Write(tag,"tagOpened.nii");
 	
 	// Remove small components
@@ -364,7 +611,7 @@ void LocalThreshold(ImageType::Pointer input, ByteImageType::Pointer &colon, Flo
 	thresholdImage->Allocate();
 
 	// Set initial threshold
-	thresholdImage->FillBuffer(intialThreshold);
+	thresholdImage->FillBuffer(initialThreshold);
 
 	// Get label attributes
 	typedef itk::BinaryImageToShapeLabelMapFilter<ByteImageType> BinaryImageToShapeLabelMapFilterType;
@@ -431,9 +678,17 @@ void LocalThreshold(ImageType::Pointer input, ByteImageType::Pointer &colon, Flo
 
 		for (it.GoToBegin(); !it.IsAtEnd(); ++it)
 		{
-			if (ot > it.Get())
+			/*if (ot > it.Get())
 			{
 				it.Set(ot);
+			}*/
+
+			if (it.Get() == initialThreshold && ot > initialThreshold)
+			{
+				it.Set( ot );
+			} else if (it.Get() > initialThreshold && ot < it.Get())
+			{
+				it.Set( ot );
 			}
 		}
 
@@ -441,18 +696,56 @@ void LocalThreshold(ImageType::Pointer input, ByteImageType::Pointer &colon, Flo
 
 	Write(thresholdImage,"thresholdImage.nii");
 
-	// Show classification with hard threshold at 200
-	PixelType tissueStoolThreshold = 200;
-	ApplyThresholdRules( input, input->GetLargestPossibleRegion(), gradientMagnitude, vmap, colon, tissueStoolThreshold );
-	Write(vmap,"vmap200.nii");
+	// Get high intensity mask
+	//ByteImageType::Pointer highIMask = 
 
-	vmap->FillBuffer(Unclassified);
+	//// Get texture 
+	//typedef itk::RescaleIntensityImageFilter<ImageType,FloatImageType> RescalerType;
+	//RescalerType::Pointer rescaler = RescalerType::New();
+	//rescaler->SetInput(input);
+	//rescaler->SetOutputMaximum(255);
+	//rescaler->SetOutputMinimum(0);
+	//
+	//typedef otb::ScalarImageToHaralicksCorrelationMaskFilter<FloatImageType,FloatImageType,ByteImageType> TexturesFilterType;
+	//TexturesFilterType::Pointer textureFilter = TexturesFilterType::New();
+	//textureFilter->SetInput( rescaler->GetOutput() );
+	//textureFilter->SetMaskImage(  );
+	//
+	//ImageType::SizeType radiusSize;
+	//radiusSize.Fill(0);
+	//radiusSize[0] = 1;
+	//radiusSize[1] = 1;
+	//
+	//textureFilter->SetRadius(radiusSize);
 
-	// Show classification with global otsu threshold
-	ApplyThresholdRules( input, input->GetLargestPossibleRegion(), gradientMagnitude, vmap, colon, otsuGlobal );
-	Write(vmap,"vmapGlobalOtsu.nii");
+	//ImageType::OffsetType offset;
+	//offset[0] = 1;
+	//offset[1] = 0;
+	//offset[2] = 0;
 
-	vmap->FillBuffer(Unclassified);
+	//textureFilter->SetOffset(offset);
+	//textureFilter->SetInputImageMinimum(0);
+	//textureFilter->SetInputImageMaximum(255);
+	//textureFilter->SetNumberOfBinsPerAxis( 8 );
+	//textureFilter->Update();
+
+	//std::stringstream ss;
+	//Write(textureFilter->GetOutput(),"haralick.nii");
+
+	// Threshold top 80% of haralick as stool
+	
+	//// Show classification with hard threshold at 200
+	//PixelType tissueStoolThreshold = 200;
+	//ApplyThresholdRules( input, input->GetLargestPossibleRegion(), gradientMagnitude, vmap, colon, tissueStoolThreshold );
+	//Write(vmap,"vmap200.nii");
+
+	//vmap->FillBuffer(Unclassified);
+
+	//// Show classification with global otsu threshold
+	//ApplyThresholdRules( input, input->GetLargestPossibleRegion(), gradientMagnitude, vmap, colon, otsuGlobal );
+	//Write(vmap,"vmapGlobalOtsu.nii");
+
+	//vmap->FillBuffer(Unclassified);
 
 	FloatIteratorType gmIt(gradientMagnitude,region);
 	IteratorType inputIt(input,region);
@@ -480,7 +773,7 @@ void LocalThreshold(ImageType::Pointer input, ByteImageType::Pointer &colon, Flo
 		}
 	}
 
-	Write(vmap,"vmapLocal.nii");
+	Write(vmap,"vmapLocal.nii");	
 }
 
 void LevelSet(ImageType::Pointer &input, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradientMagnitude)
@@ -831,7 +1124,7 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 
 	for (ptbIt.GoToBegin(), partialIt.GoToBegin(); !ptbIt.IsAtEnd(); ++ptbIt, ++partialIt)
 	{
-		if (partialIt.Get()[1] > 0.3)
+		if (partialIt.Get()[1] > 0.05)
 		{
 			ptbIt.Set(255);
 		}
@@ -914,7 +1207,7 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 	Write(air,"airEdges.nii");
 
 	// dilate air edge
-	BinaryDilate(air,3);
+	air = BinaryDilate(air,3);
 	Write(air,"airEdgesDilated.nii");
 
 	// smooth only near edge tissue interface
@@ -927,7 +1220,7 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 	sigmaArray[1] = 0.7;
 	sigmaArray[2] = 0;*/
 
-	smoother->SetVariance(1);
+	smoother->SetVariance(.6*.6);
 	smoother->Update();
 	ImageType::Pointer inputSmooth = smoother->GetOutput();
 
@@ -957,7 +1250,7 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 	// Smooth air and tissue together at a lower sigma
 	smoother = SmoothType::New();
 	smoother->SetInput(input);
-	smoother->SetVariance(0.7*0.7);
+	smoother->SetVariance(0.8*0.8);
 	smoother->Update();
 	inputSmooth = smoother->GetOutput();
 	
@@ -970,6 +1263,17 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 			inputIt.Set( inputSmoothIt.Get() );
 		}
 	}
+
+	// Median filter in air/tissue region
+	//inputSmooth = Median(input,1);
+
+	//for (inputIt.GoToBegin(), airIt.GoToBegin(), inputSmoothIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++inputSmoothIt, ++airIt)
+	//{
+	//	if (airIt.Get() != 0 /*&& vmapIt.Get() != TissueAir*/) // do not smooth tissue air
+	//	{
+	//		inputIt.Set( inputSmoothIt.Get() );
+	//	}
+	//}
 
 	Write(input,"inputPostSmoothAll.nii");
 
@@ -1015,95 +1319,9 @@ ImageType::Pointer Subtraction(ImageType::Pointer &input, ImageType::Pointer &in
 		}
 	}
 
-	Write2(inputOriginal,"output.nii");
+	//Write2(inputOriginal,"output.nii");
 
 	return inputOriginal;
-}
-
-void BinaryFillHoles(ByteImageType::Pointer &im)
-{
-	// Invert image
-	ByteIteratorType it(im,im->GetLargestPossibleRegion());
-	for (it.GoToBegin(); !it.IsAtEnd(); ++it)
-	{
-		if (it.Get() == 255)
-		{
-			it.Set(0);
-		} else {
-			it.Set(255);
-		}
-	}
-
-	// Find largest background component
-	ByteImageType::Pointer bkg = BinaryShapeKeeper(im,"Size",1);
-
-	// Invert image back and fill holes
-	ByteIteratorType bit(bkg,bkg->GetLargestPossibleRegion());
-
-	for (it.GoToBegin(),bit.GoToBegin(); !it.IsAtEnd(); ++it,++bit)
-	{
-		if (it.Get() == 255)
-		{
-			it.Set(0);
-		} else {
-			it.Set(255);
-		}
-
-		if (bit.Get() == 0)
-		{
-			it.Set(255);
-		}
-	}
-}
-
-void BinaryFillHoles2D(ByteImageType::Pointer &im)
-{
-	// Invert image
-	ByteIteratorType it(im,im->GetLargestPossibleRegion());
-	for (it.GoToBegin(); !it.IsAtEnd(); ++it)
-	{
-		if (it.Get() == 255)
-		{
-			it.Set(0);
-		} else {
-			it.Set(255);
-		}
-	}
-
-	// Find largest background component in each 2D slice
-	typedef itk::BinaryShapeKeepNObjectsImageFilter< ByteImageType2D > KeeperType2D;
-	typedef itk::SliceBySliceImageFilter< ByteImageType, ByteImageType, KeeperType2D > SliceKeeperType;
-
-	KeeperType2D::Pointer keeper = KeeperType2D::New();
-	keeper->SetForegroundValue(255);
-	keeper->SetBackgroundValue(0);
-	keeper->SetAttribute("Size");
-	keeper->SetNumberOfObjects(1);
-	
-	SliceKeeperType::Pointer slicer = SliceKeeperType::New();
-	slicer->SetInput(im);
-	slicer->SetFilter(keeper);
-	slicer->Update();
-
-	ByteImageType::Pointer bkg = slicer->GetOutput();
-
-	// Invert image back and fill holes
-	ByteIteratorType bit(bkg,bkg->GetLargestPossibleRegion());
-
-	for (it.GoToBegin(),bit.GoToBegin(); !it.IsAtEnd(); ++it,++bit)
-	{
-		if (it.Get() == 255)
-		{
-			it.Set(0);
-		} else {
-			it.Set(255);
-		}
-
-		if (bit.Get() == 0)
-		{
-			it.Set(255);
-		}
-	}
 }
 
 //void TextureAnalysis(ImageType::Pointer &input)
@@ -1247,6 +1465,268 @@ void DirectionalGradient(ImageType::Pointer &input, ByteImageType::Pointer &colo
 	
 }
 
+ByteImageType::Pointer SegmentColon(ImageType::Pointer &input)
+{
+	// Get region
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+	
+	// Find body
+	ByteImageType::Pointer body = AllocateByteImage(input);
+	ByteIteratorType bit(body,region);
+	IteratorType it(input,region);
+
+	for (it.GoToBegin(),bit.GoToBegin(); !it.IsAtEnd(); ++it,++bit)
+	{
+		if (it.Get() > -250 && it.Get() < 200)
+		{
+			bit.Set(255);
+		}
+	}
+
+	Write(body,"bodyThreshold.nii");
+
+	// Median to remove table
+	body = Median(body,4);
+	Write(body,"bodyMedian.nii");
+
+	// Fill holes
+	BinaryFillHoles2D(body);
+	Write(body,"bodyFilledHoles.nii");
+
+	// Shrink body so air on border is removed
+	body = BinaryErode(body,4);
+	bit = ByteIteratorType(body,region);
+
+	Write(body,"bodyEroded.nii");
+	
+	// Find air
+	ByteImageType::Pointer air = AllocateByteImage(input);
+	ByteIteratorType ait(air,region);
+
+	for (it.GoToBegin(), ait.GoToBegin(), bit.GoToBegin(); !it.IsAtEnd(); ++it, ++ait, ++bit)
+	{
+		if (bit.Get() != 0)
+		{
+			if (it.Get() < -600)
+			{
+				ait.Set(255);
+			}
+		}
+	}
+
+	// Remove lungs 
+	// Detect lungs using region growing with seeds from first slice
+	// Assumption: only low intensity object at z=0 is lung
+	typedef itk::ConnectedThresholdImageFilter<ByteImageType, ByteImageType> ConnectedThresholdImageFilterByteType;
+	ConnectedThresholdImageFilterByteType::Pointer lungGrower = ConnectedThresholdImageFilterByteType::New();
+	lungGrower->SetInput( air );
+	lungGrower->SetLower(255);
+	lungGrower->SetUpper(255);
+	lungGrower->SetReplaceValue(255);
+
+	// Set air regions within dilated area as seeds of region growing
+	for (ait.GoToBegin(); !ait.IsAtEnd(); ++ait)
+	{
+		ByteImageType::IndexType idx = ait.GetIndex();
+
+		if (idx[2] == 0)
+		{
+			if (ait.Get() == 255)
+			{
+				lungGrower->AddSeed(idx);
+			}
+		}
+	}
+
+	lungGrower->Update();
+	ByteImageType::Pointer lung = lungGrower->GetOutput();
+	ByteIteratorType lit(lung,region);
+
+	// Remove lung from air mask
+	for (ait.GoToBegin(), lit.GoToBegin(); !ait.IsAtEnd(); ++ait, ++lit)
+	{
+		if (lit.Get() == 255)
+			ait.Set( 0 );
+	}
+
+	lung.~SmartPointer();
+	lungGrower.~SmartPointer();
+
+	//Write(air,"air.nii");
+
+	// Find bone
+	PixelType bone_threshold = 250;
+	PixelType stool_threshold = 180;
+
+	typedef itk::ConnectedThresholdImageFilter< ImageType, ByteImageType> ConnectedThresholdImageFilterType;
+	ConnectedThresholdImageFilterType::Pointer grower = ConnectedThresholdImageFilterType::New();
+	grower->SetInput( input );
+	grower->SetLower( bone_threshold );
+	grower->SetUpper(1500); //1200
+	grower->SetReplaceValue(255);
+
+	// Set tagged regions within dilated area as seeds of region growing
+	for (it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		ImageType::IndexType idx = it.GetIndex();
+	
+		if (idx[2] == 0)
+		{
+			if (it.Get() > bone_threshold )
+			{
+				grower->AddSeed(idx);
+			}
+		}
+	}
+
+	grower->Update();
+	ByteImageType::Pointer bone = grower->GetOutput();
+	
+	grower.~SmartPointer();
+
+	// Dilate bone
+	bone = BinaryDilate(bone,4);
+	ByteIteratorType boneit(bone,region);
+
+	//Write(bone,"bone.nii");
+
+	// Find all tagged with high intensity, adjacent to air, but are not bone
+	// Get dilated air region
+	ByteImageType::Pointer airNear = BinarySubtract( BinaryDilate(air,3) , air );
+	ByteIteratorType anit(airNear,region);
+
+
+	// Get all high intensity regions
+	ByteImageType::Pointer tagged = BinaryThreshold(input,stool_threshold);
+
+	// Remove bone
+	tagged = BinarySubtract(tagged,bone);
+
+	// Smooth
+	tagged = Median(tagged,3);
+	ByteIteratorType tit(tagged,region);
+
+	//Write(tagged,"tagged.nii");
+
+	// Remove all tagged components which are not close to air
+	typedef itk::ConnectedComponentImageFilter<ByteImageType, LabelImageType> CCFilterType;
+	CCFilterType::Pointer ccFilter = CCFilterType::New();
+	ccFilter->SetInput(tagged);
+	ccFilter->SetMaskImage(body);
+	ccFilter->Update();
+	LabelImageType::Pointer tcc = ccFilter->GetOutput();
+	ccFilter.~SmartPointer();
+	
+	Relabel(tcc);
+
+	LabelIteratorType ccit(tcc,region);
+
+	typedef itk::MinimumMaximumImageCalculator<LabelImageType> CalcType;
+	CalcType::Pointer calc = CalcType::New();
+	calc->SetImage(tcc);
+	calc->ComputeMaximum();
+
+	unsigned int numComponents = calc->GetMaximum();
+
+	std::vector<bool> compNearAirVec;
+	compNearAirVec.resize(numComponents);
+
+	for (int i=0; i<numComponents; i++)
+		compNearAirVec[i] = false;
+
+	for (ccit.GoToBegin(),anit.GoToBegin(); !ccit.IsAtEnd(); ++ccit,++anit)
+	{
+		if ( ccit.Get() > 0 )
+		{
+			if (anit.Get() != 0)
+			{
+				compNearAirVec[ ccit.Get() - 1] = true;
+			}
+		}
+	}
+
+	for (ccit.GoToBegin(), tit.GoToBegin(); !ccit.IsAtEnd(); ++ccit, ++tit)
+	{
+		if ( ccit.Get() > 0)
+		{
+			if ( compNearAirVec[ ccit.Get() - 1] == false )
+			{
+				tit.Set(0);
+			}
+		}
+	}
+
+	//Write(tagged,"taggedNearAir.nii");
+
+	tcc.~SmartPointer();
+
+	/*
+
+	grower = ConnectedThresholdImageFilterType::New();
+	grower->SetInput( input );
+	grower->SetLower( stool_threshold );
+	grower->SetUpper(1500); //1200
+	grower->SetReplaceValue(255);
+
+	// Set tagged regions within dilated area as seeds of region growing
+	for (it.GoToBegin(), anit.GoToBegin(); !it.IsAtEnd(); ++it, ++anit)
+	{
+		ImageType::IndexType idx = it.GetIndex();
+
+		if (it.Get() > stool_threshold)
+		{
+			if (anit.Get() != 0)
+			{
+				grower->AddSeed(it.GetIndex());
+			}
+		}
+	}
+
+	grower->Update();
+	ByteImageType::Pointer tagged = grower->GetOutput();
+	Write(tagged,"tagged.nii");
+	
+	grower.~SmartPointer();
+
+	// Mask tagged to remove bone
+	tagged = Mask(tagged, BinaryInvert(bone) );
+	Write(tagged,"taggedNoBone.nii");
+
+	// Find all tagged with high intensity but are not bone
+	ByteImageType::Pointer tagged = AllocateByteImage(input);
+	ByteIteratorType tit(tagged,region);
+
+	for (it.GoToBegin(), tit.GoToBegin(), bit.GoToBegin(), boneit.GoToBegin(); !it.IsAtEnd(); ++it, ++tit, ++bit, ++boneit)
+	{
+		if (bit.Get() != 0)
+		{
+			if ( boneit.Get() == 0 )
+			{
+				if (it.Get() > bone_threshold)
+				{
+					tit.Set(255);
+				}
+			}
+		}
+	}
+
+
+	*/
+
+	// Add air and tagged
+	tagged = BinaryOr(tagged,air);
+
+	// Median smooth
+	tagged = Median(tagged, 3);
+
+	//Write(tagged,"taggedSmooth.nii");
+
+	// Dilate
+	tagged = BinaryDilate(tagged,12);
+
+	return tagged;
+}
+
 
 
 
@@ -1257,35 +1737,130 @@ void DirectionalGradient(ImageType::Pointer &input, ByteImageType::Pointer &colo
 - Mask input with colon
 - Crop input and colon in XY plane
 *********************************************************/
-void Setup(std::string dataset, ImageType::Pointer  &inputOriginal, ImageType::Pointer &input, ByteImageType::Pointer &colon, FloatImageType::Pointer &gradientMagnitude)
+void Setup(ImageType::Pointer &inputOriginal, ImageType::Pointer &input, ByteImageType::Pointer &colon)
 {
 	//----------------------------------------------
 	// Load image
 	//----------------------------------------------
-	std::vector<std::string> datasetArray = explode( "\\", dataset );
+	/*std::vector<std::string> datasetArray = explode( "\\", dataset );
 	std::string dsname = datasetArray[ datasetArray.size() - 2 ];
-	std::cout << "Dataset: " << dsname << std::endl;
+	std::cout << "Dataset: " << dsname << std::endl;*/
 
-	if (truncateOn)
-	{
-		std::cout << "Truncating data" << std::endl;
-		std::cout << "Slices: " << truncateArray[0] << " to " << truncateArray[1] << std::endl;
-		
-		std::stringstream ss;
-		ss << dsname << "_" << truncateArray[0] << "_" << truncateArray[1];
-		dsname = ss.str();
-	}
+	//if (truncateOn)
+	//{
+	//	std::cout << "Truncating data" << std::endl;
+	//	std::cout << "Slices: " << truncateArray[0] << " to " << truncateArray[1] << std::endl;
+	//	
+	//	//std::stringstream ss;
+	//	//ss << dsname << "_" << truncateArray[0] << "_" << truncateArray[1];
+	//	//dsname = ss.str();
+	//}
 
 	// Set writer prefix
-	note = dsname;
+	//note = dsname;
 
-	// Load dicom files
-	if (!truncateOn)
-	{
-		inputOriginal = ReadDicom < ImageType > ( dataset );
-	} else {
-		inputOriginal = ReadDicom < ImageType > ( dataset, truncateArray[0], truncateArray[1] );
-	}
+	// Make output directory
+	/*outputDirectory += "\\" + dsname;
+
+	itksys::SystemTools::MakeDirectory( outputDirectory.c_str() );
+
+	outputDirectory += "\\dcm";
+
+	std::cout << "Output Directory: " << outputDirectory << std::endl;
+
+	itksys::SystemTools::MakeDirectory( outputDirectory.c_str() );*/
+
+	
+	//// Load dicom files
+	//if (!truncateOn)
+	//{
+	//	inputOriginal = ReadDicom < ImageType > ( dataset );
+	//} else {
+	//	inputOriginal = ReadDicom < ImageType > ( dataset, truncateArray[0], truncateArray[1] );
+	//}
+
+	//// Setup output file names
+	//for (int i=0; i<names.size(); i++)
+	//{
+	//	names[i] = outputDirectory + "/" + names[i];
+	//}
+
+	//seriesWriter->SetFileNames(names);
+
+	//inputOriginal = ReadDicom <ImageType> (dataset, outputDirectory);
+
+	//Write(inputOriginal,"inputOriginal.nii");
+
+
+	//// Make output directory
+	//std::vector<std::string> datasetArray = explode( "\\", inDir );
+	//std::string dsname = datasetArray[ datasetArray.size() - 2 ];
+	//std::cout << "Dataset: " << dsname << std::endl;
+	//outDir += "\\" + dsname + "\\dcm";
+	//std::cout << "Output Directory: " << outDir << std::endl;
+
+	//const char * outputDirectory = outDir.c_str();
+	//
+	//itksys::SystemTools::MakeDirectory( outputDirectory );
+
+	//// Create series writer
+	//typedef itk::ImageSeriesWriter<ImageType,ImageType2D> SeriesWriterType;
+	//SeriesWriterType::Pointer seriesWriter = SeriesWriterType::New();
+	//
+	//itk::GDCMImageIO::Pointer dicomIO = itk::GDCMImageIO::New();
+	//seriesWriter->SetImageIO( dicomIO );
+
+	//// Change names to output folder names
+	//for (int i=0; i<names.size(); i++)
+	//{
+	//	std::vector<std::string> namesArray = explode("/",names[i]);
+	//	names[i] = outDir + "\\" + namesArray[ namesArray.size() - 1 ];
+	//}
+
+	//seriesWriter->SetFileNames( names );
+
+	//std::cout << "Number of filenames: " << names.size() << std::endl;
+	//std::cout << "Number of dictionary entries: " << metaDataDictionaryArray.size() << std::endl;
+
+	//for(int i=0; i<metaDataDictionaryArray.size(); i++)
+	//{
+	//	metaDataDictionaryArray[i] = &(dicomIO->GetMetaDataDictionary());
+	//}*/
+
+	//seriesWriter->SetMetaDataDictionaryArray( &metaDataDictionaryArray );//&metaDataDictionaryArray );
+	//seriesWriter->SetInput( inputOriginal );
+
+	//try
+	//{
+	//	seriesWriter->Update();
+	//}
+	//catch( itk::ExceptionObject & excp )
+	//{
+	//	std::cerr << "Exception thrown while writing the series " << std::endl;
+	//	std::cerr << excp << std::endl;
+	//	system("pause");
+	//	return EXIT_FAILURE;
+	//}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 	// Set global region
 	REGION = inputOriginal->GetLargestPossibleRegion();	
@@ -1302,12 +1877,12 @@ void Setup(std::string dataset, ImageType::Pointer  &inputOriginal, ImageType::P
 	//----------------------------------------------
 	// Segment colon
 	//----------------------------------------------
-	typedef itk::ColonSegmentationFilter< ImageType, ByteImageType > ColonSegmentationFilterType;
+	/*typedef itk::ColonSegmentationFilter< ImageType, ByteImageType > ColonSegmentationFilterType;
 	ColonSegmentationFilterType::Pointer colonSegmenter = ColonSegmentationFilterType::New();
 	colonSegmenter->SetInput( inputOriginal );
 	colonSegmenter->SetOutputForegroundValue( 255 );
 	colonSegmenter->SetOutputBackgroundValue( 0 );
-	//colonSegmenter->SetPrintImages(true);
+	colonSegmenter->SetPrintImages(true);
 
 	if ( truncateOn )
 		colonSegmenter->SetRemoveBoneLung( false );
@@ -1316,31 +1891,40 @@ void Setup(std::string dataset, ImageType::Pointer  &inputOriginal, ImageType::P
 	colon = colonSegmenter->GetOutput();
 	Write(colon,"colonFull.nii");
 	BinaryFillHoles2D(colon);
-	Write(colon,"colonFullFilled.nii");
+	Write(colon,"colonFullFilled.nii");*/
+
+	colon = SegmentColon(inputOriginal);
+
+	std::cout << "Colon segmented: " << (double) (clock() - init) / ((double) CLOCKS_PER_SEC) <<  " seconds" << std::endl;
+
+	//Write(colon,"colonFull.nii");
+	
+	BinaryFillHoles2D(colon);
+	Write(colon,"colonFilled.nii");
 
 	//----------------------------------------------
 	// Mask input with colon
 	//----------------------------------------------
-	typedef itk::MaskImageFilter< ImageType, ByteImageType, ImageType > MaskImageFilterType;
+	/*typedef itk::MaskImageFilter< ImageType, ByteImageType, ImageType > MaskImageFilterType;
 	MaskImageFilterType::Pointer masker = MaskImageFilterType::New();
 	masker->SetInput1( inputOriginal );
 	masker->SetInput2( colon );
 	masker->SetOutsideValue( BACKGROUND );
 	masker->Update();
-	input = masker->GetOutput();
+	input = masker->GetOutput();*/
 
 	//----------------------------------------------
 	// Calculate gradient magnitude
 	//----------------------------------------------
 	
 	// 3d
-	typedef itk::GradientMagnitudeRecursiveGaussianImageFilter<ImageType,FloatImageType> GradientMagnitudeRecursiveGaussianImageFilterType;
+	/*typedef itk::GradientMagnitudeRecursiveGaussianImageFilter<ImageType,FloatImageType> GradientMagnitudeRecursiveGaussianImageFilterType;
 	
 	GradientMagnitudeRecursiveGaussianImageFilterType::Pointer gradientMagnitudeFilter = GradientMagnitudeRecursiveGaussianImageFilterType::New();
 	gradientMagnitudeFilter->SetInput( inputOriginal );
 	gradientMagnitudeFilter->SetSigma( inputOriginal->GetSpacing()[0] );
 	gradientMagnitudeFilter->Update();
-	gradientMagnitude = gradientMagnitudeFilter->GetOutput();
+	gradientMagnitude = gradientMagnitudeFilter->GetOutput();*/
 
 	// 2d
 	/*
@@ -1372,14 +1956,13 @@ void Setup(std::string dataset, ImageType::Pointer  &inputOriginal, ImageType::P
 	long minX=size[0],minY=size[1],maxX=0,maxY=0;
 	short paddingXY = 5;
 	
-	IteratorType inputIt(input,REGION);
 	ByteIteratorType colonIt(colon,REGION);
 
-	for (inputIt.GoToBegin(), colonIt.GoToBegin(); !inputIt.IsAtEnd(); ++inputIt, ++colonIt)
+	for (colonIt.GoToBegin(); !colonIt.IsAtEnd(); ++colonIt)
 	{
 		if ( colonIt.Get() != 0 )
 		{
-			ImageType::IndexType idx = inputIt.GetIndex();
+			ByteImageType::IndexType idx = colonIt.GetIndex();
 
 			if (idx[0] < minX)
 				minX = idx[0];
@@ -1409,19 +1992,27 @@ void Setup(std::string dataset, ImageType::Pointer  &inputOriginal, ImageType::P
 
 	OLDREGION = extractRegion;
 
+	colon = Crop(colon,extractRegion);
+
+	input = Crop(inputOriginal,extractRegion);
+
+	/*
 	typedef itk::RegionOfInterestImageFilter<ImageType,ImageType> RegionOfInterestImageFilterType;
 	RegionOfInterestImageFilterType::Pointer cropper = RegionOfInterestImageFilterType::New();
 	cropper->SetInput( input );
 	cropper->SetRegionOfInterest( extractRegion );
 	cropper->Update();
 	input = cropper->GetOutput();
+	*/
 
+	/*
 	typedef itk::RegionOfInterestImageFilter<FloatImageType,FloatImageType> RegionOfInterestImageFilterFloatType;
 	RegionOfInterestImageFilterFloatType::Pointer cropperFloat = RegionOfInterestImageFilterFloatType::New();
 	cropperFloat->SetInput( gradientMagnitude );
 	cropperFloat->SetRegionOfInterest( extractRegion );
 	cropperFloat->Update();
 	gradientMagnitude = cropperFloat->GetOutput();
+	*/
 
 	/*cropperFloat = RegionOfInterestImageFilterFloatType::New();
 	cropperFloat->SetInput( gradientMagnitude2D );
@@ -1429,19 +2020,22 @@ void Setup(std::string dataset, ImageType::Pointer  &inputOriginal, ImageType::P
 	cropperFloat->Update();
 	gradientMagnitude2D = cropperFloat->GetOutput();*/
 
+	/*
 	typedef itk::RegionOfInterestImageFilter<ByteImageType,ByteImageType> RegionOfInterestImageFilterByteType;
 	RegionOfInterestImageFilterByteType::Pointer cropperByte = RegionOfInterestImageFilterByteType::New();
 	cropperByte->SetInput( colon );
 	cropperByte->SetRegionOfInterest( extractRegion );
 	cropperByte->Update();
 	colon = cropperByte->GetOutput();
+	*/
 
 	// Set cropped region globally
 	REGION = colon->GetLargestPossibleRegion();
 
 	Write(input,"input.nii");
 	Write(colon,"colon.nii");
-	Write(gradientMagnitude,"gradientMagnitudeSmoothed.nii");
+
+	//Write(gradientMagnitude,"gradientMagnitudeSmoothed.nii");
 	//Write(gradientMagnitude2D,"gradientMagnitudeSmoothed2D.nii");
 }
 
@@ -1485,7 +2079,7 @@ PixelType SingleMaterialClassification(ImageType::Pointer &input, FloatImageType
 	//----------------------------------------------
 
 	// Use smoothed input to eliminate noise
-	ApplyThresholdRules( Median(input), input->GetLargestPossibleRegion(), gradientMagnitude, vmap, colon, tissueStoolThreshold );
+	ApplyThresholdRules( Median(input,1), input->GetLargestPossibleRegion(), gradientMagnitude, vmap, colon, tissueStoolThreshold );
 
 	Write(vmap,"vmap.nii");
 
@@ -1603,7 +2197,7 @@ ImageType::Pointer Range(ImageType::Pointer &input, ByteImageType::Pointer &mask
 	return out;
 }
 
-float ComputeLogSlope(std::vector<float> x, std::vector<float> y)
+std::vector<float> ComputeLogSlope(std::vector<float> x, std::vector<float> y)
 {
 /*
 To find the
@@ -1655,37 +2249,46 @@ y = Mx + B*/
 		}
 	}
 
-	// Don't divide by zero
-	float num = s0*t1 - s1*t0;
-	float den = s0*s2 - s1*s1;
-
-	if (den == 0)
+	// output slope and intercept
+	std::vector<float> out;
+	out.resize(2);
+	
+	if ( ( s0*s2 - s1*s1 ) == 0 )
 	{
-		return 0;
+		out[0] = 0;
+		out[1] = 0;
 	} else {
-		return num/den;
+		out[0] = ( s0*t1 - s1*t0 ) / (s0*s2 - s1*s1);
+		out[1] = ( s2*t0 - s1*t1 ) / (s0*s2 - s1*s1);
 	}
 
+	return out;
 }
 
-FloatImageType::Pointer RescaledRange(ImageType::Pointer &input, unsigned int radius)
+std::vector<FloatImageType::Pointer> RescaledRange(ByteImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int radius)
 {
+	// Get region
+	ByteImageType::RegionType region = input->GetLargestPossibleRegion();
 
-	ImageType::RegionType region = input->GetLargestPossibleRegion();
+	// Get mask
+	ByteIteratorType maskIt(mask,region);
 
 	// Make map image
-	ImageType::Pointer map = ImageType::New();
+	ByteImageType2D::Pointer map = ByteImageType2D::New();
 	
-	ImageType::RegionType mapRegion;
+	ByteImageType2D::RegionType mapRegion;
 	
-	ImageType::IndexType mapIndex;
-	ImageType::SizeType mapSize;
+	ByteImageType2D::IndexType mapIndex;
+	ByteImageType2D::SizeType mapSize;
 
-	for (int i=0; i<3; i++)
+
+	for (int i=0; i<2; i++)
 	{
 		mapIndex[i] = 0;
-		mapSize[i] = 2*radius+1;
 	}
+
+	mapSize[0] = 2*radius+1;
+	mapSize[1] = 2*radius+1;
 
 	mapRegion.SetIndex(mapIndex);
 	mapRegion.SetSize(mapSize);
@@ -1695,14 +2298,24 @@ FloatImageType::Pointer RescaledRange(ImageType::Pointer &input, unsigned int ra
 	map->Allocate();
 	map->FillBuffer(0);
 
-	IteratorType mapIt(map,mapRegion);
+	Write(map,"map.nii");
+
+	ByteIteratorType2D mapIt(map,mapRegion);
 
 	// Setup neighborhood and fill map with distance squared
-	typedef itk::Neighborhood<PixelType,3> NeighborhoodType;
+	typedef itk::Neighborhood<BytePixelType,Dimension> NeighborhoodType;
 	NeighborhoodType hood;
-	hood.SetRadius(radius);
+	
+	ImageType::SizeType radiusSize;
+	radiusSize.Fill(0);
+	radiusSize[0] = radius;
+	radiusSize[1] = radius;
 
-	typedef ImageType::OffsetType OffsetType;
+	hood.SetRadius(radiusSize);
+
+	std::cout << "hood.Size(): " << hood.Size() << std::endl;
+
+	typedef ByteImageType::OffsetType OffsetType;
 	
 	int count=0;
 
@@ -1712,7 +2325,7 @@ FloatImageType::Pointer RescaledRange(ImageType::Pointer &input, unsigned int ra
 		
 		PixelType d = 0;
 
-		for (int i=0; i<3; i++)
+		for (int i=0; i<2; i++)
 		{
 			d += off[i]*off[i];
 		}
@@ -1730,10 +2343,10 @@ FloatImageType::Pointer RescaledRange(ImageType::Pointer &input, unsigned int ra
 		count++;
 	}
 
-	Write(map,"map.nii");
+	Write(map,"map2.nii");
 
 	// Convert map to label map to get number of distance classes
-	typedef itk::LabelImageToLabelMapFilter<ImageType> LabelImageToLabelMapFilterType;
+	typedef itk::LabelImageToLabelMapFilter<ByteImageType2D> LabelImageToLabelMapFilterType;
 	typedef LabelImageToLabelMapFilterType::OutputImageType LabelMapType;
 	typedef LabelImageToLabelMapFilterType::LabelObjectType LabelObjectType;
 	typedef LabelObjectType::LabelType LabelType;
@@ -1763,46 +2376,30 @@ FloatImageType::Pointer RescaledRange(ImageType::Pointer &input, unsigned int ra
 	RelabelLabelMapFilterType::Pointer relabeler = RelabelLabelMapFilterType::New();
 	relabeler->SetInput(labelMap);
 	
-	typedef itk::LabelMapToLabelImageFilter<LabelMapType,ImageType> LabelMapToLabelImageFilterType;
+	typedef itk::LabelMapToLabelImageFilter<LabelMapType,ByteImageType2D> LabelMapToLabelImageFilterType;
 	LabelMapToLabelImageFilterType::Pointer labelMapToImageFilter = LabelMapToLabelImageFilterType::New();
 	labelMapToImageFilter->SetInput(relabeler->GetOutput());
 	labelMapToImageFilter->Update();
 
 	map = labelMapToImageFilter->GetOutput();
-	mapIt = IteratorType(map,mapRegion);
+	mapIt = ByteIteratorType2D(map,mapRegion);
 
 	labelMap.~SmartPointer();
 
-	Write(map,"map2.nii");
+	Write(map,"map3.nii");
 
 	// Allocate vectors to store min and max for each class
-	std::vector<PixelType> minVector;
-	std::vector<PixelType> maxVector;
+	std::vector<BytePixelType> minVector;
+	std::vector<BytePixelType> maxVector;
 
 	minVector.resize(numClasses);
 	maxVector.resize(numClasses);
 
 	for (int i=0; i<numClasses; i++)
 	{
-		minVector[i] = ( itk::NumericTraits<PixelType>::max() );
-		maxVector[i] = ( itk::NumericTraits<PixelType>::NonpositiveMin() );
+		minVector[i] = ( itk::NumericTraits<BytePixelType>::max() );
+		maxVector[i] = ( itk::NumericTraits<BytePixelType>::NonpositiveMin() );
 	}
-	
-	/*struct srange {
-		PixelType min;
-		PixelType max;
-	};
-	
-	std::vector<srange> rangeVector;
-	rangeVector.resize(numClasses);
-
-	for (int i=0; i<numClasses; i++)
-	{
-		struct srange r;
-		r.min = itk::NumericTraits<PixelType>::max();
-		r.max = itk::NumericTraits<PixelType>::NonpositiveMin();
-		rangeVector.push_back(r);
-	}*/
 
 	//std::cout << "Number of classes: " << numClasses << std::endl;
 	//std::cout << "rangeVector.size(): " << rangeVector.size() << std::endl;
@@ -1813,68 +2410,165 @@ FloatImageType::Pointer RescaledRange(ImageType::Pointer &input, unsigned int ra
 
 	//std::cout << "rv.size() " << rv.size() << std::endl;
 
-	// Allocate output image
-	FloatImageType::Pointer out = FloatImageType::New();
-	out->SetRegions(region);
-	out->CopyInformation(input);
-	out->Allocate();
-	out->FillBuffer(0);
-	FloatIteratorType oit(out,region);
+	// Allocate output images
+	std::vector<FloatImageType::Pointer> outVector;
+	outVector.resize(2);
+
+	for (int i=0; i<2; i++)
+	{
+		outVector[i] = FloatImageType::New();
+		outVector[i]->SetRegions(region);
+		outVector[i]->CopyInformation(input);
+		outVector[i]->Allocate();
+		outVector[i]->FillBuffer(0);
+		
+	}
+
+	FloatIteratorType oit1(outVector[0],region);
+	FloatIteratorType oit2(outVector[1],region);
 
 	// Iterate through image
-	ImageType::SizeType rad;
-	rad.Fill(radius);
+	ByteImageType::SizeType rad;
+	rad.Fill(0);
+	rad[0] = radius;
+	rad[1] = radius;
 	
-	typedef itk::NeighborhoodIterator<ImageType> NeighborhoodIteratorType;
+	typedef itk::NeighborhoodIterator<ByteImageType> NeighborhoodIteratorType;
 	NeighborhoodIteratorType nit(rad,input,region);
 
-	for (nit.GoToBegin(), oit.GoToBegin(); !nit.IsAtEnd(); ++nit, ++oit)
+	for (nit.GoToBegin(), oit1.GoToBegin(), oit2.GoToBegin(), maskIt.GoToBegin(); !nit.IsAtEnd(); ++nit, ++oit1, ++oit2, ++maskIt)
 	{
-
-		// Reset min and max vectors
-		for (int i=0; i<numClasses; i++)
+		if (maskIt.Get() != 0)
 		{
-			minVector[i] = itk::NumericTraits<PixelType>::max();
-			maxVector[i] = itk::NumericTraits<PixelType>::NonpositiveMin();
-
-			rv[i] = 0;
-		}
-
-		// Iterate neighborhood and map image together
-		int j=0;
-
-		for (mapIt.GoToBegin(); !mapIt.IsAtEnd(); ++mapIt)
-		{
-			if ( mapIt.Get() > 0 )
+			// Reset min and max vectors
+			for (int i=0; i<numClasses; i++)
 			{
-				PixelType val = nit.GetPixel(j);
-				PixelType m = mapIt.Get() - 1;
+				minVector[i] = itk::NumericTraits<BytePixelType>::max();
+				maxVector[i] = itk::NumericTraits<BytePixelType>::NonpositiveMin();
 
-				if ( val < minVector[m] )
-					minVector[m] = val;
-
-				if ( val > maxVector[m] )
-					maxVector[m] = val;
+				rv[i] = 0;
 			}
 
-			j++;
+			// Iterate neighborhood and map image together
+			int j=0;
+
+			for (mapIt.GoToBegin(); !mapIt.IsAtEnd(); ++mapIt)
+			{
+				if ( mapIt.Get() > 0 )
+				{
+					BytePixelType val = nit.GetPixel(j);
+					BytePixelType m = mapIt.Get() - 1;
+
+					if ( val < minVector[m] )
+						minVector[m] = val;
+
+					if ( val > maxVector[m] )
+						maxVector[m] = val;
+				}
+
+				j++;
+			}
+
+			// Compute range for each distance class
+			for (int i=0; i<numClasses; i++)
+			{
+				rv[i] = (float) maxVector[i] - (float) minVector[i];
+			}
+
+			// Get slope and y intercept
+			std::vector<float> line = ComputeLogSlope(dv,rv);
+
+			oit1.Set(line[0]);
+			oit2.Set(line[1]);
 		}
-
-		// Compute range for each distance class
-		for (int i=0; i<numClasses; i++)
-		{
-			rv[i] = (float) maxVector[i] - (float) minVector[i];
-		}
-
-		// Get slope
-		float slope = ComputeLogSlope(dv,rv);
-
-		oit.Set(slope);
 	}
 
 	/*std::stringstream ss;
 	ss << "rr" << radius << ".nii";
 	WriteITK <FloatImageType2D> (out,ss.str());*/
 							
-	return out; 									
-} 							
+	return outVector; 									
+} 		
+
+ImageType::Pointer LocalMIP(ImageType::Pointer &input, ByteImageType::Pointer &mask, unsigned int Radius)
+{
+	// get region
+	ImageType::RegionType region = input->GetLargestPossibleRegion();
+	
+	// get mask
+	ByteIteratorType maskIt(mask,region);
+
+	unsigned int projectionDimension = 2;
+	
+	typedef itk::ShapedNeighborhoodIterator<ImageType> ShapedNeighborhoodIteratorType;
+	typedef ImageType::OffsetType OffsetType;
+
+	// make radius
+	ImageType::SizeType radiusSize;
+	radiusSize.Fill(Radius);
+
+	ShapedNeighborhoodIteratorType it(radiusSize,input,region);
+	it.ClearActiveList();
+	
+	typedef itk::Neighborhood<PixelType,Dimension> NeighborhoodType;
+	NeighborhoodType hood;
+	hood.SetRadius(Radius);
+
+	// activate offsets that move only in the projection dimension
+	for (unsigned int i=0; i<hood.Size(); i++)
+	{
+		OffsetType offset = hood.GetOffset(i);
+
+		bool activate = true;
+
+		for (int j=0; j<Dimension; j++)
+		{
+			if ( j != projectionDimension ) 
+			{
+				if ( offset[j] != 0 )
+				{
+					activate = false;
+					break;
+				}
+			}
+		}
+
+		if (activate)
+		{
+			it.ActivateOffset(offset);
+		}
+	}
+
+	unsigned int numElements = it.GetActiveIndexListSize();
+
+	std::cout << "Number of active offsets: " << numElements << std::endl;
+	
+	// Get max, mean, and median intensity
+	ImageType::Pointer maxOut = AllocateImage(input);
+	
+	IteratorType maxIt(maxOut,region);
+
+	for (it.GoToBegin(), maxIt.GoToBegin(), maskIt.GoToBegin(); !it.IsAtEnd(); ++it, ++maxIt, ++maskIt)
+	{
+		if (maskIt.Get() != 0)
+		{
+			ShapedNeighborhoodIteratorType::ConstIterator ci;
+			
+			PixelType max = itk::NumericTraits<PixelType>::NonpositiveMin();
+			
+			for (ci = it.Begin(); ci != it.End(); ci++)
+			{
+				if (ci.Get() > max)
+					max = ci.Get();
+			}
+
+			maxIt.Set( max );
+		}
+	}
+
+	std::stringstream ss;
+	ss << "localMax_radius_" << Radius << ".nii";
+	Write(maxOut,ss.str());
+					
+	return maxOut; 									
+}

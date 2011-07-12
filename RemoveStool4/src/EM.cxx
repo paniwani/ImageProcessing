@@ -164,7 +164,7 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
 	ImageType::SpacingType spacing = input->GetSpacing();
 	
 	// Compute iterations of the Maximization Algorithm
-    for (int emNum=0;emNum<20;emNum++) // used 20 in original test case
+    for (int emNum=0;emNum<5;emNum++) // used 20 in original test case
 	{
 		double sum_temp[3]={0,0,0};
         double variance_temp[3]={0,0,0};
@@ -268,8 +268,10 @@ void EM(ArrayImageType::Pointer &partial, ByteImageType::Pointer &colon, ImageTy
 		std::stringstream ss2;
 		ss2<<"EM"<<emNum+1<<".nii";
 
-		Write(partial,ss2.str());
+		//Write(partial,ss2.str());
     }
+
+	Write(partial,"EMPartial.nii");
 
 	//debug.close();
 }

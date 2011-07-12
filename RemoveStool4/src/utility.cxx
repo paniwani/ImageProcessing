@@ -20,6 +20,28 @@ ByteImageType::Pointer AllocateByteImage(VoxelImageType::Pointer &in)
 	return out;
 }
 
+ByteImageType::Pointer AllocateByteImage(ByteImageType::Pointer &in)
+{
+	ByteImageType::Pointer out = ByteImageType::New();
+	out->SetRegions( in->GetLargestPossibleRegion() );
+	out->SetSpacing( in->GetSpacing() );
+	out->CopyInformation( in );
+	out->Allocate();
+	out->FillBuffer(0);
+	return out;
+}
+
+ImageType::Pointer AllocateImage(ImageType::Pointer &in)
+{
+	ImageType::Pointer out = ImageType::New();
+	out->SetRegions( in->GetLargestPossibleRegion() );
+	out->SetSpacing( in->GetSpacing() );
+	out->CopyInformation( in );
+	out->Allocate();
+	out->FillBuffer(0);
+	return out;
+}
+
 ByteImageType::Pointer AllocateByteImage(FloatImageType::Pointer &in)
 {
 	ByteImageType::Pointer out = ByteImageType::New();
@@ -175,6 +197,25 @@ ByteImageType::Pointer BinaryOr(ByteImageType::Pointer &im1, ByteImageType::Poin
 	return or->GetOutput();
 }
 
+ByteImageType::Pointer BinaryInvert(ByteImageType::Pointer &im)
+{	
+	ByteImageType::Pointer out = AllocateByteImage(im);
+	ByteIteratorType ot(out,out->GetLargestPossibleRegion());
+	ByteIteratorType it(im,im->GetLargestPossibleRegion());
+
+	for (it.GoToBegin(), ot.GoToBegin(); !it.IsAtEnd(); ++it, ++ot)
+	{
+		if (it.Get() == 255)
+		{
+			ot.Set(0);
+		} else {
+			ot.Set(255);
+		}
+	}
+
+	return out;
+}
+
 ByteImageType::Pointer BinarySubtract(ByteImageType::Pointer &im1, ByteImageType::Pointer &im2)
 {
 	typedef itk::SubtractImageFilter<ByteImageType> SubtractType;
@@ -206,7 +247,7 @@ void Rescale(FloatImageType::Pointer &in, float min, float max)
 	in = rescaler->GetOutput();
 }
 
-ImageType::Pointer Crop(ImageType::Pointer &input, ImageType::RegionType requestedRegion)
+ImageType::Pointer Crop(ImageType::Pointer input, ImageType::RegionType requestedRegion)
 {
 	typedef itk::RegionOfInterestImageFilter<ImageType,ImageType> CropType;
 	CropType::Pointer cropper = CropType::New();
@@ -216,7 +257,17 @@ ImageType::Pointer Crop(ImageType::Pointer &input, ImageType::RegionType request
 	return cropper->GetOutput();
 }
 
-ImageType::Pointer Median(ImageType::Pointer &im)
+ByteImageType::Pointer Crop(ByteImageType::Pointer &input, ByteImageType::RegionType requestedRegion)
+{
+	typedef itk::RegionOfInterestImageFilter<ByteImageType,ByteImageType> CropType;
+	CropType::Pointer cropper = CropType::New();
+	cropper->SetInput(input);
+	cropper->SetRegionOfInterest(requestedRegion);
+	cropper->Update();
+	return cropper->GetOutput();
+}
+
+ImageType::Pointer Median(ImageType::Pointer &im, unsigned int rad)
 {
 	typedef itk::MedianImageFilter<ImageType,ImageType> MedianType;
 	MedianType::Pointer medianFilter = MedianType::New();
@@ -224,8 +275,26 @@ ImageType::Pointer Median(ImageType::Pointer &im)
 
 	ImageType::SizeType radius;
 	radius.Fill(0);
-	radius[0] = 1;
-	radius[1] = 1;
+	radius[0] = rad;
+	radius[1] = rad;
+
+	medianFilter->SetRadius(radius);
+	medianFilter->Update();
+	return medianFilter->GetOutput();
+}
+
+ByteImageType::Pointer Median(ByteImageType::Pointer &im, unsigned int rad)
+{
+	typedef itk::BinaryMedianImageFilter<ByteImageType,ByteImageType> MedianType;
+	MedianType::Pointer medianFilter = MedianType::New();
+	medianFilter->SetInput(im);
+	medianFilter->SetBackgroundValue( 0 );
+	medianFilter->SetForegroundValue( 255 );
+
+	ByteImageType::SizeType radius;
+	radius.Fill(0);
+	radius[0] = rad;
+	radius[1] = rad;
 
 	medianFilter->SetRadius(radius);
 	medianFilter->Update();
@@ -244,6 +313,15 @@ ByteImageType::Pointer BinaryDilate(ByteImageType::Pointer &img, unsigned int ra
 	se.SetRadius( rad );
 	se.CreateStructuringElement();
 
+	/*
+	FlatStructuringElementType::RadiusType elementRadius;
+	elementRadius.Fill(0);
+	elementRadius[0] = radius;
+	elementRadius[1] = radius;
+
+	FlatStructuringElementType se = FlatStructuringElementType::Ball(elementRadius);
+	*/
+
 	typedef itk::BinaryDilateImageFilter<ByteImageType, ByteImageType, StructuringElementType> BinaryDilateImageFilterType;
 	BinaryDilateImageFilterType::Pointer dilater = BinaryDilateImageFilterType::New();
 	dilater->SetInput( img );
@@ -257,6 +335,7 @@ ByteImageType::Pointer BinaryDilate(ByteImageType::Pointer &img, unsigned int ra
 
 ByteImageType::Pointer BinaryErode(ByteImageType::Pointer &img, unsigned int radius)
 {
+	
 	StructuringElementType se;
 	
 	ByteImageType::SizeType rad;
@@ -266,6 +345,17 @@ ByteImageType::Pointer BinaryErode(ByteImageType::Pointer &img, unsigned int rad
 
 	se.SetRadius( rad );
 	se.CreateStructuringElement();
+	
+	/*
+
+	FlatStructuringElementType::RadiusType elementRadius;
+	elementRadius.Fill(0);
+	elementRadius[0] = radius;
+	elementRadius[1] = radius;
+
+	FlatStructuringElementType se = FlatStructuringElementType::Ball(elementRadius);
+
+	*/
 
 	typedef itk::BinaryErodeImageFilter<ByteImageType, ByteImageType, StructuringElementType> BinaryErodeImageFilterType;
 	BinaryErodeImageFilterType::Pointer eroder = BinaryErodeImageFilterType::New();
@@ -299,8 +389,111 @@ ByteImageType::Pointer BinaryOpen(ByteImageType::Pointer &img, unsigned int radi
 	return opener->GetOutput();
 }
 
+/*
+void BinaryFillHoles2D(ByteImageType::Pointer &im)
+{
+	// Invert image
+	ByteIteratorType it(im,im->GetLargestPossibleRegion());
+	for (it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if (it.Get() == 255)
+		{
+			it.Set(0);
+		} else {
+			it.Set(255);
+		}
+	}
 
+	// Find largest background component in each 2D slice
+	typedef itk::BinaryShapeKeepNObjectsImageFilter< ByteImageType2D > KeeperType2D;
+	typedef itk::SliceBySliceImageFilter< ByteImageType, ByteImageType, KeeperType2D > SliceKeeperType;
 
+	KeeperType2D::Pointer keeper = KeeperType2D::New();
+	keeper->SetForegroundValue(255);
+	keeper->SetBackgroundValue(0);
+	keeper->SetAttribute("Size");
+	keeper->SetNumberOfObjects(1);
+	
+	SliceKeeperType::Pointer slicer = SliceKeeperType::New();
+	slicer->SetInput(im);
+	slicer->SetFilter(keeper);
+	slicer->Update();
 
+	ByteImageType::Pointer bkg = slicer->GetOutput();
+
+	// Invert image back and fill holes
+	ByteIteratorType bit(bkg,bkg->GetLargestPossibleRegion());
+
+	for (it.GoToBegin(),bit.GoToBegin(); !it.IsAtEnd(); ++it,++bit)
+	{
+		if (it.Get() == 255)
+		{
+			it.Set(0);
+		} else {
+			it.Set(255);
+		}
+
+		if (bit.Get() == 0)
+		{
+			it.Set(255);
+		}
+	}
+}
+*/
+
+void BinaryFillHoles2D(ByteImageType::Pointer &im)
+{
+	typedef itk::BinaryShapeOpeningImageFilter< ByteImageType2D > BinaryShapeOpeningImageFilter2D;
+	typedef itk::SliceBySliceImageFilter< ByteImageType, ByteImageType, BinaryShapeOpeningImageFilter2D > SliceBySliceImageFilterBackgroundType;
+
+	BinaryShapeOpeningImageFilter2D::Pointer bkgFilter2D = BinaryShapeOpeningImageFilter2D::New();
+	bkgFilter2D->SetAttribute("SizeOnBorder");
+	bkgFilter2D->SetBackgroundValue(255);
+	bkgFilter2D->SetForegroundValue(0);
+	bkgFilter2D->SetLambda(1);
+	bkgFilter2D->SetReverseOrdering(false);
+
+	SliceBySliceImageFilterBackgroundType::Pointer bkgRemover = SliceBySliceImageFilterBackgroundType::New();
+	bkgRemover->SetInput( im );
+	bkgRemover->SetFilter( bkgFilter2D );
+	bkgRemover->Update();
+	im = bkgRemover->GetOutput();
+}
+
+void BinaryFillHoles(ByteImageType::Pointer &im)
+{
+	// Invert image
+	ByteIteratorType it(im,im->GetLargestPossibleRegion());
+	for (it.GoToBegin(); !it.IsAtEnd(); ++it)
+	{
+		if (it.Get() == 255)
+		{
+			it.Set(0);
+		} else {
+			it.Set(255);
+		}
+	}
+
+	// Find largest background component
+	ByteImageType::Pointer bkg = BinaryShapeKeeper(im,"Size",1);
+
+	// Invert image back and fill holes
+	ByteIteratorType bit(bkg,bkg->GetLargestPossibleRegion());
+
+	for (it.GoToBegin(),bit.GoToBegin(); !it.IsAtEnd(); ++it,++bit)
+	{
+		if (it.Get() == 255)
+		{
+			it.Set(0);
+		} else {
+			it.Set(255);
+		}
+
+		if (bit.Get() == 0)
+		{
+			it.Set(255);
+		}
+	}
+}
 
 

@@ -113,6 +113,27 @@ void Write(ByteImageType::Pointer image, std::string name) {
 	writer->Update();
 }
 
+void Write(ByteImageType2D::Pointer image, std::string name) {
+	typedef itk::ImageFileWriter< ByteImageType2D >  WriterType;
+    WriterType::Pointer writer = WriterType::New();
+	WriterType::SetGlobalWarningDisplay(false);
+	
+	std::stringstream ss;
+	if ( !note.empty() )
+		ss << note << "_";
+
+	if ( write_num )
+		ss << write_count++ << "_";
+
+	ss << name;
+
+	writer->SetFileName(ss.str().c_str());
+
+	writer->SetInput(image);
+	std::cout<<"Writing: "<<ss.str()<<std::endl;
+	writer->Update();
+}
+
 void Write(LabelImageType::Pointer image, std::string name) {
 	typedef itk::ImageFileWriter< LabelImageType >  WriterType;
     WriterType::Pointer writer = WriterType::New();
@@ -265,71 +286,216 @@ void Write(ArrayImageType::Pointer &v, std::string name)
 	}
 }
 
-template <typename T>
-typename T::Pointer ReadDicom( std::string path, int slice1=-1, int slice2=-1)
-{	
-	// Create reader
-	itk::ImageSeriesReader<T>::Pointer reader = itk::ImageSeriesReader<T>::New();
-    itk::GDCMImageIO::Pointer dicomIO = itk::GDCMImageIO::New();
-    reader->SetImageIO( dicomIO );
+//template <typename T>
+//typename T::Pointer ReadDicom( std::string inDir, std::string outDir, int slice1=-1, int slice2=-1)
+//{	
+//	// Create reader
+//	itk::ImageSeriesReader<T>::Pointer reader = itk::ImageSeriesReader<T>::New();
+//    itk::GDCMImageIO::Pointer dicomIO = itk::GDCMImageIO::New();
+//    reader->SetImageIO( dicomIO );
+//
+//	/*
+//	
+//	typedef itk::GDCMSeriesFileNames NamesGeneratorType;
+//	NamesGeneratorType::Pointer nameGenerator = NamesGeneratorType::New();
+//	
+//	nameGenerator->SetDirectory( path );
+//	
+//	const std::vector< std::string > seriesUID = nameGenerator->GetSeriesUIDs();
+//	std::string seriesIdentifier = seriesUID.begin()->c_str();
+//	
+//	std::vector< std::string > names = nameGenerator->GetFileNames( seriesIdentifier );
+//
+//	*/
+//	
+//	// Create regex finder to match file names
+//	std::cout << inDir << std::endl;
+//
+//	itk::RegularExpressionSeriesFileNames::Pointer fit = itk::RegularExpressionSeriesFileNames::New();
+//	
+//	fit->SetDirectory( inDir );
+//	fit->SetRegularExpression("[^.]*i([0-9]+).dcm");
+//	fit->SetSubMatch(1);
+//
+//	names = fit->GetFileNames();
+//	
+//	if (slice1 > -1 && slice2 > -1 && slice2 > slice1)
+//	{
+//		names.erase( names.begin(), names.begin()+slice1);
+//
+//		unsigned int change = slice2 - slice1;
+//
+//		names.erase( names.begin() + change, names.end() );
+//	} else if (slice1 > -1 && slice2 == -1) {
+//		names.erase( names.begin(), names.begin()+slice1-1);
+//		names.erase( names.begin()+1, names.end() );
+//	} else {
+//		std::cout << "Error truncating slices. Restoring full set." << std::endl;
+//	}
+//
+//    reader->SetFileNames( names );
+//	try
+//	{
+//		reader->Update();
+//	}
+//	catch( itk::ExceptionObject & err )
+//	{
+//		std::cerr << "Error reading dicom: " << err << std::endl;
+//		return 0;
+//	}
+//
+//	// Get dictionary array pointer
+//	metaDataDictionaryArray = *(reader->GetMetaDataDictionaryArray());
+//
+//	std::cout << "Number of filenames: " << names.size() << std::endl;
+//	std::cout << "Number of dictionary entries: " << metaDataDictionaryArray.size() << std::endl;
+//	
+//	T::Pointer output = reader->GetOutput();
+//
+//	/*typedef itk::MetaDataDictionary DictionaryType;
+//	DictionaryType & dictionary = dicomIO->GetMetaDataDictionary();
+//    output->SetMetaDataDictionary(dictionary);*/
+//	
+//    return output;
+//}
+//
+//ImageType::Pointer ReadDicom2( std::string inDir, std::string outDir)
+//{
+//	typedef itk::ImageSeriesReader< ImageType >     ReaderType;
+//	typedef itk::GDCMImageIO                        ImageIOType;
+//	typedef itk::GDCMSeriesFileNames                NamesGeneratorType;
+//
+//	ImageIOType::Pointer gdcmIO = ImageIOType::New();
+//	NamesGeneratorType::Pointer namesGenerator = NamesGeneratorType::New();
+//	
+//	namesGenerator->SetInputDirectory( inDir );
+//
+//	const ReaderType::FileNamesContainer & filenames = 
+//							namesGenerator->GetInputFileNames();
+//
+//	// Software Guide : EndCodeSnippet
+//
+//	unsigned int numberOfFilenames =  filenames.size();
+//
+//	std::cout << numberOfFilenames << std::endl; 
+//	for(unsigned int fni = 0; fni<numberOfFilenames; fni++)
+//	{
+//		std::cout << "filename # " << fni << " = ";
+//		std::cout << filenames[fni] << std::endl;
+//	}
+//
+//	ReaderType::Pointer reader = ReaderType::New();
+//
+//	reader->SetImageIO( gdcmIO );
+//	reader->SetFileNames( filenames );
+//
+//	try
+//	{
+//		reader->Update();
+//	}
+//	catch (itk::ExceptionObject &excp)
+//	{
+//		std::cerr << "Exception thrown while writing the image" << std::endl;
+//		std::cerr << excp << std::endl;
+//		//return EXIT_FAILURE;
+//	}
+//
+//	return reader->GetOutput();
+//	
+//}
 
-	/*
-	
-	typedef itk::GDCMSeriesFileNames NamesGeneratorType;
-	NamesGeneratorType::Pointer nameGenerator = NamesGeneratorType::New();
-	
-	nameGenerator->SetDirectory( path );
-	
-	const std::vector< std::string > seriesUID = nameGenerator->GetSeriesUIDs();
-	std::string seriesIdentifier = seriesUID.begin()->c_str();
-	
-	std::vector< std::string > names = nameGenerator->GetFileNames( seriesIdentifier );
-
-	*/
-	
-	// Create regex finder to match file names
-	itk::RegularExpressionSeriesFileNames::Pointer fit = itk::RegularExpressionSeriesFileNames::New();
-	
-	fit->SetDirectory( path );
-	fit->SetRegularExpression("[^.]*i([0-9]+).dcm");
-	fit->SetSubMatch(1);
-
-	std::vector<std::string> names = fit->GetFileNames();
-	
-	if (slice1 > -1 && slice2 > -1 && slice2 > slice1)
-	{
-		names.erase( names.begin(), names.begin()+slice1);
-		names.erase( names.begin()+slice2-slice1, names.end() );
-	} else if (slice1 > -1 && slice2 == -1) {
-		names.erase( names.begin(), names.begin()+slice1-1);
-		names.erase( names.begin()+1, names.end() );
-	} else {
-		std::cout << "Error truncating slices. Restoring full set." << std::endl;
-	}
-
-    reader->SetFileNames( names );
-	try
-	{
-		reader->Update();
-	}
-	catch( itk::ExceptionObject & err )
-	{
-		std::cerr << "Error reading dicom: " << err << std::endl;
-		return 0;
-	}
-	
-	T::Pointer output = reader->GetOutput();
-	
-	/*
-    // Orient all input images into LAI orientation (spine is at top of image)
-    itk::OrientImageFilter<T,T>::Pointer orienter = itk::OrientImageFilter<T,T>::New();
-    orienter->UseImageDirectionOn();
-    orienter->SetDesiredCoordinateOrientation(itk::SpatialOrientation::ITK_COORDINATE_ORIENTATION_LAI); //LPI
-    orienter->SetInput( output );
-    orienter->Update();
-	output = orienter->GetOutput();
-	*/
-	
-	
-    return output;
-}
+//ImageType::Pointer ReadDicom3( std::string inDir, std::string outDir, int slice1=-1, int slice2=-1)
+//{	
+//	typedef itk::ImageSeriesReader< ImageType >     ReaderType;
+// 
+//  typedef itk::GDCMImageIO                        ImageIOType;
+//  typedef itk::GDCMSeriesFileNames                NamesGeneratorType;
+//
+//  ImageIOType::Pointer gdcmIO = ImageIOType::New();
+//  NamesGeneratorType::Pointer namesGenerator = NamesGeneratorType::New();
+//  
+//  namesGenerator->SetInputDirectory( inDir );
+//
+//  const ReaderType::FileNamesContainer & filenames = 
+//                            namesGenerator->GetInputFileNames();
+//  // Software Guide : EndCodeSnippet
+//
+//  unsigned int numberOfFilenames =  filenames.size();
+//  std::cout << numberOfFilenames << std::endl; 
+// 
+//  // copy names
+//  std::vector<std::string> names;
+//  names.resize( filenames.size() );
+//
+//  for (int i=0; i<names.size(); i++)
+//  {
+//	names[i] = filenames[i];
+//  }
+//
+//  // reverse names
+//  reverse(names.begin(),names.end());
+//
+//   for(unsigned int fni = 0; fni<numberOfFilenames; fni++)
+//    {
+//    std::cout << "filename # " << fni << " = ";
+//    std::cout << names[fni] << std::endl;
+//    }
+//
+//
+//
+//  ReaderType::Pointer reader = ReaderType::New();
+//
+//  reader->SetImageIO( gdcmIO );
+//  reader->SetFileNames( names );
+//  
+//
+//  try
+//    {
+//    // Software Guide : BeginCodeSnippet
+//    reader->Update();
+//    // Software Guide : EndCodeSnippet
+//    }
+//  catch (itk::ExceptionObject &excp)
+//    {
+//    std::cerr << "Exception thrown while writing the image" << std::endl;
+//    std::cerr << excp << std::endl;
+//    system("pause");
+//	//return EXIT_FAILURE;
+//    }
+//
+//  Write(reader->GetOutput(),"inputDicom.nii");
+//
+//  // Get dictionary array pointer
+//  metaDataDictionaryArray = *(reader->GetMetaDataDictionaryArray());
+//
+//  //const char * outputDirectory = outDir.c_str();
+// 
+//  //itksys::SystemTools::MakeDirectory( outputDirectory );
+//  
+// // seriesWriter = SeriesWriterType::New();
+//
+// // //seriesWriter->SetInput( reader->GetOutput() );
+// // seriesWriter->SetImageIO( gdcmIO );
+// //
+// // namesGenerator->SetOutputDirectory( outputDirectory );
+//
+// // seriesWriter->SetFileNames( namesGenerator->GetOutputFileNames() );
+// // 
+// // seriesWriter->SetMetaDataDictionaryArray( 
+// //                       reader->GetMetaDataDictionaryArray() );
+// // 
+// //// try
+// ////   {
+// ////   seriesWriter->Update();
+// ////   }
+// //// catch( itk::ExceptionObject & excp )
+// ////   {
+// ////   std::cerr << "Exception thrown while writing the series " << std::endl;
+// ////   std::cerr << excp << std::endl;
+// ////   system("pause");
+//	//////return EXIT_FAILURE;
+// ////   }
+//
+//  return reader->GetOutput();
+//
+//}

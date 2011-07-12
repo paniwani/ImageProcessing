@@ -316,7 +316,7 @@ bool checkBounds(ImageType::RegionType &region, ContinuousIndexType &index)
 	return true;
 }
 
-ArrayImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, FloatImageType::Pointer &smax)
+ArrayImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, FloatImageType::Pointer &smax, FloatImageType::Pointer &dns, FloatImageType::Pointer &da)
 {
 	ArrayImageType::Pointer partial = ArrayImageType::New();
 	partial->SetRegions( REGION );
@@ -332,9 +332,11 @@ ArrayImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageTyp
 	VoxelIteratorType vmapIt(vmap,REGION);
 	ByteIteratorType colonIt(colon,REGION);
 	FloatIteratorType smaxIt(smax,REGION);
+	FloatIteratorType dnsIt(dns,REGION);
+	FloatIteratorType daIt(da,REGION);
 
-	for (partialIt.GoToBegin(), inputIt.GoToBegin(), vmapIt.GoToBegin(), colonIt.GoToBegin(), smaxIt.GoToBegin(); !partialIt.IsAtEnd();
-		++partialIt, ++inputIt, ++vmapIt, ++colonIt, ++smaxIt)
+	for (partialIt.GoToBegin(), inputIt.GoToBegin(), vmapIt.GoToBegin(), colonIt.GoToBegin(), smaxIt.GoToBegin(), dnsIt.GoToBegin(), daIt.GoToBegin(); !partialIt.IsAtEnd();
+		++partialIt, ++inputIt, ++vmapIt, ++colonIt, ++smaxIt, ++dnsIt, ++daIt)
 	{
 
 		if ( colonIt.Get() == 255 )
@@ -372,17 +374,20 @@ ArrayImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageTyp
 
 				case TissueAir:
 
-					/*value[1]=1+(I/1000);
+					value[1]=1+(I/600);
 
 					if (value[1] <= 0) { value[1] = 0; }
 					if (value[1] >= 1) { value[1] = 1; }
 
 					value[0]=1-value[1];
 
-					value[2]=0;*/
+					value[2]=0;
+
+					/*
 					value[0] = 0; // leave tissue air untouched (pt=1)
 					value[1] = 1;
 					value[2] = 0;
+					*/
 
 					break;
 
@@ -421,6 +426,24 @@ ArrayImageType::Pointer ComputePartials(ImageType::Pointer &input, VoxelImageTyp
 					value[1]=0;
 
 					break;
+
+				case ThinStool:
+					value[0]=0.5*(1-vnl_erf((daIt.Get()-0.5)/(CDF_SIGMA*sqrtf(2)))); //check eq
+					
+					if (value[0] <= 0) { value[0] = 0; }
+					if (value[0] >= 1) { value[0] = 1; }
+
+					value[2]=0.5*(1+vnl_erf((dnsIt.Get()-0.5)/(CDF_SIGMA*sqrtf(2))));
+
+					if (value[2] <= 0) { value[2] = 0; }
+					if (value[2] >= 1) { value[2] = 1; }
+
+					value[1]=1-value[0]-value[2];
+
+					if (value[1] <= 0) { value[1] = 0; }
+					if (value[1] >= 1) { value[1] = 1; }
+
+					break;
 			}   
 
 			ArrayType data(value);
@@ -444,7 +467,7 @@ types to edge voxels
 5. Run voxel edge classification
 
 *********************************************************/
-FloatImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, FloatImageType::Pointer &gradientMagnitude, PixelType tissueStoolThreshold)
+ArrayImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImageType::Pointer &colon, VoxelImageType::Pointer &vmap, FloatImageType::Pointer &gradientMagnitude, PixelType tissueStoolThreshold)
 {
 	// get region
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
@@ -473,7 +496,9 @@ FloatImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 		if ( norm > 0 )
 		{
 			for (int i=0; i<3; i++)
+			{
 				g[i] /= norm;
+			}
 		}
 
 		// tolerance
@@ -500,7 +525,7 @@ FloatImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 	typedef itk::BSplineInterpolateImageFunction<ImageType> InterpolatorType;
 	InterpolatorType::Pointer inputInterp = InterpolatorType::New();
 	inputInterp->SetSplineOrder(3);
-	inputInterp->SetInputImage( Median(input) );
+	inputInterp->SetInputImage( Median(input,1) );
 
 	// assign voxel boundaries to transition types
 	ByteIteratorType colonIt(colon,REGION);
@@ -638,10 +663,226 @@ FloatImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 	}*/
 	
 	Write(smaxImage,"smax.nii");
-	//Write(smaxImage2,"smax2.nii");
+
+	Write(vmap,"vmapHeteroPre.nii");
+	
+	// Hetero stool fix
+	IteratorType inputIt(input,region);
+
+	for (int i=0; i<3; i++)
+	{
+		vmapIt = VoxelIteratorType(vmap,region);
+
+		// Copy vmap
+		typedef itk::ImageDuplicator<VoxelImageType> DuplicatorType;
+		DuplicatorType::Pointer duplicator = DuplicatorType::New();
+		duplicator->SetInputImage(vmap);
+		duplicator->Update();
+		VoxelImageType::Pointer vmap2 = duplicator->GetOutput();
+		VoxelIteratorType vmap2It(vmap2,region);
+
+		for (vmapIt.GoToBegin(), vmap2It.GoToBegin(), colonIt.GoToBegin(), gradientIt.GoToBegin(), inputIt.GoToBegin(); !vmapIt.IsAtEnd(); ++vmapIt, ++colonIt, ++gradientIt, ++vmap2It, ++inputIt)
+		{
+			if (colonIt.Get() != 0)
+			{	
+				if (vmapIt.Get() == TissueStool)
+				{
+					// Find adjacent voxel in direction of gradient
+					ImageType::IndexType idx = colonIt.GetIndex();
+					ImageType::IndexType odx = idx;
+					
+					VectorType g = gradientIt.Get();
+					
+					for (int i=0; i<3; i++)
+					{
+						odx[i] = idx[i] + floor(g[i]+0.5);
+						//std::cout << idx[i] << "\t" << g[i] << "\t" << floor(g[i]+0.5) << "\t" << odx[i] << std::endl;
+					}
+
+					if ( checkBounds(REGION,odx) )
+					{
+					
+						if ( inputIt.Get() > input->GetPixel(odx) ) //EvaluateAtContinousIndex(odx) )
+						{
+							vmap2It.Set(Stool);
+						}		
+
+					}
+				}
+			}	
+		}
+		vmap = vmap2;
+	}
+	Write(vmap,"vmapHeteroPost.nii");
+
+	vmapIt = VoxelIteratorType(vmap,region);
+
+	// Thin stool calculation
+	// Get all stool involvement
+	ByteImageType::Pointer si = AllocateByteImage(input);
+	ByteIteratorType siIt(si,region);
+
+	for (siIt.GoToBegin(), vmapIt.GoToBegin(); !siIt.IsAtEnd(); ++siIt, ++vmapIt)
+	{
+		VoxelType v = vmapIt.Get();
+		
+		if (v == Stool || v == StoolAir || v == TissueStool)
+		{
+			siIt.Set(255);
+		}
+	}
+	Write(si,"si.nii");
+
+	// Compute distance to non-stool
+	typedef itk::MorphologicalDistanceTransformImageFilter<ByteImageType,FloatImageType> DistanceFilterType;
+	DistanceFilterType::Pointer distanceF = DistanceFilterType::New();
+	distanceF->SetInput(si);
+	distanceF->SetOutsideValue(0);
+	distanceF->Update();
+	FloatImageType::Pointer dns = distanceF->GetOutput();
+	
+	typedef itk::NeighborhoodIterator<FloatImageType> NeighborhoodIteratorType;
+	ImageType::SizeType radius;
+	radius.Fill(1);
+
+	NeighborhoodIteratorType dnsNIt(radius,dns,region);
+	Write(dns,"dns.nii");
+
+	ByteImageType::Pointer thinStoolMask = AllocateByteImage(input);
+	ByteIteratorType thinStoolMaskIt(thinStoolMask,region);
+
+	float distanceThreshold = 2.3;
+
+
+	for (vmapIt.GoToBegin(), dnsNIt.GoToBegin(), thinStoolMaskIt.GoToBegin(); !vmapIt.IsAtEnd(); ++vmapIt, ++dnsNIt, ++thinStoolMaskIt)
+	{
+		float val = dnsNIt.GetCenterPixel();
+
+		bool neighborsGood = true;
+
+		if (val > 0 && val <= distanceThreshold)
+		{
+			// check neighbors do not have too high of a value
+			for (int i=0; i<dnsNIt.Size(); i++)
+			{
+				if (i != (dnsNIt.Size()-1)/2)
+				{
+					if (dnsNIt.GetPixel(i) > distanceThreshold)
+					{
+						neighborsGood = false;
+						break;
+					}
+				}
+			}
+
+			if (neighborsGood)
+			{
+				vmapIt.Set( ThinStool );
+				thinStoolMaskIt.Set(255);
+			}
+
+		}
+	}
+
+	Write(thinStoolMask,"thinStoolMask.nii");
 	Write(vmap,"qr.nii");
 
-	return smaxImage;
+	// Get distance to air
+	ByteImageType::Pointer airMask = BinaryThreshold(vmap,Air);
+	distanceF = DistanceFilterType::New();
+	distanceF->SetInput(airMask);
+	distanceF->SetOutsideValue(255);
+	distanceF->Update();
+	FloatImageType::Pointer da = distanceF->GetOutput();
+	Write(da,"da.nii");
+	
+	FloatIteratorType daIt(da,region);
+	FloatIteratorType dnsIt(dns,region);
+
+	// Normalize distances to air
+	for (daIt.GoToBegin(), dnsIt.GoToBegin(); !daIt.IsAtEnd(); ++daIt, ++dnsIt)
+	{
+		if (dnsIt.Get() > distanceThreshold)
+		{
+			dnsIt.Set(1);
+		} else {
+			dnsIt.Set(dnsIt.Get()/distanceThreshold);
+		}
+
+		if (daIt.Get() > distanceThreshold)
+		{
+			daIt.Set(1);
+		} else {
+			daIt.Set(daIt.Get()/distanceThreshold);
+		}
+	}
+
+	Write(dns,"dnsNormalized.nii");
+	Write(da,"daNormalized.nii");
+
+	ArrayImageType::Pointer partial = ComputePartials(input,vmap,colon,smaxImage,dns,da);
+	ArrayIteratorType partialIt(partial,region);
+
+	// Remove any partials less than 0.2
+
+	for (partialIt.GoToBegin(); !partialIt.IsAtEnd(); ++partialIt)
+	{
+		if (partialIt.Get()[1] < 0.2)
+		{
+			ArrayType p = partialIt.Get();
+			p[1] = 0;
+			partialIt.Set(p);
+		}
+	}
+
+	Write(partial,"partialThresholded.nii");
+
+	// Smooth each partial image
+	for (int i=0; i<3; i++)
+	{
+		// get a copy of this partial image
+		FloatImageType::Pointer part = AllocateFloatImage(input);
+		FloatIteratorType partIt(part,region);
+
+		for (partIt.GoToBegin(), partialIt.GoToBegin(); !partIt.IsAtEnd(); ++partIt, ++partialIt)
+		{
+			partIt.Set( partialIt.Get()[i] );
+		}
+
+		// smooth partial
+		typedef itk::DiscreteGaussianImageFilter<FloatImageType,FloatImageType> SmootherType;
+		SmootherType::Pointer smoother = SmootherType::New();
+		smoother->SetInput(part);
+		smoother->SetVariance( 2*2 );
+		smoother->Update();
+		part = smoother->GetOutput();
+		partIt = FloatIteratorType(part,region);
+
+		// copy smoothed partial back to array image
+
+		for (partIt.GoToBegin(), partialIt.GoToBegin(); !partIt.IsAtEnd(); ++partIt, ++partialIt)
+		{
+			ArrayType p = partialIt.Get();
+
+			// only smooth uncertain partials
+			if (p[i] > 0 && p[i] < 1)
+			{
+				p[i] = partIt.Get();
+			}
+
+			partialIt.Set( p );
+		}
+	}
+
+	Write(partial,"partialSmooth.nii");
+
+	
+
+
+	//Write(smaxImage2,"smax2.nii");
+	
+
+	return partial;
 }
 
 /*
@@ -650,7 +891,7 @@ FloatImageType::Pointer QuadraticRegression(ImageType::Pointer &input, ByteImage
 * assign it a tissue a partial based on intensity
 */
 
-void FixATT(ImageType::Pointer &input, ArrayImageType::Pointer &partial, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, FloatImageType::Pointer &smax, PixelType tissueStoolThreshold)
+void FixATT(ImageType::Pointer &input, ArrayImageType::Pointer &partial, VoxelImageType::Pointer &vmap, ByteImageType::Pointer &colon, FloatImageType::Pointer &smax)
 {
 	// get region
 	ImageType::RegionType region = input->GetLargestPossibleRegion();
@@ -718,7 +959,7 @@ void FixATT(ImageType::Pointer &input, ArrayImageType::Pointer &partial, VoxelIm
 	//Write(sdmask,"sdmask.nii");
 
 	// get input in tissue intensity range mask
-	ByteImageType::Pointer timask = BinaryThreshold(input,-300,tissueStoolThreshold);
+	ByteImageType::Pointer timask = BinaryThreshold(input,-300,300);
 	//Write(timask,"timask.nii"); 
 
 	// mask sd with tissue intensity mask
